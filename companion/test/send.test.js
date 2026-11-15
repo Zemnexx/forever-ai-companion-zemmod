@@ -215,7 +215,24 @@ test('/ia probar-canales runs every probe, undoes it and reports through the str
   const probeApis = `
     CALLS = {}
     local function rec(name) return function(...) CALLS[#CALLS + 1] = name; return true end end
-    C_Timer.After = function(_, fn) fn() end
+    TIMERS = {}
+    C_Timer.After = function(d, fn) TIMERS[#TIMERS + 1] = { d = d, fn = fn } end
+    function RUN_TIMERS(max)
+      local list = TIMERS; TIMERS = {}
+      for _, t in ipairs(list) do if t.d <= max then t.fn() else TIMERS[#TIMERS + 1] = t end end
+    end
+    function UNTIL_STRIP()
+      for i = 1, 2000 do
+        if ns.Uplink.grid and ns.Uplink.grid.shown then return end
+        RUN_FRAMES(1)
+      end
+    end
+    function UNTIL_SENT()
+      for i = 1, 4000 do
+        if not ns.Uplink.busy and not ns.Core.working then return end
+        RUN_FRAMES(1)
+      end
+    end
     RegisterCVar = rec("RegisterCVar")
     SetCVar = function(k, v) CALLS[#CALLS + 1] = "SetCVar:" .. k .. "=" .. tostring(v) end
     C_AddOns = { DisableAddOn = rec("DisableAddOn"), EnableAddOn = rec("EnableAddOn"), SaveAddOns = rec("SaveAddOns"),
@@ -231,15 +248,24 @@ test('/ia probar-canales runs every probe, undoes it and reports through the str
   `;
   const out = runLua(`
     START()
+    -- 1. The addon asks the app to start recording, and probes nothing yet.
     ns.Probe:Run()
-    for i = 1, 2000 do
-      if ns.Uplink.grid and ns.Uplink.grid.shown then break end
-      RUN_FRAMES(1)
-    end
-    RESULT = DUMP() .. "#" .. table.concat(CALLS, ",") .. "#" .. tostring(LoggingChat())
+    UNTIL_STRIP()
+    local start = DUMP()
+    local before = #CALLS
+    UNTIL_SENT()
+    -- 2. The app answers (it is recording): the probes run, then the report is sent.
+    ns.Core:ApplyInbox({ answers = { { id = ns.Probe.waiting.id, ok = true, answer = "Recording." } } })
+    RUN_TIMERS(25)
+    UNTIL_STRIP()
+    RESULT = start .. "#" .. before .. "#" .. DUMP() .. "#" .. table.concat(CALLS, ",") .. "#" .. tostring(LoggingChat())
   `, {}, ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Button.lua', 'Notify.lua', 'Probe.lua', 'Core.lua'],
   FAKE_UI + PRELUDE_DRIVE + probeApis);
-  const [dump, calls, loggingAfter] = out.split('#');
+  const [startDump, callsBeforeAnswer, dump, calls, loggingAfter] = out.split('#');
+  const start = decodeDump(startDump).req;
+  assert.match(start.probeStart, /^\d+$/);
+  assert.equal(start.probe, undefined);
+  assert.equal(callsBeforeAnswer, '0', 'nothing is probed before the app is recording');
   for (const c of ['SetCVar:faicProbe=FAIC-PROBE-', 'DisableAddOn', 'SaveAddOns', 'CreateMacro', 'SendAddonMessage', 'SpeakText', 'EnableAddOn', 'SetCVar:faicProbe=']) {
     assert.ok(calls.includes(c), `missing ${c} in ${calls}`);
   }
@@ -250,6 +276,25 @@ test('/ia probar-canales runs every probe, undoes it and reports through the str
   assert.equal(req.probe.results.addons, 'ok');
   assert.equal(req.probe.ttsVoices[0].name, 'Microsoft Helena Desktop');
   assert.match(req.probe.token, /^\d+$/);
+  assert.equal(req.probe.token, start.probeStart, 'same test');
+});
+
+test('/ia probe gives up when the app never starts recording', () => {
+  const out = runLua(`
+    TIMERS = {}
+    C_Timer.After = function(d, fn) TIMERS[#TIMERS + 1] = { d = d, fn = fn } end
+    START()
+    STATUS = ""
+    local setStatus = ns.UI.SetStatus
+    ns.UI.SetStatus = function(self, s) STATUS = s; return setStatus(self, s) end
+    ns.Probe:Run()
+    for _, t in ipairs(TIMERS) do if t.d == 60 then t.fn() end end
+    RESULT = tostring(ns.Probe.running) .. "#" .. STATUS
+  `, {}, ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Button.lua', 'Notify.lua', 'Probe.lua', 'Core.lua'],
+  FAKE_UI + PRELUDE_DRIVE);
+  const [running, status] = out.split('#');
+  assert.equal(running, 'false');
+  assert.match(status, /did not answer/);
 });
 
 test('oversized requests are trimmed to the frame size limit', () => {

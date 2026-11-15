@@ -97,11 +97,11 @@ If the game was open, **close it completely and open it again** (`/reload` is no
 
 ### Updating
 
-**From version 1.7.0 on, the app updates itself.** Every few hours it checks this repository for a new release. When there is one, you get a notice next to the Windows clock and an **Update now** button in the app's dashboard: one click downloads it, checks that it is exactly the file published here (SHA-256), and restarts the app with the new version, keeping your chats, settings and keys. The addon is updated with it (restart WoW or `/reload` afterwards).
+**From version 1.7.0 on, the app updates itself.** Every few hours it checks this repository for a new release. When there is one, you get a notice next to the Windows clock and an **Update now** button in the app's dashboard: one click downloads it, checks that it is exactly the file published here (SHA-256) **and that it is signed with the project's key** (`ForeverAICompanion.exe.sig`, see [Releasing a new version](#releasing-a-new-version)), and restarts the app with the new version, keeping your chats, settings and keys. A release without a valid signature is never offered or installed, and a copy of the app built without a signing key does not update itself. The addon is updated with it (restart WoW or `/reload` afterwards).
 
 For older versions, download the new `.exe` and open it: it replaces the old version in the same way.
 
-The WoW Forever guide the AI uses updates by itself from the internet, with nothing to download.
+The WoW Forever guide the AI uses updates by itself from the internet, with nothing to download (only signed guides are used, see [below](#the-wow-forever-guide-and-its-updates)).
 
 Coming from version 1.5.0 or earlier, the app and the addon move to new folder names on their own: your chats, settings and API keys come along. Restart WoW once afterwards. If you use invisible sending, the app window will offer **Update invisible sending** (Windows asks for permission once); until then it keeps working as before.
 
@@ -246,14 +246,16 @@ build: 70938           ← the game's build number
 
 **How it stays current:**
 
-- The app ships with a copy, and also **downloads the one in this repository** at startup, every 6 hours and as soon as it notices the game was updated. It only uses it if it's valid and its `date` is newer; offline it uses the last one it downloaded.
+- The app ships with a copy, and also **downloads the one in this repository** at startup, every 6 hours and as soon as it notices the game was updated. It only uses it if it's valid, **signed with the project's key** (`wow-forever.md.sig` next to it) and its `date` is newer; offline it uses the last one it downloaded. The signature is checked again every time the downloaded guide is read from disk.
+- The guide reaches the AI fenced off as reference data: it can supply facts, but text inside it cannot change the AI's rules or role.
 - The AI knows today's date and how old the guide is. If the guide is more than 21 days old, or the game is newer than the guide, it checks on the internet whatever changes with patches before stating it.
 
 **To update the guide for every player** (without releasing a new version of the app):
 
 1. Open [`companion/knowledge-builtin/wow-forever.md`](companion/knowledge-builtin/wow-forever.md) on GitHub and click the pencil (*Edit*).
 2. Make your changes and **set `date` to today** (and `gameVersion` and `build` if there was a patch; the build is shown by `/ia data` in the game, in the *client* section).
-3. Click **Commit changes**. Within a few hours every app downloads it (or right away with **Check for updates** in the dashboard).
+3. Sign it: `node scripts/sign.js guide knowledge-builtin/wow-forever.md --key <key.pem>` (or the Key Vault steps in [Releasing a new version](#releasing-a-new-version)), which writes `wow-forever.md.sig`.
+4. Commit both files. Within a few hours every app downloads it (or right away with **Check for updates** in the dashboard). An edit committed without a new signature is ignored by the apps.
 
 Tips: write full dates ("opened on December 9, 2026", not "opening soon"), mark with "per guides" whatever Blizzard hasn't confirmed, and keep it under 200 KB.
 
@@ -265,7 +267,11 @@ Each player can also add their own knowledge from the app's dashboard (**Server 
 
 - **Your data only goes to the AI you chose.** This project has no servers: it never receives your questions, your data or your keys.
 - The app's only connection of its own is downloading the WoW Forever guide from this repository (a read, nothing is sent).
-- API keys are stored only on your PC, in `%APPDATA%\ForeverAICompanion\config.json`.
+- API keys are stored only on your PC, in `%APPDATA%\ForeverAICompanion\config.json`, **encrypted with Windows DPAPI** for your Windows account: a copy of that file on another PC or account doesn't reveal them. Keys saved in plain text by earlier versions are encrypted the next time the app starts.
+- Updates and the downloaded guide are only used when signed with the project's key (see [Updating](#updating)).
+- **Invisible sending:** the silent voice's file used by elevated programs lives in `%ProgramFiles%\ForeverAICompanion`, which only administrators can change (installs from before this change are offered **Update invisible sending** to move it). The voice keeps only this app's own messages: anything else any program speaks with it is dropped without being written or logged.
+- **Codex:** when the app searches the PC for Codex, or installs it, it only runs a `codex.exe` that Windows confirms is signed by OpenAI. If a future Codex stops accepting one of the safety switches the app relies on (no commands, no file or browser access), the app refuses to use it rather than dropping the switch.
+- The `/ia probe` channel test only watches the game's files while a test is running (and for 15 minutes after, for files the game writes at logout).
 - The app window is a local page (`127.0.0.1`) that doesn't accept connections from other computers or other web pages.
 - **The game is not modified**: its memory and files are not touched, and the addon doesn't play for you. It only uses normal addon and Windows features.
 - This is not a Blizzard product. Use it at your own risk (see the next section).
@@ -372,6 +378,8 @@ companion/
   src/inbox.js              Inboxes and bell
   src/beacon.js             Tells the game whether the app is open and ready
   src/updater.js            Updates the app from GitHub releases
+  src/signing.js            Checks the signatures of updates and the guide
+  src/secrets.js            Encrypts API keys in config.json (Windows DPAPI)
   src/prompt.js             Instructions for the AI
   src/guide.js              WoW Forever guide: date, version and downloads
   src/providers.js          Claude, OpenAI/Gemini/Ollama, Claude Code, Codex, test
@@ -383,6 +391,7 @@ companion/
   tray/Tray.cs              Icon next to the clock (C#)
   knowledge-builtin/        WoW Forever guide
   scripts/build.js          Packages ForeverAICompanion.exe
+  scripts/sign.js           Signs releases and the guide (local key or Key Vault)
   test/                     Tests (they run the addon's real Lua)
 ```
 
@@ -408,7 +417,33 @@ npm start
 npm run ask -- "Which dungeon do you recommend?"
 ```
 
-Test variables: `FAIC_DATA_DIR` (data folder), `FAIC_WOW_DIR`, `FAIC_PROVIDER`, `FAIC_NO_SHORTCUTS`, `FAIC_LANG` (`en` / `es`), `FAIC_INSTALL_DIR` (install into a test folder; nothing machine-wide is touched) and `FAIC_UPDATE_API` (a local stand-in for GitHub's latest-release API, for testing updates). `.exe` arguments: `--no-install`, `--no-window`, `--background`.
+Test variables: `FAIC_DATA_DIR` (data folder), `FAIC_WOW_DIR`, `FAIC_PROVIDER`, `FAIC_NO_SHORTCUTS`, `FAIC_LANG` (`en` / `es`), `FAIC_INSTALL_DIR` (install into a test folder; nothing machine-wide is touched) and `FAIC_UPDATE_API` (a local stand-in for GitHub's latest-release API, for testing updates; its releases must still be signed with a key in `TRUSTED_KEYS`). `.exe` arguments: `--no-install`, `--no-window`, `--background`.
+
+### Signing key (one-time setup)
+
+Installed apps only accept releases and guides signed with a key listed in `TRUSTED_KEYS` (`companion/src/signing.js`). The signatures are ECDSA P-256 / SHA-256 (ES256), checked with Node's built-in crypto. While `TRUSTED_KEYS` is empty, the app does not update itself and only uses the guide built into it. Updates and the guide are read from the repository in `RELEASE_REPO` (`companion/src/config.js`), which should be the one whose maintainer holds the key.
+
+Recommended: an Azure Key Vault key that never leaves the vault.
+
+```bash
+az keyvault key create --vault-name <vault> --name faic-signing --kty EC-HSM --curve P-256 --ops sign verify
+```
+
+```bash
+az keyvault key download --vault-name <vault> --name faic-signing --encoding PEM --file faic-signing.pub.pem
+```
+
+```bash
+node scripts/sign.js pubkey faic-signing.pub.pem
+```
+
+Or a local key, kept outside the repository and backed up:
+
+```bash
+node scripts/sign.js keygen <folder outside the repo>/faic-signing.pem
+```
+
+Paste the printed public key into `TRUSTED_KEYS`. To rotate, add the new key, release with the old one, then sign with the new one and remove the old key in a later release.
 
 ### Releasing a new version
 
@@ -416,9 +451,10 @@ Installed apps (1.7.0 and later) pick up every new release by themselves (`src/u
 
 1. Bump the number in `companion/src/app/controller.js` (`VERSION`) and, if the addon changed, in `addon/ForeverAICompanion/ForeverAICompanion.toc`. If Blizzard raised the game's interface number, update `## Interface:` in the toc too, or WoW will treat the addon as out of date.
 2. `npm test` and `npm run build`.
-3. On GitHub, **Releases → Draft a new release**, create the tag **`v` + the exact `VERSION`** (for example `v1.7.0`) and attach `dist/ForeverAICompanion.exe` with that exact name. Don't mark it as a pre-release (pre-releases are not offered to players). The README's download link and the in-app updater always use the latest release.
+3. Sign the exe. The signature covers its name, `VERSION`, size and SHA-256, so it can't be reused for another file or version. With a local key: `node scripts/sign.js release dist/ForeverAICompanion.exe --key <key.pem>`. With Key Vault: `node scripts/sign.js digest release dist/ForeverAICompanion.exe`, then `az keyvault key sign --vault-name <vault> --name faic-signing --algorithm ES256 --digest <digest>`, then `node scripts/sign.js attach release dist/ForeverAICompanion.exe <signature>`.
+4. On GitHub, **Releases → Draft a new release**, create the tag **`v` + the exact `VERSION`** (for example `v1.7.0`) and attach `dist/ForeverAICompanion.exe` and `dist/ForeverAICompanion.exe.sig` with those exact names. Don't mark it as a pre-release (pre-releases are not offered to players). The README's download link and the in-app updater always use the latest release.
 
 ### To do
 
-- **Code signing** for the `.exe` to remove the SmartScreen warning (a code signing certificate or Azure Trusted Signing).
+- **Code signing** for the `.exe` to remove the SmartScreen warning (a code signing certificate or Azure Trusted Signing). This is separate from the update signature above, which the app checks itself.
 - Ask Blizzard (a support ticket or the official UI & Macro forum) whether this kind of companion app is allowed, and update [Blizzard's rules and your own risk](#blizzards-rules-and-your-own-risk) with the answer.

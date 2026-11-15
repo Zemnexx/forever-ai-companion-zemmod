@@ -21,7 +21,8 @@ export const legacyVoiceInboxDir = () => path.join(roamingDir(), LEGACY_NAME, 't
 // versions of the voice passed them through, so they may surround the message.
 // "AZIA" is the prefix used before the rename.
 const MESSAGE = /(?:FAIC|AZIA):([^:\s]+):(\d+)\/(\d+):([A-Za-z0-9+/=\s]*)/;
-const LOOKS_LIKE_MESSAGE = /(?:FAIC|AZIA):/;
+// The addon's voice test (/ia test-voice): logged so the player can see it arrived.
+const VOICE_TEST = /^\s*FAIC-VOICE-(?:TEST|LONG) /;
 
 function decodeParts(parts) {
   try {
@@ -73,8 +74,11 @@ export function startVoiceInbox({
       try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
       fs.rmSync(file, { force: true });
       try {
-        if (!LOOKS_LIKE_MESSAGE.test(text)) {
-          log(`Text received by the voice (not a question, ${text.length} characters): ${text.slice(0, 60)}`);
+        // Any program can speak with the voice: text that is not ours is
+        // dropped without logging it (current engines never deliver it).
+        if (VOICE_TEST.test(text)) {
+          log(`Voice test received (${text.length} characters): ${text.trim().split(/\s+/).slice(0, 2).join(' ')}`);
+          continue;
         }
         const payload = assembler.add(text);
         if (payload) onPayload(payload);

@@ -21,18 +21,22 @@ import {
 import { ttsEngineSource } from '../assets.js';
 import {
   ENGINE_DLL, compileEngine, installVoiceMachineWide, isLegacyEngineRegistered, isLegacyVoiceVisible, isVoiceVisible,
-  uninstallVoiceMachineWide,
+  machineEngineState, uninstallVoiceMachineWide,
 } from '../tts-voice.js';
 import { removeLegacyInstallDir } from '../migrate.js';
 import * as sys from './system.js';
 import { err, getAppLang, setAppLang, t } from '../i18n.js';
 import { currentGuide, guideFreshness, startGuideUpdates } from '../guide.js';
 import { createUpdater } from '../updater.js';
+import { TRUSTED_KEYS } from '../signing.js';
 
 export const VERSION = '1.9.0';
 
 // Where the silent voice's DLL lives (it is loaded by the game while in use).
+// Only programs running as the player load this copy (per-user registration);
+// elevated ones load an admin-only copy under Program Files (see tts-voice.js).
 const voiceDll = () => path.join(sys.isPackaged() ? sys.installDir() : env.dataDir, ENGINE_DLL);
+const engineSourceHash = () => crypto.createHash('sha256').update(ttsEngineSource()).digest('hex');
 // How often to check whether the game was closed, while the addon under the
 // project's previous name is still in the AddOns folder.
 const LEGACY_ADDON_CHECK_MS = 10000;
@@ -63,8 +67,10 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   ensureKnowledgeDir();
 
   // Updates from GitHub releases: only the installed app (or a test server).
+  // Without a trusted signing key built in, nothing could be verified: off.
   const updateApi = envVar('UPDATE_API');
-  const updater = sys.isPackaged() || updateApi ? createUpdater({
+  if ((sys.isPackaged() || updateApi) && !TRUSTED_KEYS.length) log('Updates are off: this copy has no update signing key built in.');
+  const updater = (sys.isPackaged() || updateApi) && TRUSTED_KEYS.length ? createUpdater({
     currentVersion: VERSION,
     dir: path.join(env.dataDir, 'updates'),
     log,
@@ -207,7 +213,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   async function refreshVoiceDll(force = false) {
     const dll = voiceDll();
     const source = ttsEngineSource();
-    const hash = crypto.createHash('sha256').update(source).digest('hex');
+    const hash = engineSourceHash();
     const hashFile = `${dll}.source-sha256`;
     const current = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, 'utf8') : null;
     if (!force && current === hash && fs.existsSync(dll)) return dll;
@@ -280,7 +286,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
           source: guide.source,
           age: guideFreshness(guide).age,
           stale: guideFreshness(guide).stale,
-          autoUpdate: Boolean(cfg.guideUrl),
+          autoUpdate: Boolean(cfg.guideUrl && TRUSTED_KEYS.length),
         } : null,
         update: updater ? updater.state() : null,
       };
@@ -368,14 +374,19 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
       // window offers to update it (one administrator prompt).
       const legacyName = !active && await isLegacyVoiceVisible();
       const legacyEngine = (active || legacyName) && await isLegacyEngineRegistered();
-      const legacy = legacyName || legacyEngine;
-      return { supported: true, active: active || legacyName, legacy, dll: fs.existsSync(voiceDll()) };
+      // Registered machine-wide from the user's own folder (installs before
+      // the protected copy), or from an older engine: one prompt updates it.
+      const machine = active && !legacyEngine ? await machineEngineState(engineSourceHash()).catch(() => 'ok') : 'ok';
+      const unprotected = machine === 'outside' || machine === 'stale';
+      const legacy = legacyName || legacyEngine || unprotected;
+      const legacyReason = legacyName || legacyEngine ? 'name' : unprotected ? 'protect' : null;
+      return { supported: true, active: active || legacyName, legacy, legacyReason, dll: fs.existsSync(voiceDll()) };
     },
 
     // Compiles the silent voice and registers it (one administrator prompt).
     async installVoice() {
       const dll = await refreshVoiceDll(true);
-      await installVoiceMachineWide(dll, env.dataDir);
+      await installVoiceMachineWide(dll, env.dataDir, { sourceHash: engineSourceHash() });
       log('Invisible voice enabled.');
       // The old install folder was kept only for the previous voice's DLL.
       if (sys.isPackaged()) removeLegacyInstallDir(sys.legacyInstallDir());

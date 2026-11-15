@@ -6,9 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { applyPreset, loadConfig } from '../src/config.js';
 import {
-  CODEX_DISABLE, codexArgs, friendlyCodexError, parseCodexEvents, parseLoginStatus, shellQuote,
+  CODEX_DISABLE, CODEX_MUST_DISABLE, codexArgs, friendlyCodexError, parseCodexEvents, parseLoginStatus, rejectedCodexFeatures, shellQuote,
 } from '../src/codex.js';
-import { ask, canSearch } from '../src/providers.js';
+import { ask, callWithoutFeatures, canSearch } from '../src/providers.js';
 import { runInLang } from '../src/i18n.js';
 
 test('Codex runs as a plain chat model with our instructions', () => {
@@ -121,4 +121,29 @@ test('asking through Codex end to end (fake codex in a folder with spaces)', { s
   await assert.rejects(runInLang('en', () => ask(cfg, 'Eres Fizzi.', messages, {})), /usage limit/);
   // Inside a Spanish player's request, the same error is in Spanish.
   await assert.rejects(runInLang('es', () => ask(cfg, 'Eres Fizzi.', messages, {})), /límite de uso de tu plan/);
+});
+
+test('a Codex that no longer knows a feature: only that one is dropped, never the safety ones', async () => {
+  const unknown = (name) => Object.assign(new Error('codex exited with 2'), { stderr: `Error: unknown feature \`${name}\`` });
+  const fakeCodex = (rejects) => {
+    const calls = [];
+    return { calls, call: async (list) => { calls.push(list); const bad = list.find((f) => rejects.includes(f)); if (bad) throw unknown(bad); return 'ok'; } };
+  };
+  const a = fakeCodex(['goals', 'tool_suggest']);
+  assert.equal(await callWithoutFeatures(a.call), 'ok');
+  const last = a.calls.at(-1);
+  assert.ok(!last.includes('goals') && !last.includes('tool_suggest'));
+  for (const f of CODEX_MUST_DISABLE) assert.ok(last.includes(f), `${f} still turned off`);
+  assert.equal(last.length, CODEX_DISABLE.length - 2, 'nothing else was dropped');
+
+  // Codex stops accepting shell_tool (renamed?): no retry with commands possibly on.
+  const b = fakeCodex(['shell_tool']);
+  await assert.rejects(runInLang('en', () => callWithoutFeatures(b.call)), /safety setting.*shell_tool/);
+  assert.equal(b.calls.length, 1);
+  // An "unknown feature" error that names nothing we sent: fail closed too.
+  await assert.rejects(runInLang('en', () => callWithoutFeatures(async () => { throw Object.assign(new Error('x'), { stderr: 'unknown feature flags in config' }); })), /safety setting/);
+  // Other errors pass through untouched.
+  await assert.rejects(callWithoutFeatures(async () => { throw new Error('usage limit'); }), /usage limit/);
+  assert.equal(rejectedCodexFeatures('all good'), null);
+  assert.deepEqual(rejectedCodexFeatures("error: unknown feature 'image_generation'"), ['image_generation']);
 });

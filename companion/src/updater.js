@@ -1,15 +1,21 @@
 // Updates from inside the app: checks the project's latest GitHub release,
 // downloads ForeverAICompanion.exe and checks it (size, SHA-256 published by
-// GitHub, Windows executable). Installing it is just running it: the new exe
+// GitHub, Windows executable) and, before anything runs it, its signature:
+// ForeverAICompanion.exe.sig, made with the project's key over the file's
+// name, version, size and SHA-256 (see signing.js). A release without a valid
+// signature is never installed. Installing it is just running it: the new exe
 // closes this one, replaces it in the install folder and starts (see
 // app/main.js selfInstall), keeping all data.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { RELEASE_REPO } from './config.js';
+import { TRUSTED_KEYS, UPDATE_CONTEXT, readSmall, updateFields, verifySignature } from './signing.js';
 
-export const REPO = 'lucasmenares/forever-ai-companion';
+export const REPO = RELEASE_REPO;
 export const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 export const ASSET_NAME = 'ForeverAICompanion.exe';
+export const SIG_ASSET_NAME = `${ASSET_NAME}.sig`;
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
 const MAX_BYTES = 400 * 1024 * 1024;
 
@@ -31,6 +37,7 @@ export function parseRelease(json, { allowUrl = (u) => u.startsWith(DOWNLOAD_PRE
   if (!json || json.draft || json.prerelease || !json.tag_name) return null;
   const asset = (json.assets || []).find((a) => a.name === ASSET_NAME);
   if (!asset || !allowUrl(String(asset.browser_download_url || ''))) return null;
+  const sig = (json.assets || []).find((a) => a.name === SIG_ASSET_NAME);
   const digest = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest || '');
   return {
     version: String(json.tag_name).replace(/^v/i, ''),
@@ -38,14 +45,17 @@ export function parseRelease(json, { allowUrl = (u) => u.startsWith(DOWNLOAD_PRE
     url: asset.browser_download_url,
     size: Number(asset.size) || null,
     sha256: digest ? digest[1].toLowerCase() : null,
+    // null: the release is not signed, so it is not offered.
+    sigUrl: sig && allowUrl(String(sig.browser_download_url || '')) ? sig.browser_download_url : null,
   };
 }
 
 // Checks every few hours. state() feeds the app window; onAvailable(version)
 // is called once per new version (tray notice).
+// trustedKeys: public keys allowed to sign releases (signing.TRUSTED_KEYS).
 export function createUpdater({
   currentVersion, dir, log = () => {}, fetchImpl = fetch, apiUrl = RELEASES_API,
-  allowUrl, intervalMs = 6 * 3600000, onAvailable = () => {},
+  allowUrl, intervalMs = 6 * 3600000, onAvailable = () => {}, trustedKeys = TRUSTED_KEYS,
 }) {
   const state = { status: 'idle', current: currentVersion, latest: null, notesUrl: null, progress: 0, error: null, checkedAt: null };
   let release = null;
@@ -53,6 +63,7 @@ export function createUpdater({
   let checking = null;
   let downloading = null;
   let announced = null;
+  let unsignedNoted = null;
 
   // Old downloads (the update already installed or replaced by a newer one).
   try {
@@ -72,8 +83,13 @@ export function createUpdater({
         });
         if (res.status === 404) throw new Error('no releases published');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const found = parseRelease(await res.json(), allowUrl ? { allowUrl } : undefined);
+        let found = parseRelease(await res.json(), allowUrl ? { allowUrl } : undefined);
         state.checkedAt = new Date().toISOString();
+        if (found && !found.sigUrl && compareVersions(found.version, currentVersion) > 0) {
+          if (unsignedNoted !== found.version) log(`Version ${found.version} was published without a signature: it is not offered.`);
+          unsignedNoted = found.version;
+          found = null;
+        }
         if (!found || compareVersions(found.version, currentVersion) <= 0) {
           release = null;
           state.status = 'latest';
@@ -104,7 +120,7 @@ export function createUpdater({
   function download() {
     if (ready && fs.existsSync(ready)) return Promise.resolve(ready);
     if (downloading) return downloading;
-    if (!release) return Promise.reject(new Error('no update available'));
+    if (!release?.sigUrl) return Promise.reject(new Error('no update available'));
     const rel = release;
     downloading = (async () => {
       state.status = 'downloading';
@@ -138,11 +154,19 @@ export function createUpdater({
         if (!head || head.toString('latin1') !== 'MZ') throw new Error('the download is not a Windows program');
         const sha = hash.digest('hex');
         if (rel.sha256 && sha !== rel.sha256) throw new Error('the download does not match the published file (SHA-256)');
+        // Authenticity: signed by this project's key, for this exact file and version.
+        const sigRes = await fetchImpl(rel.sigUrl, { headers: { 'user-agent': 'ForeverAICompanion' }, signal: AbortSignal.timeout(20000) });
+        if (!sigRes.ok) throw new Error(`signature: HTTP ${sigRes.status}`);
+        const signature = await readSmall(sigRes);
+        const fields = updateFields({ file: ASSET_NAME, version: rel.version, size: got, sha256: sha });
+        if (!verifySignature(UPDATE_CONTEXT, fields, signature, trustedKeys)) {
+          throw new Error('the download is not signed with this project\'s key');
+        }
         fs.renameSync(tmp, target);
         ready = target;
         state.progress = 100;
         state.status = 'ready';
-        log(`Update ${rel.version} downloaded and verified${rel.sha256 ? ' (SHA-256)' : ''}.`);
+        log(`Update ${rel.version} downloaded and verified (signature${rel.sha256 ? ', SHA-256' : ''}).`);
         return target;
       } catch (e) {
         fs.rmSync(tmp, { force: true });

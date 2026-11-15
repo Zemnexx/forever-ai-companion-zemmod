@@ -494,6 +494,7 @@ const I18N = {
     'voice.fair': 'Both options use normal Windows and game features: they don\'t modify WoW, don\'t read its memory and don\'t play for you.',
     'voice.legacyTitle': 'Update invisible sending',
     'voice.legacyText': 'Your invisible sending was set up under the app’s previous name. It keeps working, but click <b>Update invisible sending</b> to switch it to “ForeverAICompanion”. Windows will ask for permission once; then restart WoW.',
+    'voice.protectText': 'This version keeps the silent voice’s file in a protected Windows folder (Program Files), where other programs can’t replace it. Your invisible sending keeps working, but click <b>Update invisible sending</b> to move it there. Windows will ask for permission once; then restart WoW.',
     'voice.hint': 'Windows will ask for permission: click Yes',
     'voice.onRestart': 'Invisible sending is on. Restart the game',
     'voice.onRestartText': 'Close WoW completely and open it again so it starts using it.',
@@ -805,6 +806,7 @@ const I18N = {
     'voice.fair': 'Los dos caminos usan funciones normales de Windows y del juego: no modifican WoW, no leen su memoria y no juegan por ti.',
     'voice.legacyTitle': 'Actualiza el envío invisible',
     'voice.legacyText': 'Tu envío invisible se configuró con el nombre anterior de la app. Sigue funcionando, pero pulsa <b>Actualizar envío invisible</b> para cambiarlo a «ForeverAICompanion». Windows pedirá permiso una vez; luego reinicia WoW.',
+    'voice.protectText': 'Esta versión guarda el archivo de la voz silenciosa en una carpeta protegida de Windows (Archivos de programa), donde otros programas no pueden reemplazarlo. Tu envío invisible sigue funcionando, pero pulsa <b>Actualizar envío invisible</b> para moverlo ahí. Windows pedirá permiso una vez; luego reinicia WoW.',
     'voice.hint': 'Windows te pedirá permiso: pulsa Sí',
     'voice.onRestart': 'Envío invisible activado. Reinicia el juego',
     'voice.onRestartText': 'Cierra WoW por completo y vuelve a abrirlo para que lo use.',
@@ -1307,7 +1309,7 @@ const VIEWS = {
           ])}
         </div>
         <p class="small faint" style="margin-top:14px">${t('voice.fair')}</p>
-        ${legacy ? `<div style="margin-top:14px">${callout('warn', t('voice.legacyTitle'), t('voice.legacyText'))}</div>` : ''}
+        ${legacy ? `<div style="margin-top:14px">${callout('warn', t('voice.legacyTitle'), voice.legacyReason === 'protect' ? t('voice.protectText') : t('voice.legacyText'))}</div>` : ''}
         ${voiceMsg ? `<div style="margin-top:14px">${voiceMsg}</div>` : ''}`,
       next,
       hint: (choice === 'on' && !on) || legacy ? t('voice.hint') : '',

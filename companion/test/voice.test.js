@@ -10,7 +10,7 @@ import { createAssembler, startVoiceInbox } from '../src/voice-inbox.js';
 import { ttsEngineSource } from '../src/assets.js';
 import {
   ENGINE_CLASS, ENGINE_CLSID, ENGINE_DLL, LEGACY_ENGINE_CLASS, LEGACY_ENGINE_DLL, LEGACY_VOICE_NAME, VOICE_NAME,
-  isLegacyEngine, machineRegFile, machineUnregFile,
+  elevatedBootstrap, elevatedScript, isLegacyEngine, machineDll, machineEngineVerdict, machineRegFile, machineUnregFile, psQuote,
 } from '../src/tts-voice.js';
 
 test('Lua base64 matches the standard encoding', () => {
@@ -119,7 +119,7 @@ test('without the silent voice the addon falls back to the strip', () => {
 
 test('the voice is called ForeverAICompanion; the one from before the rename is replaced', () => {
   assert.equal(VOICE_NAME, 'ForeverAICompanion');
-  const reg = machineRegFile('C:\\Users\\x\\AppData\\Local\\Programs\\ForeverAICompanion\\ForeverAICompanionTts.dll');
+  const reg = machineRegFile();
   assert.match(reg, new RegExp(`\\[-HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Speech\\\\Voices\\\\Tokens\\\\${LEGACY_VOICE_NAME}\\]`), 'installing removes the old token');
   assert.match(reg, /\[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\ForeverAICompanion\]/);
   assert.match(reg, /"Name"="ForeverAICompanion"/);
@@ -130,7 +130,9 @@ test('the voice is called ForeverAICompanion; the one from before the rename is 
   assert.match(reg, new RegExp(`CLSID\\\\${clsid}\\]\\r\\n@="ForeverAICompanion\\.Tts\\.Engine"`));
   assert.match(reg, /"Class"="ForeverAICompanion\.Tts\.Engine"/);
   assert.match(reg, /"Assembly"="ForeverAICompanionTts, Version=1\.0\.0\.0/);
-  assert.match(reg, /"CodeBase"="file:\/\/\/C:\/Users\/x\/AppData\/Local\/Programs\/ForeverAICompanion\/ForeverAICompanionTts\.dll"/);
+  // Elevated programs load this copy: it lives in the admin-only folder, never the user's.
+  assert.match(reg, /"CodeBase"="file:\/\/\/C:\/Program Files\/ForeverAICompanion\/ForeverAICompanionTts\.dll"/);
+  assert.doesNotMatch(reg, /AppData/i);
   assert.ok(!reg.includes(LEGACY_ENGINE_CLASS) && !reg.includes(LEGACY_ENGINE_DLL));
   const unreg = machineUnregFile();
   assert.match(unreg, /Tokens\\ForeverAICompanion\]/);
@@ -186,6 +188,65 @@ test('the app reads the voice inbox and, while it exists, the one from before th
     inbox.poll();
     assert.deepEqual(got, ['{"id":"n1"}', '{"id":"o1"}']);
     assert.deepEqual(fs.readdirSync(legacyDir), [], 'read messages are removed');
+  } finally {
+    inbox.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+test('the machine-wide engine is an admin-only, hash-checked copy', () => {
+  const script = elevatedScript({ mode: 'install', sourceDll: 'C:\\Users\\O’Brien\\AppData\\Local\\Programs\\ForeverAICompanion\\ForeverAICompanionTts.dll', dllSha256: 'AB'.repeat(32), sourceHash: 'cd'.repeat(32) });
+  assert.match(script, /icacls\.exe'\) \$dir \/inheritance:r \/grant:r '\*S-1-5-32-544:\(OI\)\(CI\)F' '\*S-1-5-18:\(OI\)\(CI\)F' '\*S-1-5-32-545:\(OI\)\(CI\)RX'/, 'users can only read and run it');
+  assert.match(script, /Get-FileHash -LiteralPath \$new -Algorithm SHA256\)\.Hash -ne '(AB){32}'\) \{[^}]*exit 22 \}/, 'the copy is checked before it is used');
+  assert.ok(script.indexOf('exit 22') < script.indexOf("reg.exe') import"), 'registered only after the check');
+  assert.match(script, /if \(IsLink \$dir\) \{ exit 21 \}/, 'never through a link');
+  assert.ok(script.includes("'C:\\Users\\O’’Brien\\"), 'typographic quotes cannot end the literal');
+  assert.ok(script.includes('ForeverAICompanionTts.dll.source-sha256') || script.includes('$dll.source-sha256'));
+  assert.match(script, /"CodeBase"="file:\/\/\/C:\/Program Files\/ForeverAICompanion\/ForeverAICompanionTts\.dll"/);
+  assert.equal(psQuote("a'b‘c"), "'a''b‘‘c'");
+
+  const un = elevatedScript({ mode: 'uninstall' });
+  assert.match(un, /delete 'HKLM\\SOFTWARE\\Classes\\CLSID\\\{DE6988DD/);
+  assert.match(un, /Remove-Item -LiteralPath \$dir -Recurse/);
+
+  // The UAC launch stays under ShellExecuteEx's ~2048 character limit and runs only the bytes it hashed.
+  const boot = elevatedBootstrap('C:\\Users\\Ana Pérez Rodríguez\\AppData\\Roaming\\ForeverAICompanion\\forever-ai-companion-voice-1731700000000.ps1', 'f'.repeat(64));
+  assert.ok(boot.length < 1800, `bootstrap is ${boot.length} characters`);
+  const decoded = Buffer.from(boot, 'base64').toString('utf16le');
+  assert.match(decoded, /ReadAllBytes/);
+  assert.match(decoded, /if\(\$h -ne 'f{64}'\)\{exit 30\}/);
+  assert.match(decoded, /ScriptBlock\]::Create\(\[Text\.Encoding\]::UTF8\.GetString\(\$b\)\)/);
+});
+
+test('installs that registered the user-folder DLL machine-wide are offered the update', () => {
+  const marker = (v) => () => v;
+  const none = () => { throw new Error('missing'); };
+  const prot = `file:///${machineDll().replace(/\\/g, '/')}`;
+  const userCopy = 'file:///C:/Users/x/AppData/Local/Programs/ForeverAICompanion/ForeverAICompanionTts.dll';
+  assert.equal(machineEngineVerdict({ codeBase: userCopy }, { sourceHash: 'h1', readMarker: marker('h1') }), 'outside');
+  assert.equal(machineEngineVerdict({ codeBase: prot }, { sourceHash: 'h1', readMarker: marker('h1\n') }), 'ok');
+  assert.equal(machineEngineVerdict({ codeBase: prot.toUpperCase().replace('FILE:', 'file:') }, { sourceHash: 'h1', readMarker: marker('h1') }), 'ok', 'paths compare case-insensitively');
+  assert.equal(machineEngineVerdict({ codeBase: prot }, { sourceHash: 'h2', readMarker: marker('h1') }), 'stale');
+  assert.equal(machineEngineVerdict({ codeBase: prot }, { sourceHash: 'h2', readMarker: none }), 'stale');
+  assert.equal(machineEngineVerdict(null, { sourceHash: 'h1', readMarker: none }), 'none');
+});
+
+test('the voice only keeps the app\'s own messages and never logs what others speak', async () => {
+  const cs = ttsEngineSource();
+  assert.match(cs, /if \(!IsOurs\(all\)\) return 0;/, 'foreign text is dropped before anything is written');
+  assert.doesNotMatch(cs, /Substring\(0, 24\)/, 'no spoken text in the engine log');
+  assert.match(cs, /FileAttributes\.ReparsePoint/, 'no writes through planted links');
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-voice-'));
+  const dir = path.join(root, 'tts-inbox');
+  const logs = [];
+  const inbox = startVoiceInbox({ dir, legacyDirs: [], intervalMs: 1000000, onPayload: () => {}, log: (m) => logs.push(m) });
+  try {
+    fs.writeFileSync(path.join(dir, '1.txt'), 'Your bank PIN is 4321, reading it aloud');
+    fs.writeFileSync(path.join(dir, '2.txt'), 'FAIC-VOICE-TEST volume0 1731700000');
+    inbox.poll();
+    assert.ok(!logs.some((l) => /PIN|4321|aloud/.test(l)), logs.join('\n'));
+    assert.ok(logs.some((l) => /Voice test received/.test(l)), 'the addon\'s own voice test still shows up');
+    assert.deepEqual(fs.readdirSync(dir), [], 'everything read is removed');
   } finally {
     inbox.stop();
     fs.rmSync(root, { recursive: true, force: true });

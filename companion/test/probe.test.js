@@ -22,6 +22,7 @@ test('probe monitor sees which files the game wrote, and how fast', async () => 
   fs.writeFileSync(macros, 'VER 3 0000 "OTRA" "INV"\nEND\n');
 
   const monitor = startProbeMonitor({ wowDir: wow, intervalMs: 50 });
+  monitor.activate(); // the addon's "start recording" request
   try {
     const t = Math.floor(Date.now() / 1000);
     // The "game" writes two of the channels right away; the macro never.
@@ -66,6 +67,7 @@ test('the probe still recognizes an addon from before the rename', async () => {
   fs.writeFileSync(config, 'SET gxMaximize "1"\n');
   fs.writeFileSync(addons, `${LEGACY_NAME}_S50: enabled\n`);
   const monitor = startProbeMonitor({ wowDir: wow, intervalMs: 50 });
+  monitor.activate();
   try {
     await sleep(100);
     fs.writeFileSync(config, 'SET gxMaximize "1"\nSET aziaProbe "AZIA-PROBE-77"\n');
@@ -77,6 +79,70 @@ test('the probe still recognizes an addon from before the rename', async () => {
     assert.equal(list?.slotDisabled, true);
   } finally {
     monitor.stop();
+    fs.rmSync(wow, { recursive: true, force: true });
+  }
+});
+
+test('the probe monitor is idle until a test starts, and stops by itself afterwards', async () => {
+  const wow = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-probe-'));
+  fs.mkdirSync(path.join(wow, 'Logs'), { recursive: true });
+  fs.mkdirSync(path.join(wow, 'WTF'), { recursive: true });
+  const chat = path.join(wow, 'Logs', 'WoWChatLog.txt');
+  const config = path.join(wow, 'WTF', 'Config.wtf');
+  fs.writeFileSync(chat, 'old chat line\n'.repeat(1000));
+  fs.writeFileSync(config, 'SET a "1"\n');
+  const reads = [];
+  const realRead = fs.readSync;
+  fs.readSync = (fd, buf, off, len, pos) => { reads.push(len); return realRead(fd, buf, off, len, pos); };
+  const monitor = startProbeMonitor({ wowDir: wow, intervalMs: 20, activeMs: 300 });
+  try {
+    // No test running: the game's files are not even opened.
+    fs.appendFileSync(chat, 'FAIC-PROBE-1 private chat\n');
+    await sleep(120);
+    assert.equal(monitor.active(), false);
+    assert.deepEqual(reads, []);
+    assert.deepEqual(monitor.events, []);
+
+    monitor.activate();
+    assert.equal(monitor.active(), true);
+    await sleep(40);
+    const line = 'You whisper: FAIC-PROBE-42\n';
+    fs.appendFileSync(chat, line);
+    await sleep(120);
+    assert.deepEqual(monitor.events.map((e) => e.tokens), [['42']]);
+    assert.ok(reads.every((n) => n <= line.length), `only what was added to the chat log is read (${reads})`);
+
+    await sleep(400);
+    assert.equal(monitor.active(), false, 'stopped after activeMs');
+    const before = reads.length;
+    fs.appendFileSync(chat, 'FAIC-PROBE-43\n');
+    await sleep(100);
+    assert.equal(reads.length, before);
+  } finally {
+    fs.readSync = realRead;
+    monitor.stop();
+    fs.rmSync(wow, { recursive: true, force: true });
+  }
+});
+
+test('the addon\'s "start recording" request turns the monitor on and is answered by the app, not the AI', async () => {
+  const { loadConfig, wowPaths } = await import('../src/config.js');
+  const { install } = await import('../src/install.js');
+  const { handleRequest } = await import('../src/watcher.js');
+  const wow = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-wow-'));
+  fs.mkdirSync(path.join(wow, 'Interface', 'AddOns'), { recursive: true });
+  const cfg = { ...loadConfig(path.join(os.tmpdir(), 'no-config.json')), wowDir: wow, slots: 2, signals: 3, provider: 'nope' };
+  install(cfg, { log: () => {}, resetState: false });
+  let activated = 0;
+  const probeMonitor = { activate: () => { activated++; }, active: () => true, scan: () => {}, events: [] };
+  const state = { nextSig: 1, answers: [], processed: [] };
+  try {
+    const answer = await handleRequest({ id: 'p1', question: 'Invisible channel test: start recording', probeStart: '123', lang: 'en' },
+      { cfg, paths: wowPaths(wow), state, system: '', save: () => {}, probeMonitor });
+    assert.equal(activated, 1);
+    assert.equal(answer.ok, true, 'no AI was asked (the provider "nope" does not exist)');
+    assert.match(answer.answer, /Recording/);
+  } finally {
     fs.rmSync(wow, { recursive: true, force: true });
   }
 });

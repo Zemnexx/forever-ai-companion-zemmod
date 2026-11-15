@@ -10,11 +10,20 @@
 //   build: 70938               (game build it describes)
 //   ---
 // (The first guides used Spanish keys "fecha" and "versionJuego": still accepted.)
+//
+// The guide goes into the AI's instructions, so a downloaded one is only used
+// when it is signed with the project's key (wow-forever.md.sig next to it,
+// see signing.js and scripts/sign.js): checked when downloaded and again
+// whenever it is read from disk. Without a trusted key, the app keeps the
+// guide built into it.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { foreverGuide } from './assets.js';
+import { GUIDE_CONTEXT, TRUSTED_KEYS, guideFields, readSmall, verifySignature } from './signing.js';
 
 export const GUIDE_FILE = 'wow-forever.md';
+export const GUIDE_SIG_FILE = `${GUIDE_FILE}.sig`;
 const MAX_BYTES = 200 * 1024;
 const MIN_BODY = 1000;
 // Older than this, the AI must double-check facts that may have changed.
@@ -47,13 +56,21 @@ export function validGuide(text) {
 
 const newer = (a, b) => (!b || a.meta.date > b.meta.date ? a : b);
 
-// The newest of: the downloaded guide, the one inside this app.
-export function currentGuide(dir) {
+// True when `bytes` (the guide file exactly as published) carry a valid signature.
+export function signedGuide(bytes, signature, trustedKeys = TRUSTED_KEYS) {
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  return verifySignature(GUIDE_CONTEXT, guideFields({ file: GUIDE_FILE, sha256 }), signature, trustedKeys);
+}
+
+// The newest of: the downloaded guide (only if signed), the one inside this app.
+export function currentGuide(dir, { trustedKeys = TRUSTED_KEYS } = {}) {
   const builtin = parseGuide(foreverGuide());
   let downloaded = null;
   try {
-    downloaded = validGuide(fs.readFileSync(path.join(dir, GUIDE_FILE), 'utf8'));
-  } catch { /* none yet */ }
+    const bytes = fs.readFileSync(path.join(dir, GUIDE_FILE));
+    const sig = fs.readFileSync(path.join(dir, GUIDE_SIG_FILE), 'utf8');
+    if (signedGuide(bytes, sig, trustedKeys)) downloaded = validGuide(bytes.toString('utf8'));
+  } catch { /* none yet, or no signature */ }
   if (downloaded) downloaded.source = 'descargada';
   if (builtin) builtin.source = 'incluida';
   return downloaded ? newer(downloaded, builtin) : builtin;
@@ -100,10 +117,15 @@ export function freshnessSection(guide, opts = {}) {
   return lines.join('\n');
 }
 
-// Downloads the published guide now and then. Keeps it only if it is valid and
-// newer than what the app already has. Returns { check(reason), stop() }.
-export function startGuideUpdates({ url, dir, log = () => {}, intervalMs = 6 * 3600000, fetchImpl = fetch, onUpdate = () => {} }) {
-  if (!url) return { check: async () => false, stop() {} };
+// Downloads the published guide now and then. Keeps it only if it is valid,
+// signed with a trusted key and newer than what the app already has.
+// sigUrl: its signature (default: the guide's address + ".sig").
+// Returns { check(reason), stop() }.
+export function startGuideUpdates({
+  url, sigUrl = url ? `${url}.sig` : null, dir, log = () => {}, intervalMs = 6 * 3600000, fetchImpl = fetch,
+  onUpdate = () => {}, trustedKeys = TRUSTED_KEYS,
+}) {
+  if (!url || !trustedKeys?.length) return { check: async () => false, stop() {} };
   const etagFile = path.join(dir, `${GUIDE_FILE}.etag`);
   let busy = null;
   let lastAt = 0;
@@ -114,14 +136,23 @@ export function startGuideUpdates({ url, dir, log = () => {}, intervalMs = 6 * 3
     const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(20000) });
     if (res.status === 304) return false;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const guide = validGuide(text);
+    if (Number(res.headers.get('content-length')) > MAX_BYTES) throw new Error('the downloaded file is not a valid guide');
+    // Exactly the bytes that were signed.
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const guide = validGuide(bytes.toString('utf8'));
     if (!guide) throw new Error('the downloaded file is not a valid guide');
-    const have = currentGuide(dir);
+    const sigRes = await fetchImpl(sigUrl, { signal: AbortSignal.timeout(20000) });
+    if (!sigRes.ok) throw new Error(`the guide has no signature (HTTP ${sigRes.status})`);
+    const signature = await readSmall(sigRes);
+    if (!signedGuide(bytes, signature, trustedKeys)) throw new Error('the guide is not signed with this project\'s key');
+    const have = currentGuide(dir, { trustedKeys });
     if (have && guide.meta.date <= have.meta.date) return false;
     fs.mkdirSync(dir, { recursive: true });
     const tmp = path.join(dir, `${GUIDE_FILE}.tmp`);
-    fs.writeFileSync(tmp, text);
+    const sigTmp = path.join(dir, `${GUIDE_SIG_FILE}.tmp`);
+    fs.writeFileSync(tmp, bytes);
+    fs.writeFileSync(sigTmp, signature);
+    fs.renameSync(sigTmp, path.join(dir, GUIDE_SIG_FILE));
     fs.renameSync(tmp, path.join(dir, GUIDE_FILE));
     const etag = res.headers.get('etag');
     if (etag) fs.writeFileSync(etagFile, etag);

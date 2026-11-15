@@ -7,8 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  codexAssetName, codexInstallState, codexSearchState, codexVersion, findCodex, installCodex, isDesktopApp, ownCodexExe,
-  pickCodexAsset, searchCodex, walkForCodex,
+  codexAssetName, codexInstallState, codexSearchState, codexVersion, findCodex, installCodex, isDesktopApp, isOpenAISignature,
+  ownCodexExe, pickCodexAsset, searchCodex, subjectOrganization, walkForCodex,
 } from '../src/codex.js';
 
 const touch = (file) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'x'); return file; };
@@ -39,7 +39,7 @@ test('Codex is found inside the open desktop app, which itself is never run', as
   assert.ok(!isDesktopApp(cli));
   const ran = [];
   const check = async (p) => { ran.push(p); return p === cli; };
-  const found = await searchCodex({ running: async () => [app], check, roots: [] });
+  const found = await searchCodex({ running: async () => [app], check, roots: [], verify: async () => true });
   assert.equal(found, cli);
   assert.ok(!ran.includes(app), 'the desktop app is never started');
   assert.equal(codexSearchState().status, 'found');
@@ -51,7 +51,7 @@ test('nothing found: the window is told so', async (t) => {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   touch(path.join(root, 'a', 'b', 'notes.txt'));
   const fakeOnly = touch(path.join(root, 'a', 'codex.exe')); // a file named codex.exe that isn't Codex
-  const found = await searchCodex({ running: async () => [], check: async () => false, roots: [[root, 4]] });
+  const found = await searchCodex({ running: async () => [], check: async () => false, roots: [[root, 4]], verify: async () => true });
   // A real Codex elsewhere on this PC (usual places) could still be found.
   if (found) assert.notEqual(found, fakeOnly);
   else assert.equal(codexSearchState().status, 'notfound');
@@ -86,6 +86,36 @@ function sandboxEnv(t) {
   });
   return home;
 }
+
+test('a file found by the search runs only if Windows says OpenAI signed it', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-sign-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const planted = touch(path.join(root, 'Downloads', 'codex.exe'));
+  const launcher = touch(path.join(root, 'share', 'codex.cmd'));
+  const odd = touch(path.join(root, 'codexsomething.exe'));
+  const real = touch(path.join(root, 'tools', 'codex', 'codex.exe'));
+  const ran = [];
+  const logs = [];
+  const found = await searchCodex({
+    running: async () => [odd], roots: [[root, 4]], log: (m) => logs.push(m),
+    verify: async (p) => p === real,
+    check: async (p) => { ran.push(p); return true; },
+  });
+  assert.equal(found, real);
+  assert.deepEqual(ran, [real], 'nothing else was started, not even with --version');
+  assert.ok(logs.some((l) => l.includes(planted) && /not signed by OpenAI/.test(l)));
+  assert.ok(!ran.includes(launcher), '.cmd launchers found on the disk are not run');
+
+  // Windows' answer for the real codex.exe 0.169.0 (npm @openai/codex-win32-x64).
+  const subject = 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, S=California, C=US';
+  assert.equal(subjectOrganization(subject), 'OpenAI OpCo, LLC');
+  assert.equal(isOpenAISignature({ status: 'Valid', subject }), true);
+  assert.equal(isOpenAISignature({ status: 'HashMismatch', subject }), false, 'tampered after signing');
+  assert.equal(isOpenAISignature({ status: 'NotSigned', subject: '' }), false);
+  assert.equal(isOpenAISignature({ status: 'Valid', subject: 'CN=OpenAI OpCo, O=Evil Corp, C=US' }), false, 'the organization must match, not the common name');
+  assert.equal(isOpenAISignature({ status: 'Valid', subject: 'CN=x, O="OpenAI OpCo, LLC Fans", C=US' }), false);
+  assert.equal(isOpenAISignature(null), false);
+});
 
 test('only the official, checkable Codex build is downloaded', () => {
   const asset = (name, over = {}) => ({ name, size: 10, digest: `sha256:${'a'.repeat(64)}`, browser_download_url: `https://github.com/openai/codex/releases/download/rust-v1/${name}`, ...over });
@@ -134,12 +164,15 @@ test('the app installs the official Codex when it is missing, verified', { skip:
 
   // A tampered download is refused and nothing is installed.
   published = release('b'.repeat(64));
-  await assert.rejects(installCodex({ fetchImpl, pickAsset }), /SHA-256/);
+  await assert.rejects(installCodex({ fetchImpl, pickAsset, verify: async () => true }), /SHA-256/);
   assert.equal(codexInstallState().status, 'error');
   assert.ok(!fs.existsSync(ownCodexExe()));
 
   published = release(sha);
-  const r = await installCodex({ fetchImpl, pickAsset });
+  // Right checksum but not signed by OpenAI: refused before it is installed or run.
+  await assert.rejects(installCodex({ fetchImpl, pickAsset, verify: async () => false }), /not signed by OpenAI/);
+  assert.ok(!fs.existsSync(ownCodexExe()));
+  const r = await installCodex({ fetchImpl, pickAsset, verify: async () => true });
   assert.equal(r.path, ownCodexExe());
   assert.equal(r.version, '9.9.9');
   assert.equal(codexInstallState().status, 'done');

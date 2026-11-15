@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { spawnArgs, visibleConsole } from './claude-code.js';
 import { t } from './i18n.js';
-import { installDir } from './app/system.js';
+import { installDir, powershell } from './app/system.js';
 
 const isWin = process.platform === 'win32';
 
@@ -168,7 +168,11 @@ export const codexInstallState = () => ({ ...installState });
 let installing = null;
 
 // Downloads, checks and installs Codex into this app's folder. Returns { path, version }.
-export function installCodex({ log = () => {}, fetchImpl = fetch, apiUrl = CODEX_RELEASES_API, tarExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), pickAsset = pickCodexAsset } = {}) {
+// verify: whether the unpacked program is signed by OpenAI (checked before it is installed or run).
+export function installCodex({
+  log = () => {}, fetchImpl = fetch, apiUrl = CODEX_RELEASES_API, tarExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'),
+  pickAsset = pickCodexAsset, verify = isSignedByOpenAI,
+} = {}) {
   if (installing) return installing;
   installing = (async () => {
     Object.assign(installState, { status: 'downloading', progress: 0, error: null });
@@ -207,6 +211,7 @@ export function installCodex({ log = () => {}, fetchImpl = fetch, apiUrl = CODEX
       });
       const exe = findExeMatching(out, 2, RELEASE_EXE)[0] || findExe(out, 2, ['codex.exe'])[0];
       if (!exe) throw new Error('codex.exe was not in the download');
+      if (!(await verify(exe))) throw new Error('the downloaded Codex is not signed by OpenAI');
 
       fs.mkdirSync(ownCodexDir(), { recursive: true });
       const target = ownCodexExe();
@@ -318,16 +323,28 @@ export const codexSearchState = () => ({ ...searchState });
 let searching = null;
 
 // Finds a working Codex anywhere on this PC. Resolves to its path or null.
-export function searchCodex({ log = () => {}, budgetMs = 60000, roots = null, running = runningCodexPaths, check = (p) => codexVersion(p, 8000) } = {}) {
+// Only programs signed by OpenAI (verify) are run, and npm's codex.cmd
+// launchers only in the places npm and pnpm put them.
+export function searchCodex({
+  log = () => {}, budgetMs = 60000, roots = null, running = runningCodexPaths, check = (p) => codexVersion(p, 8000),
+  verify = isSignedByOpenAI,
+} = {}) {
   if (searching) return searching;
   searching = (async () => {
     Object.assign(searchState, { status: 'searching', dirs: 0, path: null, runningApp: false, error: null });
     const tried = new Set();
-    const tryOne = async (file) => {
+    // launchers: whether a .cmd may run (only from the usual places).
+    const tryOne = async (file, { launchers = false } = {}) => {
       const k = file.toLowerCase();
       if (tried.has(k) || !fs.existsSync(file)) return null;
       tried.add(k);
-      if (isDesktopApp(file)) return null;
+      if (!isCliName(path.basename(file)) || isDesktopApp(file)) return null;
+      if (/\.cmd$/i.test(file)) {
+        if (!launchers) return null;
+      } else if (!(await verify(file))) {
+        log(`Codex search: skipped ${file} (not signed by OpenAI).`);
+        return null;
+      }
       return (await check(file)) ? file : null;
     };
     try {
@@ -343,7 +360,7 @@ export function searchCodex({ log = () => {}, budgetMs = 60000, roots = null, ru
         }
       }
       // 2. The usual places.
-      for (const [f] of codexCandidates(null)) { const ok = await tryOne(f); if (ok) return finish(ok, 'known place'); }
+      for (const [f] of codexCandidates(null)) { const ok = await tryOne(f, { launchers: true }); if (ok) return finish(ok, 'known place'); }
       // 3. The disks.
       const home = os.homedir();
       const walkRoots = roots || [
@@ -372,6 +389,37 @@ export function searchCodex({ log = () => {}, budgetMs = 60000, roots = null, ru
   })();
   return searching;
 }
+
+// --- Who signed a Codex file ------------------------------------------------
+// OpenAI signs its Windows builds (Authenticode, "OpenAI OpCo, LLC" through
+// Microsoft's code signing service). Files found by searching the PC are only
+// run when Windows confirms that signature, so a file that is merely named
+// codex.exe (a download, a USB stick, a network share) is never started.
+export const OPENAI_SIGNERS = ['OpenAI OpCo, LLC', 'OpenAI OpCo LLC', 'OpenAI, LLC', 'OpenAI, L.L.C.'];
+
+// The organization (O=) of a certificate subject such as
+// 'CN="OpenAI OpCo, LLC", O="OpenAI OpCo, LLC", L=San Francisco, C=US'.
+export function subjectOrganization(subject) {
+  const m = /(?:^|,\s*)O=(?:"((?:[^"]|"")*)"|([^,]*))/.exec(String(subject || ''));
+  return m ? (m[1] !== undefined ? m[1].replace(/""/g, '"') : m[2]).trim() : null;
+}
+
+export const isOpenAISignature = (sig) => Boolean(sig && sig.status === 'Valid' && OPENAI_SIGNERS.includes(subjectOrganization(sig.subject)));
+
+// Windows' verdict on a file's Authenticode signature: { status, subject } or null.
+export async function authenticodeSignature(file) {
+  if (!isWin) return null;
+  try {
+    const out = await powershell(`$s = Get-AuthenticodeSignature -LiteralPath $env:FAIC_FILE
+@{ status = [string]$s.Status; subject = [string]$s.SignerCertificate.Subject } | ConvertTo-Json -Compress`, { vars: { FILE: file }, timeout: 30000 });
+    const j = JSON.parse(out);
+    return { status: String(j.status || ''), subject: String(j.subject || '') };
+  } catch {
+    return null;
+  }
+}
+
+export const isSignedByOpenAI = async (file) => isOpenAISignature(await authenticodeSignature(file));
 
 // `codex login status`: "Logged in using ChatGPT" / "Not logged in" (exit 1).
 export function parseLoginStatus(text) {
@@ -405,6 +453,20 @@ export const CODEX_DISABLE = [
   'shell_tool', 'unified_exec', 'apps', 'plugins', 'image_generation', 'browser_use',
   'computer_use', 'view_image', 'skill_search', 'tool_suggest', 'goals', 'multi_agent', 'hooks',
 ];
+// The ones that would let Codex run commands, drive the browser or the
+// desktop, read local files or reach other accounts. These are never dropped:
+// if Codex stops accepting one, the question fails instead.
+export const CODEX_MUST_DISABLE = ['shell_tool', 'unified_exec', 'apps', 'plugins', 'browser_use', 'computer_use', 'view_image', 'hooks'];
+
+// The features a Codex "unknown feature" error names, or null if the error is
+// something else. An empty list: it could not be told which (fail closed).
+export function rejectedCodexFeatures(text) {
+  const s = String(text || '');
+  if (!/unknown feature/i.test(s)) return null;
+  const names = new Set();
+  for (const m of s.matchAll(/unknown feature(?:\s+(?:flag|name))?s?\s*[:=]?\s*[`'"]?([A-Za-z0-9_.-]+)/gi)) names.add(m[1]);
+  return [...names];
+}
 
 // TOML literal string ('...'): no escapes, so Windows paths work as they are.
 const tomlLiteral = (s) => `'${String(s).replace(/\\/g, '/').replace(/'/g, '')}'`;

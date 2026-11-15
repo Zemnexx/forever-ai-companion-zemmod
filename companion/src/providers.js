@@ -7,7 +7,8 @@ import { flattenPrompt } from './prompt.js';
 import { findClaudeCode, spawnArgs } from './claude-code.js';
 import { err, t } from './i18n.js';
 import {
-  CODEX_DISABLE, CODEX_MODELS, codexArgs, codexAuthStatus, findCodex, friendlyCodexError, parseCodexEvents, shellQuote,
+  CODEX_DISABLE, CODEX_MODELS, CODEX_MUST_DISABLE, codexArgs, codexAuthStatus, findCodex, friendlyCodexError, parseCodexEvents,
+  rejectedCodexFeatures, shellQuote,
 } from './codex.js';
 
 // Models that accept server-side refusal fallbacks (`fallbacks: "default"`).
@@ -199,6 +200,28 @@ async function claudeCode(cfg, system, messages) {
   return { text: json.result, model: used ? `${prettyModel(used)} · ${t('yourSubscription')}` : t('yourClaudeSubscription') };
 }
 
+// A newer Codex may no longer know a feature we turn off, and rejects the
+// whole call. Only the feature it names is dropped and the call retried; one
+// of CODEX_MUST_DISABLE, or an error that names nothing we sent, fails closed.
+export async function callWithoutFeatures(call, disable = CODEX_DISABLE) {
+  let list = [...disable];
+  for (;;) {
+    try {
+      return await call(list);
+    } catch (e) {
+      const named = rejectedCodexFeatures(`${e.stderr || ''} ${e.message}`);
+      if (!named) throw e;
+      const unsafe = named.find((f) => CODEX_MUST_DISABLE.includes(f)) || (named.some((f) => list.includes(f)) ? null : named[0] || '?');
+      if (unsafe) {
+        const failure = err('codexUnsafe', { feature: unsafe });
+        failure.stdout = '';
+        throw failure;
+      }
+      list = list.filter((f) => !named.includes(f));
+    }
+  }
+}
+
 // Codex only: it still offers its agent tools, so say they are not for this.
 const CODEX_NOTE = `## Tools
 Do not run commands or read or write files: nothing on this PC helps answer. Answer directly from the character data, the guide and, if allowed above, a web search.`;
@@ -230,13 +253,7 @@ async function codex(cfg, system, messages) {
   };
   let out;
   try {
-    try {
-      out = await call(CODEX_DISABLE);
-    } catch (e) {
-      // A newer Codex may have dropped one of the features we turn off.
-      if (!/unknown feature/i.test(`${e.stderr || ''} ${e.message}`)) throw e;
-      out = await call([]);
-    }
+    out = await callWithoutFeatures(call);
   } catch (e) {
     out = e.stdout;
     const parsed = parseCodexEvents(out);

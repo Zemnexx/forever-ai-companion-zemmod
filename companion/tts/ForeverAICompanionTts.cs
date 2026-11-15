@@ -6,10 +6,18 @@
 //   csc /target:library /out:ForeverAICompanionTts.dll ForeverAICompanionTts.cs
 // and registered as a COM class + a SAPI voice token (see src/tts-voice.js).
 // The class GUID never changes, so re-registering just updates the voice.
+//
+// The voice is listed system-wide, so any program can speak with it, and an
+// elevated one may load it too. Because of that:
+//  - only the app's own messages are handed over (requests and the addon's
+//    voice test); any other text is dropped and never written or logged;
+//  - nothing is written through a link (junction or symlink) planted in the
+//    data folder, which could send an elevated program's writes elsewhere.
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 [assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
@@ -37,18 +45,57 @@ namespace ForeverAICompanion.Tts
         static int counter;
         IntPtr token = IntPtr.Zero;
 
+        // Requests: "FAIC:<id>:<part>/<parts>:<base64>" ("AZIA" before the rename;
+        // older engines let the game's "Start"/"End" bookmarks through).
+        static readonly Regex Request = new Regex(
+            @"^\s*(?:Start)?\s*(?:FAIC|AZIA):[^:\s]{1,64}:\d{1,4}/\d{1,4}:[A-Za-z0-9+/=\s]*$",
+            RegexOptions.CultureInvariant);
+        // The addon's voice test (/ia test-voice): "FAIC-VOICE-TEST ..." / "FAIC-VOICE-LONG ...".
+        static readonly Regex VoiceTest = new Regex(
+            @"^\s*FAIC-VOICE-(?:TEST|LONG) [A-Za-z0-9 ]*$",
+            RegexOptions.CultureInvariant);
+        const int MaxText = 200000; // the game cuts one phrase at ~30 000 characters
+
+        static bool IsOurs(string text)
+        {
+            return text.Length <= MaxText && (Request.IsMatch(text) || VoiceTest.IsMatch(text));
+        }
+
         static string DataDir()
         {
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ForeverAICompanion");
         }
 
+        // A junction or symlink (or something that can't be checked).
+        static bool IsLink(string path)
+        {
+            try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+            catch { return true; }
+        }
+
+        // Creates `dir` when missing. null when it (or the data folder) is a link.
+        static string SafeDir(string dir)
+        {
+            string data = DataDir();
+            if (IsLink(data)) return null;
+            if (dir != data && IsLink(dir)) return null;
+            Directory.CreateDirectory(dir);
+            if (IsLink(data) || IsLink(dir)) return null;
+            return dir;
+        }
+
         // Diagnostics: %APPDATA%\ForeverAICompanion\tts-engine.log (small, rotated).
+        // Never the spoken text itself.
         static void Log(string msg)
         {
             try
             {
-                string file = Path.Combine(DataDir(), "tts-engine.log");
-                Directory.CreateDirectory(DataDir());
+                string dir = SafeDir(DataDir());
+                if (dir == null) return;
+                string file = Path.Combine(dir, "tts-engine.log");
+                if (IsLink(file)) return;
                 if (File.Exists(file) && new FileInfo(file).Length > 200000) File.Delete(file);
                 string proc = "?";
                 try { proc = System.Diagnostics.Process.GetCurrentProcess().ProcessName; } catch { }
@@ -119,7 +166,9 @@ namespace ForeverAICompanion.Tts
                     frag = Marshal.ReadIntPtr(frag, 0);
                 }
                 string all = sb.ToString();
-                Log("texto recibido: " + all.Length + " caracteres, empieza con: " + (all.Length > 24 ? all.Substring(0, 24) : all));
+                // Someone else's text: not ours to keep, not even in the log.
+                if (!IsOurs(all)) return 0;
+                Log("mensaje recibido: " + all.Length + " caracteres");
                 Deliver(all);
             }
             catch (Exception e)
@@ -133,8 +182,12 @@ namespace ForeverAICompanion.Tts
         static void Deliver(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
-            string dir = Path.Combine(DataDir(), "tts-inbox");
-            Directory.CreateDirectory(dir);
+            string dir = SafeDir(Path.Combine(DataDir(), "tts-inbox"));
+            if (dir == null)
+            {
+                Log("carpeta de entrada rechazada (es un enlace)");
+                return;
+            }
             string name = DateTime.UtcNow.Ticks.ToString("D20") + "-" + Interlocked.Increment(ref counter).ToString("D6");
             string tmp = Path.Combine(dir, name + ".tmp");
             File.WriteAllText(tmp, text, new UTF8Encoding(false));

@@ -6,12 +6,16 @@
 -- reports what the text-to-speech API offers. The companion app watches those
 -- files; after WAIT seconds the addon undoes its changes and sends the results
 -- through the normal channel, and the app answers with the verdict.
+--
+-- The app only watches those files while a test is running, so the test
+-- first asks it to start recording and runs the probes once it has answered.
 local _, ns = ...
 
 local Probe = {}
 ns.Probe = Probe
 
 local WAIT = 25
+local START_TIMEOUT = 60 -- seconds to wait for the app to start recording
 local MACRO = "FAICPROBE"
 local SLOT = "ForeverAICompanion_S50"
 local PREFIX = "FAICPROBE"
@@ -50,11 +54,41 @@ function Probe:Run()
     ns.UI:SetStatus("|cffff6060" .. L.PROBE_COMBAT .. "|r")
     return
   end
-  self.running = true
-  ns.UI:Show()
-  ns.UI:SetStatus(string.format(L.PROBE_STARTED, WAIT))
-
+  if ns.Core.working or ns.Uplink.busy then
+    ns.UI:SetStatus(L.WAIT_PREVIOUS)
+    return
+  end
   local token = tostring(time()) .. tostring(math.random(1000, 9999))
+  local id = ns.Core:Ask(L.PROBE_START_QUESTION, { probeStart = token })
+  if not id then return end
+  self.running = true
+  self.waiting = { id = id, token = token }
+  ns.UI:SetStatus(string.format(L.PROBE_STARTED, WAIT))
+  local waiting = self.waiting
+  C_Timer.After(START_TIMEOUT, function()
+    if Probe.waiting ~= waiting then return end
+    Probe.waiting = nil
+    Probe.running = false
+    ns.UI:SetStatus("|cffff6060" .. L.PROBE_NO_APP .. "|r")
+  end)
+end
+
+-- Core:ApplyInbox calls this for every answer that arrives: the app's answer
+-- to the start request means it is recording.
+function Probe:OnAnswer(id, ok)
+  local w = self.waiting
+  if not w or w.id ~= id then return end
+  self.waiting = nil
+  if not ok then
+    self.running = false
+    return
+  end
+  self:Start(w.token)
+end
+
+function Probe:Start(token)
+  local L = ns.L
+  ns.UI:SetStatus(string.format(L.PROBE_STARTED, WAIT))
   local marker = "FAIC-PROBE-" .. token
   local r = { token = token, actions = {}, results = {} }
   local function did(name, ok, err)

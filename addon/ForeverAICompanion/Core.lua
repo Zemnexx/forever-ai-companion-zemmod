@@ -284,6 +284,7 @@ end
 
 -- `extra`: additional request fields (used by the channel probe).
 -- `chatId`: chat the question belongs to (default: the open one).
+-- Returns the request id, or nil when nothing was sent.
 function Core:Ask(question, extra, chatId)
   -- Items (and spells, quests...) linked with shift-click go along with their
   -- full description; the question itself keeps just their "[Name]".
@@ -386,6 +387,7 @@ function Core:Ask(question, extra, chatId)
       ns.Live:OnSent()
     end)
   end)
+  return id
 end
 
 
@@ -393,6 +395,7 @@ function Core:ApplyInbox(inbox)
   if type(inbox) ~= "table" or type(inbox.answers) ~= "table" then return end
   local arrived = 0
   local toNotify = {}
+  local answered = {}
   local data = self:CharData()
   for _, a in ipairs(inbox.answers) do
     local entry, owner
@@ -401,6 +404,7 @@ function Core:ApplyInbox(inbox)
       entry.status = a.ok and "done" or "error"
       entry.answer = a.answer
       arrived = arrived + 1
+      answered[#answered + 1] = { id = a.id, ok = a.ok and true or false }
       -- Chats with news the player is not looking at: mark and notify.
       owner.updated = time()
       if owner.id ~= ns.db.currentChat or not ns.UI:IsShown() then
@@ -440,6 +444,10 @@ function Core:ApplyInbox(inbox)
     elseif ns.Button and ns.Button.Celebrate then
       ns.Button:Celebrate() -- answer in the open chat: no card, just the hop
     end
+  end
+  -- The channel test waits for the app's answer before it starts.
+  if ns.Probe and ns.Probe.OnAnswer then
+    for _, a in ipairs(answered) do ns.Probe:OnAnswer(a.id, a.ok) end
   end
 end
 

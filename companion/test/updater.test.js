@@ -5,10 +5,19 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ASSET_NAME, REPO, compareVersions, createUpdater, parseRelease } from '../src/updater.js';
+import { ASSET_NAME, REPO, SIG_ASSET_NAME, compareVersions, createUpdater, parseRelease } from '../src/updater.js';
+import { UPDATE_CONTEXT, encodeSignature, signedMessage, updateFields } from '../src/signing.js';
 
 const exeBytes = Buffer.concat([Buffer.from('MZ'), crypto.randomBytes(5000)]);
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+// The project's signing key (a throwaway one for the tests) and someone else's.
+const keyPair = () => crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+const project = keyPair();
+const stranger = keyPair();
+const trustedKeys = [project.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')];
+const signFor = (version, bytes = exeBytes, key = project.privateKey) => encodeSignature(crypto.sign('sha256',
+  signedMessage(UPDATE_CONTEXT, updateFields({ file: ASSET_NAME, version, size: bytes.length, sha256: sha(bytes) })),
+  { key, dsaEncoding: 'ieee-p1363' }));
 const release = (version, over = {}) => ({
   tag_name: `v${version}`,
   draft: false,
@@ -19,16 +28,22 @@ const release = (version, over = {}) => ({
     size: exeBytes.length,
     digest: `sha256:${sha(exeBytes)}`,
     browser_download_url: `https://github.com/${REPO}/releases/download/v${version}/${ASSET_NAME}`,
+  }, {
+    name: SIG_ASSET_NAME,
+    size: 89,
+    browser_download_url: `https://github.com/${REPO}/releases/download/v${version}/${SIG_ASSET_NAME}`,
   }],
   ...over,
 });
+const unsigned = (r) => ({ ...r, assets: r.assets.filter((a) => a.name !== SIG_ASSET_NAME) });
 
-// GitHub stand-in: the releases API and the download.
-function fakeGitHub({ latest, file = exeBytes }) {
+// GitHub stand-in: the releases API, the download and its signature.
+function fakeGitHub({ latest, file = exeBytes, sig = (version) => signFor(version) }) {
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(url);
     if (url.includes('api.github.com')) return new Response(JSON.stringify(latest()), { status: 200 });
+    if (url.endsWith('.sig')) return new Response(sig(/\/v([^/]+)\//.exec(url)[1]), { status: 200 });
     return new Response(file, { status: 200, headers: { 'content-length': String(file.length) } });
   };
   return { fetchImpl, calls };
@@ -61,7 +76,7 @@ test('a newer version is offered once, downloaded and verified', async (t) => {
   let latest = release('1.6.0');
   const gh = fakeGitHub({ latest: () => latest });
   const announced = [];
-  const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9, onAvailable: (v) => announced.push(v) });
+  const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9, trustedKeys, onAvailable: (v) => announced.push(v) });
   t.after(() => u.stop());
   assert.deepEqual(fs.readdirSync(dir), [], 'old downloads removed');
 
@@ -88,7 +103,7 @@ test('a download that does not match what GitHub published is thrown away', asyn
     [exeBytes.subarray(0, 100), /incomplete/],
   ]) {
     const gh = fakeGitHub({ latest: () => release('1.7.0'), file });
-    const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9 });
+    const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9, trustedKeys });
     await u.check();
     await assert.rejects(u.download(), why);
     assert.equal(u.state().status, 'available', 'can try again');
@@ -100,16 +115,47 @@ test('a download that does not match what GitHub published is thrown away', asyn
   const noDigest = release('1.7.0');
   delete noDigest.assets[0].digest;
   const gh = fakeGitHub({ latest: () => noDigest, file: notExe });
-  const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9 });
+  const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9, trustedKeys });
   await u.check();
   await assert.rejects(u.download(), /not a Windows program/);
   u.stop();
 });
 
+test('only a build signed with the project\'s key, for that version, is installed', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-upd-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const attempt = async ({ latest, sig, keys = trustedKeys }) => {
+    const gh = fakeGitHub({ latest: () => latest, sig });
+    const logs = [];
+    const u = createUpdater({ currentVersion: '1.6.0', dir, fetchImpl: gh.fetchImpl, intervalMs: 1e9, trustedKeys: keys, log: (m) => logs.push(m) });
+    try {
+      const s = await u.check();
+      if (s.status !== 'available') return { status: s.status, logs };
+      try { await u.download(); return { status: 'installed', logs }; } catch (e) { return { status: 'refused', error: e.message, logs }; }
+    } finally {
+      u.stop();
+    }
+  };
+  // Published without a signature (e.g. upstream builds): never offered.
+  const plain = await attempt({ latest: unsigned(release('1.7.0')) });
+  assert.equal(plain.status, 'latest');
+  assert.ok(plain.logs.some((l) => /without a signature/.test(l)));
+  // Signed by someone else, or the signature of an older build reused for a newer tag.
+  for (const sig of [() => signFor('1.7.0', exeBytes, stranger.privateKey), () => signFor('1.6.5'), () => 'not a signature']) {
+    const r = await attempt({ latest: release('1.7.0'), sig });
+    assert.equal(r.status, 'refused');
+    assert.match(r.error, /not signed with this project's key/);
+    assert.deepEqual(fs.readdirSync(dir), [], 'nothing left behind to run');
+  }
+  // A copy with no trusted key accepts nothing.
+  assert.equal((await attempt({ latest: release('1.7.0'), keys: [] })).status, 'refused');
+  assert.equal((await attempt({ latest: release('1.7.0') })).status, 'installed');
+});
+
 test('no internet: it says so and keeps working', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-upd-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const u = createUpdater({ currentVersion: '1.6.0', dir, intervalMs: 1e9, fetchImpl: async () => { throw new Error('offline'); } });
+  const u = createUpdater({ currentVersion: '1.6.0', dir, intervalMs: 1e9, trustedKeys, fetchImpl: async () => { throw new Error('offline'); } });
   const s = await u.check();
   assert.equal(s.status, 'error');
   assert.match(s.error, /offline/);

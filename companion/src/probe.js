@@ -38,38 +38,49 @@ export function candidateFiles(wowDir) {
   return files;
 }
 
+// How long the monitor keeps watching after a test starts (or reports): the
+// game may only write some of these files when the player logs out.
+export const PROBE_ACTIVE_MS = 15 * 60000;
+const TAIL_BYTES = 2_000_000;
+
 // Watches candidate files and records when a probe marker shows up in them.
-export function startProbeMonitor({ wowDir, log = () => {}, intervalMs = 500 }) {
+// Idle until activate(): it only runs while a channel test is going on (the
+// addon asks for it first, see Probe.lua) and for activeMs after, then stops
+// on its own. Only markers are kept, never what the files say.
+export function startProbeMonitor({ wowDir, log = () => {}, intervalMs = 500, activeMs = PROBE_ACTIVE_MS, now = () => Date.now() }) {
   const events = [];
-  const mtimes = new Map();
+  const seen = new Map(); // file -> { mtime, size }
   let files = [];
   let lastList = 0;
   let first = true;
+  let timer = null;
+  let until = 0;
 
   const scan = () => {
-    const now = Date.now();
-    if (now - lastList > 5000) { files = candidateFiles(wowDir); lastList = now; }
+    const t = now();
+    if (timer && t > until) { pause(); return; }
+    if (t - lastList > 5000 || first) { files = candidateFiles(wowDir); lastList = t; }
     for (const { kind, file } of files) {
       let st;
       try { st = fs.statSync(file); } catch { continue; }
-      const prev = mtimes.get(file);
-      mtimes.set(file, st.mtimeMs);
-      if (first || prev === st.mtimeMs) continue;
+      const prev = seen.get(file);
+      seen.set(file, { mtime: st.mtimeMs, size: st.size });
+      if (first || !prev || prev.mtime === st.mtimeMs) continue;
       let text;
       try {
-        // Only the tail of big logs matters.
-        const fd = fs.openSync(file, 'r');
-        const size = st.size;
-        const len = Math.min(size, 2_000_000);
+        // The chat log only grows: read what was added. Other files are
+        // rewritten whole: read their tail.
+        const from = kind === 'chat' && st.size >= prev.size ? Math.max(prev.size, st.size - TAIL_BYTES) : Math.max(0, st.size - TAIL_BYTES);
+        const len = st.size - from;
         const buf = Buffer.alloc(len);
-        fs.readSync(fd, buf, 0, len, size - len);
-        fs.closeSync(fd);
+        const fd = fs.openSync(file, 'r');
+        try { fs.readSync(fd, buf, 0, len, from); } finally { fs.closeSync(fd); }
         text = buf.toString('latin1');
       } catch { continue; }
       const tokens = [...text.matchAll(MARKER)].map((m) => m[1]);
       const slotDisabled = kind === 'addons' && SLOT_DISABLED.test(text);
       if (tokens.length || slotDisabled) {
-        const ev = { kind, file, time: now, tokens: [...new Set(tokens)], slotDisabled };
+        const ev = { kind, file, time: t, tokens: [...new Set(tokens)], slotDisabled };
         events.push(ev);
         log(`Channel test: marked change in ${path.basename(file)} (${kind})`);
       }
@@ -78,9 +89,31 @@ export function startProbeMonitor({ wowDir, log = () => {}, intervalMs = 500 }) 
     while (events.length > 200) events.shift();
   };
 
-  scan();
-  const timer = setInterval(scan, intervalMs);
-  return { events, scan, stop: () => clearInterval(timer) };
+  function pause() {
+    clearInterval(timer);
+    timer = null;
+    first = true; // the next test starts from a fresh look at the files
+    seen.clear();
+    log('Channel test: stopped watching the game\'s files.');
+  }
+
+  // Starts watching (or keeps watching longer). The first look only notes
+  // how the files are, so changes are counted from now on.
+  function activate(ms = activeMs) {
+    until = Math.max(until, now() + ms);
+    if (timer) return;
+    scan();
+    timer = setInterval(scan, intervalMs);
+    timer.unref?.();
+  }
+
+  return {
+    events,
+    scan,
+    activate,
+    active: () => Boolean(timer),
+    stop: () => { clearInterval(timer); timer = null; },
+  };
 }
 
 // Voices Windows offers: classic SAPI (third parties can add voices) and
@@ -115,8 +148,11 @@ const NAMES = {
 };
 
 // Builds the verdict for a probe request. Returns { text, report }.
+// The monitor keeps watching a while longer for writes made at logout.
 export async function probeReport(probe, monitor) {
-  monitor.scan();
+  const wasActive = monitor.active();
+  if (wasActive) monitor.scan();
+  monitor.activate();
   const actions = probe.actions || {};
   const channels = {};
   for (const kind of Object.keys(NAMES)) {
@@ -168,6 +204,7 @@ export async function probeReport(probe, monitor) {
   lines.push(`- Text to speech: ${gameVoices.length ? `${gameVoices.length} voices in the game, ${fam}` : 'the game offers no voices'}` +
     `${tts.api !== 'ok' ? ` (speak: ${tts.api})` : ''}`);
   lines.push(`- Icon flashing: ${probe.flashClientIcon ? 'available' : 'not available'}`);
+  if (!wasActive) lines.push('The app was not recording when the test ran (an addon from an earlier version?): run the test again.');
   lines.push('If something says NO, the game may only save it when you log out: log out and the app will keep recording it.');
   return { text: lines.join('\n'), report };
 }
