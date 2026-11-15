@@ -6,11 +6,13 @@ import path from 'node:path';
 import { ADDON_SRC, ROOT } from './config.js';
 
 // { "ForeverAICompanion.toc": "...", "Core.lua": "...", ... }
+// RequestKey.lua is created per PC by the app (request-key.js): a copy left
+// in the source folder is never shipped.
 export function addonFiles() {
   const out = {};
   for (const name of fs.readdirSync(ADDON_SRC)) {
     const file = path.join(ADDON_SRC, name);
-    if (fs.statSync(file).isFile()) out[name] = fs.readFileSync(file, 'utf8');
+    if (name !== 'RequestKey.lua' && fs.statSync(file).isFile()) out[name] = fs.readFileSync(file, 'utf8');
   }
   return out;
 }
@@ -45,6 +47,11 @@ export function appIconIco() {
 
 export function trayCsSource() {
   return fs.readFileSync(path.join(ROOT, 'tray', 'Tray.cs'), 'utf8');
+}
+
+// Microphone helper for voice questions (mic/Mic.cs), compiled on the PC.
+export function micCsSource() {
+  return fs.readFileSync(path.join(ROOT, 'mic', 'Mic.cs'), 'utf8');
 }
 
 // Built-in guide about WoW Forever for the AI (knowledge-builtin/wow-forever.md).

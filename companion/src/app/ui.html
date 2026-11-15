@@ -572,6 +572,43 @@ const I18N = {
     'dash.voiceOff': 'Off: when you ask, a line briefly appears at the top of the screen',
     'dash.voiceUpdate': 'Update',
     'dash.voiceActivate': 'Turn on',
+    'dash.talk': 'Voice questions',
+    'dash.talkOn': 'On: hold your talk key in WoW and speak',
+    'dash.talkOff': 'Off: you type your questions',
+    'dash.talkSetup': 'Set up',
+    'talk.kicker': 'Optional',
+    'talk.title': 'Ask with your voice',
+    'talk.lead': 'Hold a key in WoW (or click <b>Talk</b> in the chat window), say your question and let go. Your assistant answers in the chat as if you had typed it, and you can keep talking to ask follow-up questions in the same chat.',
+    'talk.needVoiceTitle': 'Needs invisible sending',
+    'talk.needVoiceText': 'Voice questions travel the invisible way, so turn on invisible sending first.',
+    'talk.needVoiceBtn': 'Set up invisible sending',
+    'talk.privacyTitle': 'What happens to your voice',
+    'talk.privacyText': 'The microphone opens only while you hold the key (or until you stop talking), and Windows shows that it is in use. The recording is sent to OpenAI to turn it into text, then the app forgets it: nothing is saved on your PC. OpenAI charges your API key per minute of audio.',
+    'talk.enable': 'Voice questions',
+    'talk.enableText': 'Off until you turn them on. You can turn them off here at any time.',
+    'talk.key': 'OpenAI API key',
+    'talk.keyChatgpt': 'Uses the key you saved for ChatGPT. Paste another one below to use a different key.',
+    'talk.keyOwn': 'Saved ({key}), encrypted on this PC. Paste a new one to replace it.',
+    'talk.keyNone': 'Create one at platform.openai.com (API keys; billing must be on), then paste it here. It is stored encrypted on this PC. A ChatGPT Plus or Pro plan does not include API access.',
+    'talk.model': 'Transcription model',
+    'talk.mMini': 'Fast',
+    'talk.mMiniText': 'gpt-4o-mini-transcribe: quick and the cheapest.',
+    'talk.mFull': 'Most accurate',
+    'talk.mFullText': 'gpt-4o-transcribe: better with game names, costs more.',
+    'talk.mWhisper': 'Whisper',
+    'talk.mWhisperText': 'whisper-1: the original model.',
+    'talk.test': 'Test the microphone',
+    'talk.testing': 'Listening… say something',
+    'talk.testText': 'Saves the key, then records until you pause and shows what OpenAI heard.',
+    'talk.testOk': 'Heard: “{text}” ({s} s)',
+    'talk.testFail': 'The test did not work',
+    'talk.inGameTitle': 'In the game',
+    'talk.inGameText': 'Pick your talk key in WoW\'s key bindings (Esc > Options > Keybindings): <b>Forever AI Companion > Talk to your assistant</b>. Or click <b>Talk</b> next to the chat window\'s text box, and click it again when you are done (or just stop talking).',
+    'talk.save': 'Save',
+    'talk.saving': 'Saving…',
+    'talk.hint': 'Needs a microphone and an OpenAI API key',
+    'toast.talkOn': 'Voice questions are on',
+    'toast.talkOff': 'Voice questions are off',
     'dash.close': 'When closing this window',
     'dash.closeText': 'The app can keep running next to the Windows clock.',
     'dash.closeAsk': 'Ask me',
@@ -882,6 +919,43 @@ const I18N = {
     'dash.voiceOff': 'Desactivado: al preguntar aparece un instante una línea arriba de la pantalla',
     'dash.voiceUpdate': 'Actualizar',
     'dash.voiceActivate': 'Activar',
+    'dash.talk': 'Preguntas por voz',
+    'dash.talkOn': 'Activadas: mantén pulsada tu tecla para hablar en WoW y habla',
+    'dash.talkOff': 'Desactivadas: escribes tus preguntas',
+    'dash.talkSetup': 'Configurar',
+    'talk.kicker': 'Opcional',
+    'talk.title': 'Pregunta con tu voz',
+    'talk.lead': 'Mantén pulsada una tecla en WoW (o haz clic en <b>Hablar</b> en la ventana del chat), di tu pregunta y suelta. Tu asistente responde en el chat como si la hubieras escrito, y puedes seguir hablando para hacer más preguntas en el mismo chat.',
+    'talk.needVoiceTitle': 'Necesita el envío invisible',
+    'talk.needVoiceText': 'Las preguntas por voz viajan por el camino invisible, así que primero activa el envío invisible.',
+    'talk.needVoiceBtn': 'Configurar el envío invisible',
+    'talk.privacyTitle': 'Qué pasa con tu voz',
+    'talk.privacyText': 'El micrófono solo se abre mientras mantienes la tecla (o hasta que dejas de hablar), y Windows muestra que está en uso. La grabación se envía a OpenAI para convertirla en texto y luego la app la olvida: no se guarda nada en tu PC. OpenAI cobra a tu clave de API por minuto de audio.',
+    'talk.enable': 'Preguntas por voz',
+    'talk.enableText': 'Desactivadas hasta que las actives. Puedes desactivarlas aquí cuando quieras.',
+    'talk.key': 'Clave de API de OpenAI',
+    'talk.keyChatgpt': 'Usa la clave que guardaste para ChatGPT. Pega otra abajo para usar una clave distinta.',
+    'talk.keyOwn': 'Guardada ({key}), cifrada en este PC. Pega una nueva para reemplazarla.',
+    'talk.keyNone': 'Créala en platform.openai.com (API keys; la facturación debe estar activa) y pégala aquí. Se guarda cifrada en este PC. El plan ChatGPT Plus o Pro no incluye acceso a la API.',
+    'talk.model': 'Modelo de transcripción',
+    'talk.mMini': 'Rápido',
+    'talk.mMiniText': 'gpt-4o-mini-transcribe: veloz y el más barato.',
+    'talk.mFull': 'Más preciso',
+    'talk.mFullText': 'gpt-4o-transcribe: mejor con los nombres del juego, cuesta más.',
+    'talk.mWhisper': 'Whisper',
+    'talk.mWhisperText': 'whisper-1: el modelo original.',
+    'talk.test': 'Probar el micrófono',
+    'talk.testing': 'Escuchando… di algo',
+    'talk.testText': 'Guarda la clave, graba hasta que hagas una pausa y muestra lo que entendió OpenAI.',
+    'talk.testOk': 'Entendí: «{text}» ({s} s)',
+    'talk.testFail': 'La prueba no funcionó',
+    'talk.inGameTitle': 'En el juego',
+    'talk.inGameText': 'Elige tu tecla para hablar en las asignaciones de teclas de WoW (Esc > Opciones > Asignación de teclas): <b>Forever AI Companion > Hablar con tu asistente</b>. O haz clic en <b>Hablar</b> junto al cuadro de texto de la ventana del chat, y vuelve a hacer clic cuando termines (o simplemente deja de hablar).',
+    'talk.save': 'Guardar',
+    'talk.saving': 'Guardando…',
+    'talk.hint': 'Necesita un micrófono y una clave de API de OpenAI',
+    'toast.talkOn': 'Preguntas por voz activadas',
+    'toast.talkOff': 'Preguntas por voz desactivadas',
     'dash.close': 'Al cerrar esta ventana',
     'dash.closeText': 'La app puede seguir funcionando junto al reloj de Windows.',
     'dash.closeAsk': 'Preguntarme',
@@ -1033,6 +1107,7 @@ const ICON = {
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 8.3l5-.7z"/></svg>',
   hide: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><path d="M4 4l16 16"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M8.5 21h7"/></svg>',
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 016.5 18H20v3H6.5A2.5 2.5 0 014 20.5z"/></svg>',
   power: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round"><path d="M12 3v8M6.3 6.3a8 8 0 1011.4 0"/></svg>',
 };
@@ -1056,6 +1131,9 @@ let aiTest = null;         // { state: 'running'|'ok'|'bad', html }
 let voiceChoice = null;    // 'on' | 'off'
 let voiceMsg = null;
 let busyAction = null;
+let talkInfo = null;       // voice questions: { supported, enabled, model, keySource, key }
+let talkDraft = null;      // { enabled, model } while the voice questions screen is open
+let talkResult = null;     // html of the last microphone test
 
 // Identifies this window to the app (to tell a closed window from a reload).
 const PAGE_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -1319,6 +1397,48 @@ const VIEWS = {
     };
   },
 
+  // Voice questions (opened from the dashboard).
+  talk() {
+    const s = talkInfo || { enabled: false, model: 'gpt-4o-mini-transcribe', keySource: null, key: null };
+    const enabled = talkDraft?.enabled ?? s.enabled;
+    const model = talkDraft?.model || s.model;
+    const models = [
+      ['gpt-4o-mini-transcribe', t('talk.mMini'), t('talk.mMiniText'), true],
+      ['gpt-4o-transcribe', t('talk.mFull'), t('talk.mFullText')],
+      ['whisper-1', t('talk.mWhisper'), t('talk.mWhisperText')],
+    ];
+    const keyText = s.key ? t('talk.keyOwn', { key: esc(s.key) }) : s.keySource === 'chatgpt' ? t('talk.keyChatgpt') : t('talk.keyNone');
+    const needVoice = voiceStepNeeded() && !voice?.active;
+    return {
+      html: `<div class="kicker">${t('talk.kicker')}</div><h1>${t('talk.title')}</h1>
+        <p class="lead">${t('talk.lead')}</p>
+        ${needVoice ? `${callout('warn', t('talk.needVoiceTitle'), t('talk.needVoiceText'))}<div class="links" style="margin:-4px 0 14px"><button class="btn small" id="talk-voice">${t('talk.needVoiceBtn')}</button></div>` : ''}
+        ${callout('info', t('talk.privacyTitle'), t('talk.privacyText'))}
+        <div class="rows" style="margin-top:14px">
+          <div class="rowi"><span class="ic">${ICON.mic}</span><div class="t"><b>${t('talk.enable')}</b><span>${t('talk.enableText')}</span></div>
+            <label class="switch" title="${esc(t('talk.enable'))}"><input type="checkbox" id="talk-enabled" ${enabled ? 'checked' : ''}><i></i></label></div>
+        </div>
+        <div class="card" style="margin-top:14px"><h3>${t('talk.key')}</h3><p class="small muted">${keyText}</p>
+          <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="sk-…"></div>
+        <div class="card" style="margin-top:14px"><h3>${t('talk.model')}</h3>
+          <div class="models">${models.map(([v, title, d, rec]) => `<label class="choice ${v === model ? 'sel' : ''}"><input type="radio" name="talk-model" value="${v}" ${v === model ? 'checked' : ''}>
+            <div><div class="head"><span class="title">${title}</span>${rec ? `<span class="badge rec">${t('badge.rec')}</span>` : ''}</div><div class="desc">${d}</div></div></label>`).join('')}</div></div>
+        <div class="card" style="margin-top:14px"><h3>${t('talk.test')}</h3><p class="small muted">${t('talk.testText')}</p>
+          <div class="links"><button class="btn small" data-act="talkTest" ${busyAction ? 'disabled' : ''}>${spinner('talkTest', t('talk.test'), t('talk.testing'))}</button></div>
+          ${talkResult ? `<div style="margin-top:12px">${talkResult}</div>` : ''}</div>
+        <div style="margin-top:14px">${callout('info', t('talk.inGameTitle'), t('talk.inGameText'))}</div>`,
+      next: { label: spinner('talk-save', t('talk.save'), t('talk.saving')), disabled: Boolean(busyAction), action: saveTalk },
+      hint: t('talk.hint'),
+      after() {
+        const en = $('talk-enabled');
+        if (en) en.onchange = () => { talkDraft = { ...(talkDraft || {}), enabled: en.checked }; };
+        document.querySelectorAll('input[name=talk-model]').forEach((r) => { r.onchange = () => { talkDraft = { ...(talkDraft || {}), model: r.value }; render(); }; });
+        const v = $('talk-voice');
+        if (v) v.onclick = () => openWizard('voice', true);
+      },
+    };
+  },
+
   done() {
     const auto = status.autostart;
     return {
@@ -1395,6 +1515,7 @@ function go(id) {
 function openWizard(id, fromDash = false) {
   mode = 'wizard';
   returnToDash = fromDash;
+  if (id === 'talk') { talkDraft = null; talkResult = null; }
   aiChoice = null; aiModel = null; aiTest = null;
   voiceChoice = null; voiceMsg = null; addonJustInstalled = null;
   go(id);
@@ -1466,6 +1587,7 @@ function renderDash() {
       ${u ? row(ICON.download, t('upd.row'), u.status === 'checking' ? t('upd.checking') : u.status === 'error' ? t('upd.error') : updating ? t('upd.title', { v: esc(u.latest) }) : u.status === 'latest' ? t('upd.latest', { v: esc(u.current) }) : t('upd.idle'),
         updating ? '' : `<button class="btn small" data-act="updateCheck">${spinner('updateCheck', t('upd.check'), t('upd.checkingBtn'))}</button>`) : ''}
       ${voiceStepNeeded() && voice ? row(ICON.hide, t('dash.voice'), voice.legacy ? `<span style="color:var(--warn)">${t('dash.voiceLegacy')}</span>` : voice.active ? t('dash.voiceOn') : t('dash.voiceOff'), `<button class="btn small" data-open="voice">${voice.legacy ? t('dash.voiceUpdate') : voice.active ? t('btn.change') : t('dash.voiceActivate')}</button>`) : ''}
+      ${talkInfo?.supported ? row(ICON.mic, t('dash.talk'), talkInfo.enabled ? t('dash.talkOn') : t('dash.talkOff'), `<button class="btn small" data-open="talk">${talkInfo.enabled ? t('btn.change') : t('dash.talkSetup')}</button>`) : ''}
       ${s.tray ? `<div class="rowi"><span class="ic"><img src="/icon.png" alt="" style="width:22px;height:22px"></span><div class="t"><b>${t('dash.close')}</b><span>${t('dash.closeText')}</span></div>
         <select id="close-action" class="select" title="${esc(t('dash.close'))}">
           <option value="ask" ${s.closeAction === 'ask' ? 'selected' : ''}>${t('dash.closeAsk')}</option>
@@ -1583,7 +1705,38 @@ async function deactivateVoice() {
   });
 }
 
+// Voice questions: what the screen shows, saved together.
+function talkPatch() {
+  const key = $('key')?.value?.trim();
+  return {
+    enabled: talkDraft?.enabled ?? talkInfo?.enabled ?? false,
+    model: talkDraft?.model || talkInfo?.model,
+    ...(key ? { apiKey: key } : {}),
+  };
+}
+function saveTalk() {
+  return run('talk-save', async () => {
+    const wasOn = Boolean(talkInfo?.enabled);
+    talkInfo = await api('set-talk', talkPatch());
+    talkDraft = null; talkResult = null;
+    if (talkInfo.enabled !== wasOn) toast('ok', talkInfo.enabled ? t('toast.talkOn') : t('toast.talkOff'));
+    openDash();
+  });
+}
+
 const ACTIONS = {
+  talkTest: () => run('talkTest', async () => {
+    talkResult = null;
+    try {
+      // The key just typed is saved first, so the test uses it (on/off stays as saved).
+      const key = $('key')?.value?.trim();
+      if (key) { talkInfo = await api('set-talk', { apiKey: key, model: talkPatch().model }); $('key').value = ''; }
+      const r = await api('talk-test');
+      talkResult = callout('ok', t('talk.testOk', { text: esc(r.text), s: esc(r.seconds) }), '');
+    } catch (e) {
+      talkResult = callout('bad', t('talk.testFail'), esc(e.message));
+    }
+  }),
   detect: () => run('detect', async () => {
     const r = await api('detect-wow');
     if (!r.found.length) toast('bad', t('game.detectFail'));
@@ -1680,12 +1833,13 @@ setInterval(() => {
 
 async function checkVoice() {
   try { voice = await api('voice-status'); } catch { voice = { supported: false, active: false }; }
+  try { talkInfo = await api('talk-status'); } catch { talkInfo = null; }
 }
 
 // Polls the app every 2 s. The wizard is only redrawn when something it shows
 // changed (new questions alone don't redraw it, so typing is never disturbed).
 let lastWizardKey = '';
-const wizardKey = () => JSON.stringify([{ ...status, events: null }, voice, cli, busyAction, step, aiChoice, aiTest?.state, voiceChoice, lang]);
+const wizardKey = () => JSON.stringify([{ ...status, events: null }, voice, talkInfo, talkResult, cli, busyAction, step, aiChoice, aiTest?.state, voiceChoice, lang]);
 async function refresh(force = false) {
   if (stopped) return;
   try {

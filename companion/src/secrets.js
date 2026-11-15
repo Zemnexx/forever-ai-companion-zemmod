@@ -62,14 +62,14 @@ const cache = new Map();
 
 export const isSealed = (v) => Boolean(v && typeof v === 'object' && !Array.isArray(v) && typeof v.dpapi === 'string');
 
-// Where keys can be in config.json: the app window's keys per AI, and the
-// apiKey of a hand-written anthropic / openai section.
+// Where keys can be in config.json: the app window's keys per AI, the voice
+// questions' own key, and the apiKey of a hand-written anthropic / openai section.
 function secretSlots(cfg) {
   const slots = [];
   if (cfg?.keys && typeof cfg.keys === 'object') {
     for (const k of Object.keys(cfg.keys)) slots.push([cfg.keys, k]);
   }
-  for (const section of ['anthropic', 'openai']) {
+  for (const section of ['anthropic', 'openai', 'talk']) {
     if (cfg?.[section] && typeof cfg[section] === 'object' && 'apiKey' in cfg[section]) slots.push([cfg[section], 'apiKey']);
   }
   return slots;

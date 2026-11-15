@@ -25,7 +25,8 @@ function Core:HasPending()
   local any = false
   local resend
   ns.Chats:EachEntry(function(e, c)
-    if e.status == "pending" and e.viaVoice and now - (e.t or now) > VOICE_TIMEOUT and not self.working then
+    -- (Voice questions can't be re-sent through the strip: there is no text yet.)
+    if e.status == "pending" and e.viaVoice and not e.listen and now - (e.t or now) > VOICE_TIMEOUT and not self.working then
       e.status = "error"
       e.answer = L.VOICE_LOST
       ns.Voice.broken = true
@@ -284,14 +285,16 @@ end
 
 -- `extra`: additional request fields (used by the channel probe).
 -- `chatId`: chat the question belongs to (default: the open one).
+-- `listen`: a voice question: no text yet, the app records what the player
+-- says (see Core:Listen). Only through the invisible voice.
 -- Returns the request id, or nil when nothing was sent.
-function Core:Ask(question, extra, chatId)
+function Core:Ask(question, extra, chatId, listen)
   -- Items (and spells, quests...) linked with shift-click go along with their
   -- full description; the question itself keeps just their "[Name]".
-  local linked = ns.Collect:Links(question)
+  local linked = not listen and ns.Collect:Links(question) or nil
   local shown = linked and strtrim(question) or nil -- with the links, for the chat bubble
-  question = strtrim(ns.Collect.Clean(question or "") or "")
-  if question == "" then return end
+  question = listen and "" or strtrim(ns.Collect.Clean(question or "") or "")
+  if question == "" and not listen then return end
   ns.UI:Show()
   if InCombatLockdown() or UnitAffectingCombat("player") then
     ns.UI:SetStatus("|cffff6060" .. L.IN_COMBAT .. "|r")
@@ -299,6 +302,10 @@ function Core:Ask(question, extra, chatId)
   end
   if self.working or ns.Uplink.busy then
     ns.UI:SetStatus(L.WAIT_PREVIOUS)
+    return
+  end
+  if listen and not ns.Voice:Available() then
+    ns.UI:SetStatus("|cffff6060" .. L.TALK_NEEDS_VOICE .. "|r")
     return
   end
 
@@ -320,15 +327,18 @@ function Core:Ask(question, extra, chatId)
     assistant = ns.Personas:Current().id,
     lang = L.code,                  -- the app writes its error messages in this language
     history = self:RecentTurns(chatData, HISTORY_TURNS_SENT),
+    auth = ns.requestKey,           -- this PC's key (RequestKey.lua, written by the app)
   }
   for k, v in pairs(extra or {}) do req[k] = v end
+  if listen then req.listen = true end
 
-  local entry = { id = id, question = question, shown = shown, status = "pending", t = time() }
+  local entry = { id = id, question = question, shown = shown, status = "pending", t = time(), listen = listen or nil }
   ns.Chats:AddMessage(chatData, entry)
   req.chat = { id = chatData.id, title = chatData.title }
 
   local function fail(msg)
     Core.working = false
+    if listen then Core:EndListening() end
     entry.status = "error"
     entry.answer = msg
     ns.UI:SetStatus("")
@@ -350,6 +360,7 @@ function Core:Ask(question, extra, chatId)
         return true, "voice"
       end
     end
+    if listen then return false, L.TALK_SEND_FAILED end -- never the strip: it can't stop in time
     Core.lastChannel = "strip"
     local frame, why = Core:BuildFrame(req, Core.step, nil, context)
     if not frame then return false, why end
@@ -376,8 +387,9 @@ function Core:Ask(question, extra, chatId)
     if err == "voice" then
       entry.viaVoice = true
       Core.working = false
-      ns.UI:SetStatus(string.format(L.SENT_TO, ns.Personas:Current().name))
+      ns.UI:SetStatus(listen and L.TALK_LISTENING or string.format(L.SENT_TO, ns.Personas:Current().name))
       ns.Live:OnSent()
+      if listen then Core:ListenSent(id) end
       return
     end
     ns.UI:SetStatus(string.format(L.SENDING, ns.Uplink.last.bytes / 1024))
@@ -403,6 +415,9 @@ function Core:ApplyInbox(inbox)
     if entry and entry.status == "pending" then
       entry.status = a.ok and "done" or "error"
       entry.answer = a.answer
+      -- Voice question: what the app heard becomes the question.
+      if entry.listen and type(a.question) == "string" and a.question ~= "" then entry.question = a.question end
+      if Core.listening and Core.listening.id == a.id then Core:EndListening() end
       arrived = arrived + 1
       answered[#answered + 1] = { id = a.id, ok = a.ok and true or false }
       -- Chats with news the player is not looking at: mark and notify.
@@ -450,6 +465,69 @@ function Core:ApplyInbox(inbox)
     for _, a in ipairs(answered) do ns.Probe:OnAnswer(a.id, a.ok) end
   end
 end
+
+-- Voice questions -------------------------------------------------------------
+-- The talk key (hold) or the Talk button (click to start, click to stop)
+-- sends a "listen" request with the character data; the app records the
+-- question until the key is released or the player stops talking, and answers
+-- it with what it heard. Follow-up questions work the same way: they go to
+-- the open chat with its earlier turns.
+local LISTEN_TIMEOUT = 40 -- seconds: the app stops recording at 30 at the latest
+
+function Core:Listen(chatId)
+  if self.listening then return end
+  local id = self:Ask(nil, nil, chatId, true)
+  if not id then return end
+  local l = { id = id }
+  self.listening = l
+  ns.UI:RefreshTalkButton()
+  C_Timer.After(LISTEN_TIMEOUT, function()
+    if Core.listening == l then Core:EndListening() end
+  end)
+end
+
+-- The listen request went out: if the key was already released, stop now.
+function Core:ListenSent(id)
+  local l = self.listening
+  if not l or l.id ~= id then return end
+  l.sent = true
+  if l.stopWanted then self:StopListening() end
+end
+
+-- Tells the app the question is over (only needed before it hears a pause).
+function Core:StopListening()
+  local l = self.listening
+  if not l then return end
+  if not l.sent then
+    l.stopWanted = true -- still being sent: stop right after
+    return
+  end
+  local json = ns.Json.Encode({ v = 2, id = l.id .. "s", question = "", listenStop = l.id, auth = ns.requestKey })
+  ns.Voice:Send(ns.Uplink.Frame(json), l.id .. "s")
+  self:EndListening()
+  ns.UI:SetStatus(string.format(L.SENT_TO, ns.Personas:Current().name))
+end
+
+function Core:EndListening()
+  self.listening = nil
+  ns.UI:RefreshTalkButton()
+end
+
+function Core:ToggleListen()
+  if self.listening then self:StopListening() else self:Listen() end
+end
+
+-- Key binding (Bindings.xml): down starts, up stops.
+function Core:TalkKey(keystate)
+  if keystate == "up" then self:StopListening() else self:Listen() end
+end
+
+function ForeverAICompanion_Talk(keystate)
+  Core:TalkKey(keystate)
+end
+
+BINDING_HEADER_FOREVERAICOMPANION = "Forever AI Companion"
+BINDING_NAME_FOREVERAICOMPANION_TALK = L.BINDING_TALK
 
 -- Events ------------------------------------------------------------------
 
@@ -512,6 +590,7 @@ local COMMANDS = {
   status = "status", estado = "status",
   probe = "probe", probar = "probe", ["probar-canales"] = "probe",
   ["test-voice"] = "voice", ["probar-voz"] = "voice",
+  talk = "talk", hablar = "talk",
   button = "button", boton = "button", ["botón"] = "button",
   sound = "sound", sonido = "sound",
   assistant = "assistant", asistente = "assistant",
@@ -539,6 +618,8 @@ SlashCmdList.FOREVERAICOMPANION = function(msg)
     ns.Probe:Run()
   elseif cmd == "voice" and rest == "" then
     ns.Voice:Diagnose()
+  elseif cmd == "talk" and rest == "" then
+    Core:ToggleListen()
   elseif cmd == "button" and rest == "" then
     ns.Button:Toggle()
   elseif cmd == "button" and rest == "reset" then

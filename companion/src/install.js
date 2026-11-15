@@ -17,6 +17,7 @@ import { inboxSource, silentWav, writeAtomic } from './inbox.js';
 import { createStatusFiles } from './beacon.js';
 import { migrateSavedVariables } from './migrate.js';
 import { saveState, loadState } from './state.js';
+import { KEY_FILE, ensureRequestKey } from './request-key.js';
 
 export const TOC_NAME = `${ADDON_NAME}.toc`;
 
@@ -76,12 +77,16 @@ export function finishLegacyMigration(wowDir, { wowRunning, log = () => {} } = {
 }
 
 // Copies only the addon's own files (Lua/toc). Used to update an existing install.
+// The request key (request-key.js) belongs to this PC: never overwritten, and
+// created when missing.
 export function writeAddonFiles(wowDir, files = addonFiles()) {
   const p = wowPaths(wowDir);
   fs.mkdirSync(p.addonDir, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
+    if (name === KEY_FILE) continue;
     fs.writeFileSync(path.join(p.addonDir, name), content);
   }
+  ensureRequestKey(wowDir);
 }
 
 export function install(cfg, { wowDir = cfg.wowDir, files = addonFiles(), log = console.log, resetState = true, wowRunning } = {}) {
@@ -150,6 +155,7 @@ export function ensureAddon(cfg, { wowDir = cfg.wowDir, files = addonFiles(), lo
   }
   // Installs from before the app status in the game (addon 1.9.0) lack them.
   createStatusFiles(wowPaths(wowDir));
+  ensureRequestKey(wowDir);
   finishLegacyMigration(wowDir, { wowRunning, log });
   return true;
 }

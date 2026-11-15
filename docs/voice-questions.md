@@ -1,6 +1,6 @@
 # Voice questions (speech to text): scope
 
-Status: proposal. Branch: `vtt-feature` (from `security-hardening`).
+Status: first version built (phases 1 and 2), not yet tried on Windows. Branch: `vtt-feature` (from `security-hardening`).
 
 ## Goal
 
@@ -92,9 +92,27 @@ Making the transcription base URL a setting, like the existing OpenAI-compatible
 - **Key-up keybindings.** Confirm the WoW Forever client supports bindings that fire on key release.
 - **Accuracy** of WoW names and Spanish, with and without vocabulary hints.
 
-## Open decisions
+## Decisions
 
-1. OpenAI only for the first version? (Proposed.)
-2. Require invisible sending for voice questions? (Proposed: yes.)
-3. Ship request authentication first? (Proposed: yes.)
-4. Spoken answers: later?
+1. OpenAI only for the first version: **yes**.
+2. Voice questions require invisible sending: **yes**. The addon never sends a voice question through the on-screen line.
+3. Request authentication ships first: **yes**, done in the same branch.
+4. Follow-up questions: **voice replies continue the open chat**. Each voice question carries the chat's earlier turns, like a typed one. Spoken answers stay out of scope.
+
+## What was built
+
+| Part | Files |
+|---|---|
+| Request key | `companion/src/request-key.js`, `RequestKey.lua` written per PC into the addon folder (listed in the toc, never shipped), checked in `watcher.js` for every channel |
+| Addon | `Bindings.xml` (hold-to-talk, runs on key up), Talk button and "Listening..." bubble in `UI.lua`, `Core:Listen` / `StopListening` / `TalkKey` in `Core.lua`, `/ia talk` (`hablar`), locale strings. Addon version 1.11.0 |
+| Microphone | `companion/mic/Mic.cs` (capture and beeps only), `companion/src/mic.js` (helper control), `companion/src/vad.js` (end of question, WAV) |
+| Transcription | `companion/src/stt.js` (OpenAI `/audio/transcriptions`, vocabulary prompt), `companion/src/talk.js` (listen requests) |
+| App | Listen branch in `watcher.handleRequest` (the stop message skips the queue; recording starts on arrival), `talk` settings in `config.js` (key encrypted with DPAPI), window screen "Voice questions" and dashboard row |
+| Tests | `test/request-key.test.js`, `test/talk.test.js`, listen flow tests in `test/send.test.js` |
+
+## Not yet verified on Windows
+
+- The microphone helper against a real microphone (`waveIn`), including the privacy-setting case.
+- The key binding firing on key release in the WoW Forever client.
+- Start delay, end-of-question detection in a real room, and transcription accuracy for game names and Spanish.
+- Whether a browser's `speechSynthesis` really lists the silent voice (the request key closes it either way).

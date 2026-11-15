@@ -4,12 +4,13 @@
 ## Notes-esES: Tu asistente personal en Azeroth: Fizzi (gnoma, Alianza) o Rizzik (goblin, Horda). Requiere la app compañera.
 ## Notes-esMX: Tu asistente personal en Azeroth: Fizzi (gnoma, Alianza) o Rizzik (goblin, Horda). Requiere la app compañera.
 ## Author: Forever AI Companion
-## Version: 1.10.4
+## Version: 1.11.0
 ## SavedVariables: ForeverAICompanion_DB
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## AddonCompartmentFunc: ForeverAICompanion_Toggle
 
 Locale.lua
+RequestKey.lua
 Json.lua
 Collect.lua
 Uplink.lua

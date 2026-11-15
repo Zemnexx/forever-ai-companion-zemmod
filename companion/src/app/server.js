@@ -46,6 +46,9 @@ export function createServer(controller, { onQuit = () => {}, onWindowClosed = (
     knowledge: () => controller.openKnowledge(),
     'close-action': (body) => controller.setCloseAction(body),
     'web-search': (body) => controller.setWebSearch(body),
+    'talk-status': () => controller.talkStatus(),
+    'set-talk': (body) => controller.setTalk(body),
+    'talk-test': () => controller.talkTest(),
     'window-closed': (body) => {
       const closedAt = Date.now();
       pages.delete(String(body?.page || ''));

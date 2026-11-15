@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased: voice questions
+
+Addon **1.11.0**. App `VERSION` unchanged (1.9.0). No npm dependencies added; the bundled code grew by about 20 KB.
+
+### Added
+
+- **Voice questions.** Hold a talk key (Key Bindings > Forever AI Companion > Talk to your assistant), click **Talk** in the chat window, or type `/ia talk`, then say the question.
+  - The addon sends a "listen" request with the character data through invisible sending, and the app records until the key is released or the player pauses (30 s at most).
+  - The recording is transcribed with OpenAI's transcription API, using game names from the character data as hints.
+  - The app answers it like a typed question, and the chat shows the words it heard.
+  - Follow-up questions by voice continue the open chat.
+- **Settings in the app window** ("Voice questions"): on/off (off by default), the OpenAI key (the ChatGPT key is reused when there is one, and a separate key is encrypted with DPAPI), the model, and a microphone test.
+- **Microphone helper** (`mic/Mic.cs`), compiled on the PC like the tray icon. It keeps the microphone closed except while recording, plays a start and an end beep, and exits if the app goes away.
+
+### Security
+
+- **Request key.** The app writes a random key into the addon folder (`RequestKey.lua`), every request from the addon carries it, and the app ignores requests without it on every channel. This closes a gap where anything able to speak with the silent Windows voice, very likely including a web page using the browser's text-to-speech, could send the app questions. With voice questions it would also have been able to open the microphone. An addon loaded before the update is told to `/reload`.
+- Audio is never written to disk. The key is never logged.
+
+### Not yet verified on Windows
+
+See `docs/voice-questions.md`: real microphone capture, the key-release binding in the client, timing and accuracy.
+
 ## Unreleased: security hardening
 
 Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). Addon is now **1.10.4**. The app `VERSION` in `companion/src/app/controller.js` is still 1.9.0: set it before releasing.

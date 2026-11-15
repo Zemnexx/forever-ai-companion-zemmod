@@ -10,7 +10,7 @@ import {
   bundledAddonVersion, ensureAddon, finishLegacyMigration, hasLegacyAddon, install, installedAddonVersion, isAddonInstalled,
   uninstall as uninstallAddon,
 } from '../install.js';
-import { knowledgeReadme, sampleContext } from '../assets.js';
+import { knowledgeReadme, micCsSource, sampleContext } from '../assets.js';
 import { buildMessages, buildSystem, cleanAnswer, loadKnowledge, plainAnswer } from '../prompt.js';
 import { ask, canSearch } from '../providers.js';
 import { startWatcher } from '../watcher.js';
@@ -28,6 +28,8 @@ import * as sys from './system.js';
 import { err, getAppLang, setAppLang, t } from '../i18n.js';
 import { currentGuide, guideFreshness, startGuideUpdates } from '../guide.js';
 import { createUpdater } from '../updater.js';
+import { createMic, ensureMicExe } from '../mic.js';
+import { createTalk, talkSettings } from '../talk.js';
 import { TRUSTED_KEYS } from '../signing.js';
 
 export const VERSION = '1.9.0';
@@ -86,6 +88,16 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   });
   const guides = { current: () => guide, onPatch: () => guideUpdates.check('patch') };
 
+  // Voice questions: the microphone helper is compiled and started on first use.
+  const talk = createTalk({
+    getCfg: () => cfg,
+    log,
+    getMic: () => createMic({
+      log,
+      getExe: () => ensureMicExe({ source: micCsSource(), dir: sys.isPackaged() ? sys.installDir() : env.dataDir }),
+    }),
+  });
+
   const wowDirValid = () => Boolean(cfg.wowDir && fs.existsSync(cfg.wowDir));
   const addonOk = () => wowDirValid() && isAddonInstalled(cfg.wowDir, cfg);
 
@@ -98,6 +110,11 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     if (e.type === 'answer') {
       const q = events.find((x) => x.id === e.id);
       if (q) Object.assign(q, { ok: e.ok, answer: e.answer, pending: false });
+      return;
+    }
+    if (e.type === 'heard') {
+      const q = events.find((x) => x.id === e.id);
+      if (q) q.question = e.question;
       return;
     }
     events.push({ ...e, pending: true, time: new Date().toISOString() });
@@ -143,7 +160,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     watchLegacyAddon();
     if (!addonOk()) { watcherError = t('needAddon'); return; }
     try {
-      watcher = startWatcher({ cfg, wowDir: cfg.wowDir, log, onEvent: addEvent, guides });
+      watcher = startWatcher({ cfg, wowDir: cfg.wowDir, log, onEvent: addEvent, guides, talk });
       log(`Waiting for questions (${cfg.provider}) in ${cfg.wowDir}`);
     } catch (e) {
       watcherError = e.message;
@@ -313,6 +330,27 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     },
 
     setTrayReady(v) { trayReady = Boolean(v); },
+
+    // Voice questions (talk.js).
+    talkStatus() {
+      const s = talkSettings(cfg);
+      return { supported: sys.isWindows, enabled: s.enabled, model: s.model, keySource: s.keySource, key: mask(cfg.talk?.apiKey) };
+    },
+    setTalk({ enabled, apiKey, model, removeKey } = {}) {
+      const patch = { talk: {} };
+      if (typeof enabled === 'boolean') patch.talk.enabled = enabled;
+      if (typeof apiKey === 'string' && apiKey.trim()) patch.talk.apiKey = apiKey.trim();
+      if (removeKey) patch.talk.apiKey = null;
+      if (typeof model === 'string' && /^[\w.:-]{1,80}$/.test(model.trim())) patch.talk.model = model.trim();
+      const next = { ...cfg.talk, ...patch.talk };
+      if (next.enabled && !next.apiKey && !cfg.keys?.chatgpt) throw err('talkNeedsKey');
+      save(patch);
+      return this.talkStatus();
+    },
+    async talkTest() {
+      if (!sys.isWindows) throw err('installedOnly');
+      return talk.test({ lang: getAppLang() });
+    },
     setWebSearch({ enabled }) {
       save({ webSearch: Boolean(enabled) });
       return { webSearch: Boolean(enabled) };
@@ -477,6 +515,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     },
 
     stop() {
+      talk.close();
       beacon.stop();
       clearInterval(loginTimer);
       guideUpdates.stop();

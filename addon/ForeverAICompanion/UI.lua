@@ -549,9 +549,16 @@ function UI:Build()
   send:SetPoint("LEFT", composer, "RIGHT", 6, 0)
   send:SetScript("OnClick", function() UI:Submit() end)
 
+  -- "Talk": ask with your voice (click, speak, click again or just stop).
+  local talk = linkButton(composer, L.TALK, 58, 26)
+  talk:SetPoint("RIGHT", -4, 0)
+  talk:SetScript("OnClick", function() ns.Core:ToggleListen() end)
+  tooltip(talk, L.TALK_TIP_TITLE, L.TALK_TIP)
+  self.talk = talk
+
   local input = CreateFrame("EditBox", "ForeverAICompanionInput", composer)
   input:SetPoint("LEFT", 10, 0)
-  input:SetPoint("RIGHT", -8, 0)
+  input:SetPoint("RIGHT", talk, "LEFT", -4, 0)
   input:SetHeight(28)
   input:SetFontObject(UI.fonts.Body)
   input:SetAutoFocus(false)
@@ -1161,7 +1168,11 @@ function UI:RefreshConversation()
   end
   for _, e in ipairs(messages) do
     n = n + 1
-    y = y + self:PlaceBubble(n, y, "user", e.shown and withLinks(e.shown) or escape(e.question), stamp(e.t)) + 6
+    local said = e.shown and withLinks(e.shown) or escape(e.question)
+    if e.listen and (e.question or "") == "" then
+      said = "|cffaaaaaa" .. (e.status == "pending" and L.TALK_BUBBLE_LISTENING or L.TALK_BUBBLE) .. "|r"
+    end
+    y = y + self:PlaceBubble(n, y, "user", said, stamp(e.t)) + 6
     n = n + 1
     if e.status == "pending" then
       y = y + self:PlaceBubble(n, y, "pending", ns.Personas:ThinkingText(0), nil) + 12
@@ -1190,7 +1201,23 @@ function UI:Retry(entry, chatData)
   for i, m in ipairs(chatData.messages) do
     if m == entry then table.remove(chatData.messages, i) break end
   end
+  -- A voice question the app never heard: listen again.
+  if entry.listen and (entry.question or "") == "" then
+    ns.Core:Listen(chatData.id)
+    return
+  end
   ns.Core:Ask(entry.shown or entry.question, nil, chatData.id)
+end
+
+-- The Talk button says "Stop" while the app is listening.
+function UI:RefreshTalkButton()
+  local b = self.talk
+  if not b then return end
+  if ns.Core.listening then
+    b.label:SetText("|cffff6060" .. L.TALK_STOP .. "|r")
+  else
+    b.label:SetText(L.TALK)
+  end
 end
 
 -- What the line under the chat title shows for each state of the app (see

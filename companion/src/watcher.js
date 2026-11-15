@@ -18,7 +18,8 @@ import { loadContextCache, resolveContext, saveContextCache } from './context-ca
 import { startScreenReader } from './screen-reader.js';
 import { probeReport, startProbeMonitor } from './probe.js';
 import { startVoiceInbox } from './voice-inbox.js';
-import { runInLang, t } from './i18n.js';
+import { err, runInLang, t } from './i18n.js';
+import { ensureRequestKey, hasRequestKey } from './request-key.js';
 
 const SCREENSHOT_RE = /^WoWScrnShot_.*\.(png|tga|jpe?g)$/i;
 
@@ -39,7 +40,7 @@ export function readRequest(file) {
 
 export async function handleRequest(req, {
   cfg, paths, state, system, save = saveState, log = () => {}, onEvent = () => {},
-  contextCache = {}, saveCache = () => {}, probeMonitor = null,
+  contextCache = {}, saveCache = () => {}, probeMonitor = null, talk = null,
 }) {
   if (state.processed.includes(req.id)) return null;
   state.processed.push(req.id);
@@ -63,7 +64,9 @@ export async function handleRequest(req, {
   const ch = req.context?.character || {};
   const who = `${ch.name ?? '?'} (${ch.class ?? '?'} ${ch.level ?? '?'})` +
     (req.chat?.title ? ` · chat «${req.chat.title}»` : '');
-  log(`Question from ${who}${req.assistant ? ` for ${req.assistant}` : ''}: ${req.question}`);
+  const lang = playerLang({ lang: req.lang, client: req.context?.client });
+  if (req.listen) req.question = '';
+  log(`${req.listen ? 'Voice question' : 'Question'} from ${who}${req.assistant ? ` for ${req.assistant}` : ''}${req.listen ? '' : `: ${req.question}`}`);
   if (req.context && typeof req.context === 'object') {
     log(`Secciones enviadas: ${sentNow.filter((k) => k !== 'diagnostics').join(', ') || '(ninguna)'}` +
       ` · sin cambios: ${Object.keys(req.same || {}).join(', ') || '(ninguna)'}`);
@@ -73,23 +76,32 @@ export async function handleRequest(req, {
       delete req.context.diagnostics;
     }
   }
-  onEvent({ type: 'question', id: req.id, who, question: req.question });
+  onEvent({ type: 'question', id: req.id, who, question: req.listen ? t('talkEvent') : req.question });
   const started = Date.now();
   let answer;
   try {
+    // Voice question: what the player said becomes the question (see talk.js).
+    if (req.listen) {
+      if (!talk) throw err('talkOff');
+      req.question = await runInLang(lang, () => talk.finish(req));
+      log(`Heard: ${req.question}`);
+      onEvent({ type: 'heard', id: req.id, question: req.question });
+    }
     // Channel probe: answered by the app itself, not by the AI. The addon
     // first asks the app to start watching the game's files (probeStart).
     const { text, model } = req.probeStart && probeMonitor
       ? (probeMonitor.activate(), { text: t('probeRecording'), model: 'prueba de canales' })
       : req.probe && probeMonitor
       ? { ...(await probeReport(req.probe, probeMonitor)), model: 'prueba de canales' }
-      : await runInLang(playerLang({ lang: req.lang, client: req.context?.client }), () => ask(cfg, typeof system === 'function' ? system(req) : system, buildMessages(req), req));
+      : await runInLang(lang, () => ask(cfg, typeof system === 'function' ? system(req) : system, buildMessages(req), req));
     answer = { id: req.id, ok: true, answer: cleanAnswer(text) || t('emptyAnswer'), model };
     log(`Respuesta (${model}, ${((Date.now() - started) / 1000).toFixed(1)} s):\n${answer.answer}`);
   } catch (e) {
     answer = { id: req.id, ok: false, answer: `Error: ${e.message}` };
     log(`Error: ${e.message}`);
   }
+  // The addon shows what was heard as the question.
+  if (req.listen && req.question) answer.question = req.question;
   onEvent({ type: 'answer', id: req.id, who, question: req.question, ok: answer.ok, answer: plainAnswer(answer.answer) });
 
   state.answers.push(answer);
@@ -104,7 +116,8 @@ export async function handleRequest(req, {
 
 // Starts listening. Returns { stop() }.
 // guides: { current() -> newest Forever guide, onPatch() -> look for a newer one }.
-export function startWatcher({ cfg, wowDir, log = () => {}, onEvent = () => {}, screenReader = true, guides = null }) {
+// talk: voice questions (talk.js), or null.
+export function startWatcher({ cfg, wowDir, log = () => {}, onEvent = () => {}, screenReader = true, guides = null, talk = null }) {
   const paths = wowPaths(wowDir);
   fs.mkdirSync(paths.screenshots, { recursive: true });
   const state = loadState();
@@ -122,12 +135,39 @@ export function startWatcher({ cfg, wowDir, log = () => {}, onEvent = () => {}, 
   // Idle until the addon starts a channel test (see probe.js).
   const probeMonitor = startProbeMonitor({ wowDir, log });
 
+  // Only requests with this PC's key (see request-key.js), whatever the channel.
+  const key = ensureRequestKey(wowDir);
+  let keyWarnedAt = 0;
+  const authorized = (req) => {
+    if (hasRequestKey(req, key)) {
+      delete req.auth; // never logged or sent anywhere
+      return true;
+    }
+    log('Ignored a request without this PC\'s addon key (an addon loaded before an update, or another program using the voice).');
+    // An addon loaded before the update: its question fails with a hint to
+    // reload. At most every 10 minutes, so others can't keep failing questions.
+    if (Date.now() - keyWarnedAt > 600000) {
+      keyWarnedAt = Date.now();
+      reportFailure(t('reloadForKey'));
+    }
+    return false;
+  };
+
   // One request at a time, whatever the source.
   let queue = Promise.resolve();
   const enqueue = (req) => {
+    if (!authorized(req)) return queue;
+    // The talk key was released: end that recording now, not after the queue.
+    if (req.listenStop) {
+      talk?.stop(req.listenStop);
+      return queue;
+    }
+    // Voice question: start recording right away, even if another question
+    // is still being answered.
+    if (req.listen && talk && !state.processed.includes(req.id)) talk.begin(req);
     queue = queue
       .then(() => handleRequest(req, {
-        cfg, paths, state, system, log, onEvent, contextCache, saveCache: saveContextCache, probeMonitor,
+        cfg, paths, state, system, log, onEvent, contextCache, saveCache: saveContextCache, probeMonitor, talk,
       }))
       .catch((e) => log(`Error: ${e.message}`));
     return queue;

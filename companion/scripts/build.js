@@ -12,7 +12,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
 import { ROOT } from '../src/config.js';
-import { addonFiles, appIconIco, appIconPng, foreverGuide, knowledgeReadme, sampleContext, trayCsSource, ttsEngineSource, uiHtml } from '../src/assets.js';
+import { addonFiles, appIconIco, appIconPng, foreverGuide, knowledgeReadme, micCsSource, sampleContext, trayCsSource, ttsEngineSource, uiHtml } from '../src/assets.js';
 
 const DIST = path.join(ROOT, 'dist');
 const BUNDLE = path.join(DIST, 'forever-ai-companion.cjs');
@@ -33,6 +33,8 @@ const ICO = ${JSON.stringify(appIconIco().toString('base64'))};
 export const appIconIco = () => Buffer.from(ICO, 'base64');
 const TRAY = ${JSON.stringify(trayCsSource())};
 export const trayCsSource = () => TRAY;
+const MIC = ${JSON.stringify(micCsSource())};
+export const micCsSource = () => MIC;
 const GUIDE = ${JSON.stringify(foreverGuide())};
 export const foreverGuide = () => GUIDE;
 export const ttsEngineSource = () => TTS;

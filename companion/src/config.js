@@ -78,6 +78,17 @@ export const DEFAULTS = {
   // Let the AI search the web when it needs to (Claude, Codex).
   webSearch: true,
 
+  // Voice questions (see src/talk.js): off until the player turns them on.
+  // Transcribed by OpenAI; apiKey null = use the ChatGPT option's key.
+  talk: {
+    enabled: false,
+    model: 'gpt-4o-mini-transcribe',
+    apiKey: null,
+    baseUrl: 'https://api.openai.com/v1',
+    maxSeconds: 30,
+    silenceMs: 1500,
+  },
+
   // Where the up-to-date WoW Forever guide is published (see src/guide.js).
   // The app downloads it every few hours; null = only the guide inside the app.
   guideUrl: GUIDE_URL,

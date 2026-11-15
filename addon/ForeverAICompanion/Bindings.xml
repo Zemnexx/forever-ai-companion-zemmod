@@ -1,0 +1,7 @@
+<!-- Forever AI Companion key bindings (Key Bindings > Forever AI Companion).
+     "Talk to your assistant": hold the key, say your question, let go. -->
+<Bindings>
+  <Binding name="FOREVERAICOMPANION_TALK" header="FOREVERAICOMPANION" runOnUp="true">
+    ForeverAICompanion_Talk(keystate)
+  </Binding>
+</Bindings>

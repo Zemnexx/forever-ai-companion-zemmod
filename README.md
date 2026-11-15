@@ -122,6 +122,15 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 - **See what is sent**: in the window click **See the data I send**.
 - **In combat** you can't ask (on purpose): wait until combat ends.
 
+### Asking with your voice (optional)
+
+Turn on **Voice questions** in the app's dashboard. It needs invisible sending, a microphone and an OpenAI API key; the key you saved for ChatGPT works, or you can add one just for this.
+
+- **Hold your talk key, say the question, let go.** Pick the key in WoW's key bindings: *Forever AI Companion > Talk to your assistant*. Or click **Talk** next to the chat window's text box, then click it again (or just stop talking).
+- A short beep means the app is listening. Your words show up as the question, and the answer arrives as if you had typed it.
+- **Follow-up questions** work the same way: they go to the open chat, so the assistant knows what you were talking about.
+- The microphone is open only while you talk (at most 30 seconds), and Windows shows when it's in use. The recording goes to OpenAI to be turned into text and is never saved; OpenAI charges your API key per minute of audio.
+
 ### Chat commands (optional)
 
 Every command also works with its Spanish word (shown in parentheses).
@@ -130,6 +139,7 @@ Every command also works with its Spanish word (shown in parentheses).
 |---|---|
 | `/ia` or `/ai` | Opens or closes the window |
 | `/ia <question>` | Asks directly in the open chat |
+| `/ia talk` (`hablar`) | Asks with your voice: run it once to start listening and again to stop (or just stop talking) |
 | `/ia new` (`nuevo`) | Starts a new chat |
 | `/ia assistant` (`asistente`) | Choose between Fizzi and Rizzik (`/ia assistant fizzi` or `/ia assistant rizzik`) |
 | `/ia button` (`boton`) | Shows or hides the floating button (`/ia button reset` puts it back in place) |
@@ -272,6 +282,8 @@ Each player can also add their own knowledge from the app's dashboard (**Server 
 - **Invisible sending:** the silent voice's file used by elevated programs lives in `%ProgramFiles%\ForeverAICompanion`, which only administrators can change (installs from before this change are offered **Update invisible sending** to move it). The voice keeps only this app's own messages: anything else any program speaks with it is dropped without being written or logged.
 - **Codex:** when the app searches the PC for Codex, or installs it, it only runs a `codex.exe` that Windows confirms is signed by OpenAI. If a future Codex stops accepting one of the safety switches the app relies on (no commands, no file or browser access), the app refuses to use it rather than dropping the switch.
 - The `/ia probe` channel test only watches the game's files while a test is running (and for 15 minutes after, for files the game writes at logout).
+- **Only the addon can ask.** Every request carries a random key the app writes into the addon's folder on this PC (`RequestKey.lua`), and the app ignores requests without it. So a web page can't use the silent voice (browsers can speak with Windows voices) to send questions or open the microphone.
+- **Voice questions** are off until you turn them on. The microphone opens only when you press the talk key or click Talk, closes when you stop (30 seconds at most), and the recording is sent to OpenAI for transcription without ever being written to disk.
 - The app window is a local page (`127.0.0.1`) that doesn't accept connections from other computers or other web pages.
 - **The game is not modified**: its memory and files are not touched, and the addon doesn't play for you. It only uses normal addon and Windows features.
 - This is not a Blizzard product. Use it at your own risk (see the next section).
@@ -303,7 +315,7 @@ Blizzard's Terms of Use and EULA forbid bots, cheats and unauthorized third-part
 
 | | |
 |---|---|
-| Plays for you, presses keys or clicks | **No.** You type every question, and every answer is just text you read, like looking something up on a website. |
+| Plays for you, presses keys or clicks | **No.** You type (or say) every question, and every answer is just text you read, like looking something up on a website. Voice questions only replace typing: you press the key and speak each one, and nothing is typed or pressed in the game for you. |
 | Reads or changes the game's memory | **No.** It doesn't read, inject into or modify the game process. |
 | Changes the game's files | **No.** The app only writes inside its own addon folders in `Interface\AddOns`. |
 | Works during combat | **No.** The addon refuses questions while you are in combat, in line with Blizzard's goal that addons shouldn't give an advantage in combat. |
@@ -373,6 +385,10 @@ companion/
   src/i18n.js               English and Spanish messages (app, tray, in-game errors)
   src/watcher.js            Receives questions and publishes answers
   src/voice-inbox.js        Reads what the silent voice delivers
+  src/request-key.js        Per-PC key every request from the addon must carry
+  src/talk.js               Voice questions: listen requests, recording, transcription
+  src/mic.js vad.js         Microphone helper control and end-of-question detection
+  src/stt.js                OpenAI transcription and game-name hints
   src/screen-reader.js      Reads the on-screen line
   src/grid.js image.js      Decodes the line
   src/inbox.js              Inboxes and bell
@@ -389,6 +405,7 @@ companion/
   src/migrate.js            Moves installs from the project's previous name
   tts/ForeverAICompanionTts.cs  Silent voice engine (C#)
   tray/Tray.cs              Icon next to the clock (C#)
+  mic/Mic.cs                Microphone helper for voice questions (C#)
   knowledge-builtin/        WoW Forever guide
   scripts/build.js          Packages ForeverAICompanion.exe
   scripts/sign.js           Signs releases and the guide (local key or Key Vault)

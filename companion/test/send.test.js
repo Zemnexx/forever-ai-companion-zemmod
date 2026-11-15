@@ -890,3 +890,70 @@ test('items in the AI answer become links only when the id really is that item',
   assert.equal(requested, '5555');
   assert.equal(plain, 'Usa [anillo del alba], no [Hacha], y [Capa]. 5|5');
 });
+
+// Voice questions: the talk key sends a "listen" request (with this PC's key
+// and the character data) through the silent voice, the release sends a stop,
+// and what the app heard becomes the question. Follow-ups continue the chat.
+test('/ia talk: hold the key, speak, release; the transcript becomes the question', async () => {
+  const { createAssembler } = await import('../src/voice-inbox.js');
+  const KEY = 'cd'.repeat(32);
+  const voiceApis = `
+    SPOKEN = {}
+    C_VoiceChat = {
+      GetTtsVoices = function() return { { voiceID = 7, name = "ForeverAICompanion - English (United States)" } } end,
+      SpeakText = function(id, text) SPOKEN[#SPOKEN + 1] = text end,
+    }
+  `;
+  const out = runLua(`
+    START()
+    ns.requestKey = KEY
+    local function sent() for i = 1, 4000 do if not ns.Core.working then return end RUN_FRAMES(1) end end
+    -- Released before the request was even out: the stop follows it.
+    ns.Core:TalkKey("down")
+    local listeningWhileSending = tostring(ns.Core.listening ~= nil)
+    ns.Core:TalkKey("up")
+    sent()
+    local msgs = ns.Chats:Current().messages
+    local e = msgs[#msgs]
+    local before = tostring(e.listen) .. "|" .. e.status .. "|" .. tostring(ns.Core.listening) .. "|" .. listeningWhileSending
+    ns.Core:ApplyInbox({ answers = { { id = e.id, ok = true, answer = "Head to Westfall.", question = "Where do I go now?" } } })
+    local after = e.question .. "|" .. e.status
+    -- A follow-up by voice goes to the same chat with the earlier turn.
+    ns.Core:ToggleListen()
+    sent()
+    ns.Core:ToggleListen()
+    RESULT = table.concat(SPOKEN, "\\0") .. "#" .. before .. "#" .. after .. "#" .. #msgs
+  `, { KEY }, FILES, FAKE_UI + PRELUDE_DRIVE + voiceApis);
+  const [spoken, before, after, count] = out.split('#');
+  const asm = createAssembler();
+  const reqs = spoken.split('\0').map((s) => asm.add(s)).filter(Boolean).map((p) => JSON.parse(p.toString('utf8')));
+  assert.equal(reqs.length, 4, 'listen, stop, listen, stop');
+  const [listen, stop, followUp, stop2] = reqs;
+  assert.equal(listen.listen, true);
+  assert.equal(listen.question, '');
+  assert.equal(listen.auth, KEY, 'carries this PC\'s key');
+  assert.ok(listen.context?.character, 'with the character data, like a typed question');
+  assert.deepEqual([stop.listenStop, stop.auth, stop.question], [listen.id, KEY, '']);
+  assert.equal(stop.context, undefined, 'the stop is tiny');
+  assert.equal(before, 'true|pending|nil|true');
+  assert.equal(after, 'Where do I go now?|done');
+  assert.deepEqual(followUp.history.at(-1), { q: 'Where do I go now?', a: 'Head to Westfall.' }, 'follow-ups see the earlier turn');
+  assert.equal(stop2.listenStop, followUp.id);
+  assert.equal(count, '2');
+});
+
+test('/ia talk without invisible sending explains it and sends nothing', () => {
+  const out = runLua(`
+    START()
+    STATUS = ""
+    local setStatus = ns.UI.SetStatus
+    ns.UI.SetStatus = function(self, s) STATUS = s; return setStatus(self, s) end
+    ns.Core:Listen()
+    RUN_FRAMES(50)
+    RESULT = STATUS .. "#" .. #ns.Chats:Current().messages .. "#" .. tostring(ns.Uplink.grid and ns.Uplink.grid.shown)
+  `, {}, FILES, FAKE_UI + PRELUDE_DRIVE);
+  const [status, count, strip] = out.split('#');
+  assert.match(status, /need invisible sending/);
+  assert.equal(count, '0');
+  assert.notEqual(strip, 'true', 'never through the on-screen line');
+});
