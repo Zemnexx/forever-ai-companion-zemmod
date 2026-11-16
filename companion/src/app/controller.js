@@ -20,8 +20,8 @@ import {
 } from '../codex.js';
 import { ttsEngineSource } from '../assets.js';
 import {
-  ENGINE_DLL, compileEngine, installVoiceMachineWide, isLegacyEngineRegistered, isLegacyVoiceVisible, isVoiceVisible,
-  machineEngineState, uninstallVoiceMachineWide,
+  ENGINE_DLL, codeBaseIs, compileEngine, installVoice as registerVoiceForUser, installVoiceMachineWide, isLegacyEngineRegistered,
+  isLegacyVoiceVisible, isVoiceVisible, machineEngineState, uninstallVoiceMachineWide, userEngine,
 } from '../tts-voice.js';
 import { removeLegacyInstallDir } from '../migrate.js';
 import * as sys from './system.js';
@@ -244,7 +244,19 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   }
   if (sys.isWindows) {
     Promise.all([isVoiceVisible(), isLegacyVoiceVisible()])
-      .then(([active, legacy]) => (active || legacy ? refreshVoiceDll() : null))
+      .then(async ([active, legacy]) => {
+        if (!active && !legacy) return;
+        const dll = await refreshVoiceDll();
+        // Invisible sending turned on from another copy of the app (another
+        // install folder, maybe deleted since): the game would load that
+        // copy's voice. Point the per-user registration at this one (no
+        // prompt needed). Not from a test install, which leaves the PC alone.
+        if (!active || !sys.isPackaged() || sys.isSandbox() || await isLegacyEngineRegistered()) return;
+        const engine = await userEngine();
+        if (engine && codeBaseIs(engine.codeBase, dll)) return;
+        await registerVoiceForUser(dll);
+        log(`Invisible voice now uses this copy of the app (it pointed to ${engine?.codeBase || 'nothing'}).`);
+      })
       .catch((e) => log(`Could not update the invisible voice: ${e.message}`));
   }
 

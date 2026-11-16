@@ -333,6 +333,15 @@ async function engineAt(key, args = []) {
   }
 }
 
+// The per-user registration (what the game, not elevated, loads), or null.
+export const userEngine = () => engineAt(CLSID_KEY);
+
+// True when a registered CodeBase is this DLL (paths compared as Windows does).
+export function codeBaseIs(codeBase, dllPath) {
+  if (!codeBase || !dllPath) return false;
+  return codeBasePath(codeBase) === String(dllPath).replace(/\//g, '\\').toLowerCase();
+}
+
 export async function registeredEngines() {
   const found = await Promise.all([
     engineAt(CLSID_KEY), engineAt(CLSID_KEY_32), engineAt(HKLM_CLSID.replace('HKEY_LOCAL_MACHINE', 'HKLM'), ['/reg:64']),

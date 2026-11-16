@@ -15,6 +15,10 @@ Addon **1.14.0**.
   - Problems (in combat, a question already being sent, no invisible sending) show in the box instead of the hidden window.
 - The options page scrolls, so its three sections fit any screen.
 
+### Fixed
+
+- **Invisible sending kept pointing at another copy of the app.** After installing into a different folder (for example a test install, then the normal one), the game still loaded the silent voice from the first folder, and invisible sending broke once that folder was deleted. The installed app now points the per-user voice registration at its own copy when it starts. No permission prompt is needed, and test installs (`FAIC_INSTALL_DIR`) leave it alone.
+
 ### Changed
 
 - **Dimming while moving defaults to 75% opacity and 1 s**, so the window stays readable on the move. Combat stays at 30% and 2 s.

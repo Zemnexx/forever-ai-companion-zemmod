@@ -252,3 +252,13 @@ test('the voice only keeps the app\'s own messages and never logs what others sp
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the per-user voice is checked against this copy of the app', async () => {
+  const { codeBaseIs } = await import('../src/tts-voice.js');
+  const here = 'C:\\Users\\Tyler\\AppData\\Local\\Programs\\ForeverAICompanion\\ForeverAICompanionTts.dll';
+  assert.equal(codeBaseIs('file:///C:/Users/Tyler/AppData/Local/Programs/ForeverAICompanion/ForeverAICompanionTts.dll', here), true);
+  assert.equal(codeBaseIs('file:///c:/users/tyler/appdata/local/programs/foreveraicompanion/foreveraicompaniontts.dll', here), true, 'case does not matter on Windows');
+  assert.equal(codeBaseIs('file:///C:/Users/Tyler/AppData/Local/FAIC-test/app/ForeverAICompanionTts.dll', here), false, 'another install folder');
+  assert.equal(codeBaseIs(null, here), false);
+  assert.equal(codeBaseIs('file:///C:/x.dll', null), false);
+});
