@@ -1002,6 +1002,7 @@ test('the chat window dims while moving and comes back after the delay, unless i
     SPEED = 7; TICK(0.6); note("moving")
     SPEED = 0; TICK(0.5); note("stopped0.5")
     TICK(0.8); note("stopped1.3")
+    TICK(0.9); note("stopped2.2")
     -- Opened on the move: full until the next stop, then dims as usual.
     SPEED = 7; ns.Fade:Reset(); TICK(0.6); note("openedMoving")
     SPEED = 0; TICK(0.2); SPEED = 7; TICK(0.6); note("movingAgain")
@@ -1018,9 +1019,9 @@ test('the chat window dims while moving and comes back after the delay, unless i
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
   assert.deepEqual(got, {
-    standing: '1.00', moving: '0.60', 'stopped0.5': '0.60', 'stopped1.3': '1.00',
-    openedMoving: '1.00', movingAgain: '0.60',
-    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.60', off: '1.00',
+    standing: '1.00', moving: '0.30', 'stopped0.5': '0.30', 'stopped1.3': '0.30', 'stopped2.2': '1.00',
+    openedMoving: '1.00', movingAgain: '0.30',
+    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.30', off: '1.00',
   });
 });
 
@@ -1052,7 +1053,7 @@ test('fade settings: kept in range, previewed when changed, and on a page in Opt
     REG.opened = nil; SlashCmdList.FOREVERAICOMPANION("opciones"); r[#r + 1] = "es=" .. tostring(REG.opened)
     RESULT = table.concat(r, " ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'on 60/1 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
+  assert.equal(out, 'on 30/2 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
 });
 
 test('without the Settings API the page goes into the older Interface Options', () => {
@@ -1075,6 +1076,8 @@ test('the chat window also dims in combat, with its own opacity and delay; the l
     UnitAffectingCombat = function(unit) return COMBAT end
     InCombatLockdown = function() return COMBAT end
     START()
+    -- Moving set apart from combat (60%, 1 s), so the lower-opacity rule shows.
+    ns.db.fade = { v = 2, opacity = 60, delay = 1 }
     ns.UI:Show()
     local r = {}
     local function note(name) r[#r + 1] = name .. "=" .. A() end
@@ -1125,9 +1128,10 @@ test('combat settings: their own section of the page, kept in range and previewe
     s = ns.Fade:Settings()
     r[#r + 1] = string.format("%g/%g/%s", s.combatOpacity, s.combatDelay, tostring(s.combat))
     r[#r + 1] = string.format("moving untouched %s %g/%g", tostring(s.enabled), s.opacity, s.delay)
+    r[#r + 1] = "saved=" .. tostring(ns.db.fade.opacity) .. "/" .. tostring(ns.db.fade.delay)
     RESULT = table.concat(r, " | ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 60/1');
+  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 30/2 | saved=nil/nil');
 });
 
 test('settings saved before combat dimming existed keep working', () => {
@@ -1138,4 +1142,31 @@ test('settings saved before combat dimming existed keep working', () => {
     RESULT = string.format("%s %g/%g %s %g/%g", tostring(s.enabled), s.opacity, s.delay, tostring(s.combat), s.combatOpacity, s.combatDelay)
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   assert.equal(out, 'false 75/4 true 30/2');
+});
+
+test('only changed fade settings are saved, so new defaults reach everyone else', () => {
+  const out = runLua(`
+    START()
+    local r = {}
+    -- What the 1.12.0 to 1.13.0 test builds saved without the player choosing it.
+    ns.db.fade = { enabled = true, opacity = 60, delay = 1, combat = true, combatOpacity = 30, combatDelay = 2 }
+    local s = ns.Fade:Settings()
+    r[#r + 1] = string.format("migrated %g/%g", s.opacity, s.delay)
+    local keys = {}
+    for k in pairs(ns.db.fade) do keys[#keys + 1] = k end
+    table.sort(keys)
+    r[#r + 1] = "left=" .. table.concat(keys, ",")
+    -- Choices made in a test build (anything but those values) are kept.
+    ns.db.fade = { opacity = 45, combat = false }
+    s = ns.Fade:Settings()
+    r[#r + 1] = string.format("kept %g %s", s.opacity, tostring(s.combat))
+    -- From now on a choice is kept even if it equals an old default.
+    ns.Fade:Set("opacity", 60)
+    r[#r + 1] = string.format("chosen %g", ns.Fade:Settings().opacity)
+    -- A later default change reaches settings the player never touched.
+    ns.Fade.DEFAULTS.combatDelay = 3
+    r[#r + 1] = string.format("newDefault %g", ns.Fade:Settings().combatDelay)
+    RESULT = table.concat(r, " | ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  assert.equal(out, 'migrated 30/2 | left=v | kept 45 false | chosen 60 | newDefault 3');
 });

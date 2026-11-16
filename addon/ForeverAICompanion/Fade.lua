@@ -16,9 +16,12 @@ ns.Fade = Fade
 -- "enabled" / "opacity" / "delay": while moving (the names from before combat
 -- was added, so saved settings keep working).
 Fade.DEFAULTS = {
-  enabled = true, opacity = 60, delay = 1,
+  enabled = true, opacity = 30, delay = 2,
   combat = true, combatOpacity = 30, combatDelay = 2,
 }
+-- Values test builds 1.12.0 to 1.13.0 saved without the player choosing them.
+local SAVED_BY_TEST_BUILDS = { enabled = true, opacity = 60, delay = 1, combat = true, combatOpacity = 30, combatDelay = 2 }
+local SAVED_VERSION = 2
 Fade.MIN_OPACITY, Fade.MAX_OPACITY, Fade.OPACITY_STEP = 10, 95, 5
 Fade.MAX_DELAY, Fade.DELAY_STEP = 10, 0.5
 
@@ -32,11 +35,26 @@ local function snap(v, step, lo, hi)
   return max(lo, min(hi, floor(v / step + 0.5) * step))
 end
 
--- Saved settings (account-wide), filled in and kept within range.
-function Fade:Settings()
+-- Only what the player changed is saved (account-wide), so a new default
+-- reaches everyone who never changed that setting.
+local function saved()
   ns.db.fade = ns.db.fade or {}
-  local s = ns.db.fade
-  for k, v in pairs(self.DEFAULTS) do if s[k] == nil then s[k] = v end end
+  local t = ns.db.fade
+  if (t.v or 1) < SAVED_VERSION then
+    -- Test builds saved every default: forget the ones still at that value.
+    for k, v in pairs(SAVED_BY_TEST_BUILDS) do if t[k] == v then t[k] = nil end end
+    t.v = SAVED_VERSION
+  end
+  return t
+end
+
+-- The settings in use: saved choices over the defaults, kept within range.
+function Fade:Settings()
+  local t = saved()
+  local s = {}
+  for k, v in pairs(self.DEFAULTS) do
+    if t[k] == nil then s[k] = v else s[k] = t[k] end
+  end
   s.enabled = s.enabled and true or false
   s.combat = s.combat and true or false
   for _, k in ipairs({ "opacity", "combatOpacity" }) do
@@ -49,9 +67,10 @@ function Fade:Settings()
 end
 
 function Fade:Set(key, value)
+  local t = saved()
+  t[key] = value
   local s = self:Settings()
-  s[key] = value
-  self:Settings()
+  t[key] = s[key] -- saved within range
   if key == "opacity" or key == "combatOpacity" then
     self.previewUntil, self.previewAlpha = GetTime() + PREVIEW, s[key] / 100
   end

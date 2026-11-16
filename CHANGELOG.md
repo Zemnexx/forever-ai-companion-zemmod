@@ -2,7 +2,7 @@
 
 ## Unreleased: chat window dims while moving or in combat
 
-Addon **1.13.0**.
+Addon **1.13.1**.
 
 ### Added
 
@@ -11,9 +11,11 @@ Addon **1.13.0**.
   - It stays fully visible while the mouse is over it, while typing in it, while asking by voice, and on flight paths.
   - Opening it while moving or in combat shows it fully until the character stops or the fight ends.
 - **Settings page in Options > AddOns > Forever AI Companion**, also opened by a new gear button in the window and by `/ia options` (`/ia opciones`).
-  - While moving: on/off (on by default), opacity 10 to 95% (default 60%), delay before returning to full 0 to 10 s in 0.5 s steps (default 1 s).
-  - In combat: the same three settings of its own (on by default, 30%, 2 s).
-  - A changed opacity is previewed on the window for a moment. Settings are saved for the whole account, and settings saved by 1.12.0 keep working.
+  - While moving: on/off, opacity 10 to 95%, delay before returning to full 0 to 10 s in 0.5 s steps.
+  - In combat: the same three settings of its own.
+  - Both default to on, 30% and 2 s.
+  - A changed opacity is previewed on the window for a moment.
+  - Settings are saved for the whole account, and only the ones the player changes are saved, so a later default change reaches everyone who never changed that setting. Values the 1.12.0 to 1.13.0 test builds saved on their own (60% and 1 s for moving) are reset to the new defaults; other choices are kept.
 
 ## Unreleased: voice questions
 
