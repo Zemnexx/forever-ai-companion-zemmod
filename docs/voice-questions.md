@@ -1,6 +1,6 @@
 # Voice questions (speech to text): scope
 
-Status: first version built (phases 1 and 2), not yet tried on Windows. Branch: `vtt-feature` (from `security-hardening`).
+Status: shipped in app 2.0.0 (addon 1.14.1) and tested on Windows. Branch: `vtt-feature` (from `security-hardening`).
 
 ## Goal
 
@@ -110,9 +110,18 @@ Making the transcription base URL a setting, like the existing OpenAI-compatible
 | App | Listen branch in `watcher.handleRequest` (the stop message skips the queue; recording starts on arrival), `talk` settings in `config.js` (key encrypted with DPAPI), window screen "Voice questions" and dashboard row |
 | Tests | `test/request-key.test.js`, `test/talk.test.js`, listen flow tests in `test/send.test.js` |
 
-## Not yet verified on Windows
+## Tested on Windows
 
-- The microphone helper against a real microphone (`waveIn`), including the privacy-setting case.
-- The key binding firing on key release in the WoW Forever client.
-- Start delay, end-of-question detection in a real room, and transcription accuracy for game names and Spanish.
-- Whether a browser's `speechSynthesis` really lists the silent voice (the request key closes it either way).
+Confirmed in the game:
+
+- Recording from a real microphone through the helper (`waveIn`), the start and end beeps, and the microphone closing afterwards.
+- Transcription with an OpenAI API key, with the answer from a different AI (Claude Opus 5.5 through an API key).
+- The talk key in WoW Forever's Key Bindings, in its own "Forever AI Companion" section (after the fix in addon 1.11.1).
+- Compact answers, and dimming the window while moving and in combat.
+- The app repointing invisible sending at its own install folder.
+
+Not covered yet:
+
+- The message when Windows' microphone privacy setting blocks desktop apps.
+- Transcription accuracy for Spanish.
+- Whether a browser's `speechSynthesis` lists the silent voice. The request key closes that gap either way.

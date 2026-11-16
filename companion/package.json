@@ -1,6 +1,6 @@
 {
   "name": "forever-ai-companion",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Forever AI Companion: reads questions from the WoW Forever addon and answers them with an AI.",
   "repository": "github:lucasmenares/forever-ai-companion",

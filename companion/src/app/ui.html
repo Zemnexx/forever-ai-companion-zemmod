@@ -349,7 +349,7 @@ const I18N = {
     'p.claude.sonnet': 'Balanced (≈ 1 cent per question).',
     'p.claude.haiku': 'The cheapest and fastest (less than 0.1 cent).',
     'p.chatgpt.name': 'ChatGPT with an API key',
-    'p.chatgpt.desc': 'For people without a subscription: you only pay for what you use, on OpenAI\'s website. If you have ChatGPT Plus or Pro, choose “My ChatGPT subscription”.',
+    'p.chatgpt.desc': 'For people without a subscription: you only pay for what you use, on OpenAI\'s website. If you have ChatGPT Plus or Pro, choose “My ChatGPT subscription”. The same key also works for voice questions.',
     'p.chatgpt.tag': 'Pay as you go',
     'p.chatgpt.key1': 'Go to <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a> and sign in.',
     'p.chatgpt.key2': 'Add credit in <b>Billing</b>.',
@@ -521,6 +521,12 @@ const I18N = {
     'done.closeText': 'When you close it, we\'ll ask whether you want the app to keep running in the background. If it does, you\'ll find it next to the Windows clock with this icon {icon}: click to open it, right-click to close it.',
     'done.keyboard': 'Prefer the keyboard? You can also type <kbd>/ai</kbd> in the game chat.',
     'done.toDash': 'Go to dashboard',
+    'done.talkTitle': 'Optional: ask with your voice',
+    'done.talkText': 'Hold a key in WoW, say your question and let go. Set it up any time from the dashboard (<b>Voice questions</b>).',
+    'done.talkNeedsVoice': 'It needs invisible sending (step 5) and an OpenAI API key.',
+    'done.talkKeyReady': 'Your ChatGPT key works for it, so it only needs turning on.',
+    'done.talkNeedsKey': 'It needs an OpenAI API key, whichever AI answers your questions.',
+    'done.talkBtn': 'Set up voice questions',
 
     // Dashboard
     'autostart': 'Open when Windows starts',
@@ -703,7 +709,7 @@ const I18N = {
     'p.claude.sonnet': 'Equilibrado (≈ 1 centavo por pregunta).',
     'p.claude.haiku': 'El más barato y rápido (menos de 0,1 centavo).',
     'p.chatgpt.name': 'ChatGPT con clave de API',
-    'p.chatgpt.desc': 'Para quien no tiene suscripción: pagas solo lo que usas en la web de OpenAI. Si tienes ChatGPT Plus o Pro, elige «Mi suscripción de ChatGPT».',
+    'p.chatgpt.desc': 'Para quien no tiene suscripción: pagas solo lo que usas en la web de OpenAI. Si tienes ChatGPT Plus o Pro, elige «Mi suscripción de ChatGPT». La misma clave sirve también para las preguntas por voz.',
     'p.chatgpt.tag': 'Pagas por uso',
     'p.chatgpt.key1': 'Entra a <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a> e inicia sesión.',
     'p.chatgpt.key2': 'Carga crédito en <b>Billing</b>.',
@@ -869,6 +875,12 @@ const I18N = {
     'done.closeText': 'Al cerrarla te preguntaremos si quieres que la app siga funcionando en segundo plano. Si sigue, la encuentras junto al reloj de Windows con este ícono {icon}: clic para abrirla, clic derecho para cerrarla.',
     'done.keyboard': '¿Prefieres el teclado? También puedes escribir <kbd>/ia</kbd> en el chat del juego.',
     'done.toDash': 'Ir al panel',
+    'done.talkTitle': 'Opcional: pregunta con tu voz',
+    'done.talkText': 'Mantén pulsada una tecla en WoW, di tu pregunta y suelta. Configúralo cuando quieras desde el panel (<b>Preguntas por voz</b>).',
+    'done.talkNeedsVoice': 'Necesita el envío invisible (paso 5) y una clave de API de OpenAI.',
+    'done.talkKeyReady': 'Tu clave de ChatGPT sirve, así que solo hay que activarlo.',
+    'done.talkNeedsKey': 'Necesita una clave de API de OpenAI, sea cual sea la IA que responde tus preguntas.',
+    'done.talkBtn': 'Configurar preguntas por voz',
 
     'autostart': 'Abrir al iniciar Windows',
     'ago.now': 'hace un momento',
@@ -1454,9 +1466,15 @@ const VIEWS = {
         ${auto === null ? '' : `<div class="card" style="margin-top:18px"><div class="line"><div class="t"><b>${t('autostart')}</b><p>${t('done.autostartText')}</p></div>
           <label class="switch" title="${esc(t('autostart'))}"><input type="checkbox" id="autostart" ${auto ? 'checked' : ''}><i></i></label></div></div>`}
         ${status.tray ? `<div class="callout info" style="margin-top:16px"><span class="ic">${ICON.info}</span><div><b>${t('done.closeTitle')}</b><p>${t('done.closeText', { icon: '<img src="/icon.png" alt="" style="width:18px;height:18px;vertical-align:-4px">' })}</p></div></div>` : ''}
+        ${talkInfo?.supported ? `<div class="callout info" style="margin-top:16px"><span class="ic">${ICON.info}</span><div><b>${t('done.talkTitle')}</b><p>${t('done.talkText')} ${!voice?.active ? t('done.talkNeedsVoice') : talkInfo.keySource === 'chatgpt' ? t('done.talkKeyReady') : t('done.talkNeedsKey')}</p>
+          <div class="links" style="margin-top:10px"><button class="btn small" id="done-talk">${t('done.talkBtn')}</button></div></div></div>` : ''}
         <p class="small faint">${t('done.keyboard')}</p>`,
       next: { label: t('done.toDash'), action: openDash },
-      after() { bindAutostart(); },
+      after() {
+        bindAutostart();
+        const talk = $('done-talk');
+        if (talk) talk.onclick = () => openWizard('talk', true);
+      },
     };
   },
 };

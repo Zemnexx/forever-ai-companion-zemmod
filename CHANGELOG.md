@@ -1,10 +1,22 @@
 # Changelog
 
-## Unreleased: compact answers
+## 2.0.0 (addon 1.14.1)
 
-Addon **1.14.1**.
+Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). This release:
 
-### Added
+- fixes the seven findings of the v1.9.0 security review;
+- adds voice questions: hold a key, ask out loud, and get the answer in the chat, transcribed by OpenAI;
+- adds compact answers: a small box that shows the answer instead of opening the window;
+- dims the chat window while moving and in combat;
+- adds a settings page in Options > AddOns.
+
+No npm dependencies were added. The exe grew by about 100 KB: about 37 KB of app code and 66 KB of addon, window and C# files embedded in it.
+
+Updates and guide downloads stay off until a signing key is in `TRUSTED_KEYS` (see "Signing key" in the README).
+
+### Compact answers
+
+#### Added
 
 - **Compact answers** (off by default; Options > AddOns > Forever AI Companion, or `/ia compact`). Asking with the chat window closed (talk key, `/ia talk`, `/ia <question>`) no longer opens it.
   - A small, slightly see-through box shows "Listening...", then "Thinking...", then the answer with what was asked.
@@ -15,19 +27,17 @@ Addon **1.14.1**.
   - Problems (in combat, a question already being sent, no invisible sending) show in the box instead of the hidden window.
 - The options page scrolls, so its three sections fit any screen.
 
-### Fixed
+#### Fixed
 
 - **Invisible sending kept pointing at another copy of the app.** After installing into a different folder (for example a test install, then the normal one), the game still loaded the silent voice from the first folder, and invisible sending broke once that folder was deleted. The installed app now points the per-user voice registration at its own copy when it starts. No permission prompt is needed, and test installs (`FAIC_INSTALL_DIR`) leave it alone.
 
-### Changed
+#### Changed
 
 - **Dimming while moving defaults to 50% opacity and 1 s**, dim enough to see past and still readable on the move. Combat stays at 30% and 2 s.
 
-## Unreleased: chat window dims while moving or in combat
+### Chat window dims while moving or in combat
 
-Addon **1.13.1**.
-
-### Added
+#### Added
 
 - **The chat window dims while the character moves** (walking, running, riding, swimming) and returns to full a moment after stopping.
 - **It also dims in combat**, and returns to full a moment after the fight ends. When the character is both moving and fighting, the lower opacity is used.
@@ -40,11 +50,9 @@ Addon **1.13.1**.
   - A changed opacity is previewed on the window for a moment.
   - Settings are saved for the whole account, and only the ones the player changes are saved, so a later default change reaches everyone who never changed that setting. Values the 1.12.0 to 1.13.0 test builds saved on their own (60% and 1 s for moving) are dropped once, so those installs use the current defaults; other choices are kept.
 
-## Unreleased: voice questions
+### Voice questions
 
-Addon **1.11.1**. App `VERSION` unchanged (1.9.0). No npm dependencies added; the bundled code grew by about 20 KB.
-
-### Added
+#### Added
 
 - **Voice questions.** Hold a talk key (Key Bindings > Forever AI Companion > Talk to your assistant), click **Talk** in the chat window, or type `/ia talk`, then say the question.
   - The addon sends a "listen" request with the character data through invisible sending, and the app records until the key is released or the player pauses (30 s at most).
@@ -54,26 +62,24 @@ Addon **1.11.1**. App `VERSION` unchanged (1.9.0). No npm dependencies added; th
 - **Settings in the app window** ("Voice questions"): on/off (off by default), the OpenAI key (the ChatGPT key is reused when there is one, and a separate key is encrypted with DPAPI), the model, and a microphone test.
 - **Microphone helper** (`mic/Mic.cs`), compiled on the PC like the tray icon. It keeps the microphone closed except while recording, plays a start and an end beep, and exits if the app goes away.
 
-### Fixed
+#### Fixed
 
 - **Key Bindings showed a dead "HEADER_FOREVERAICOMPANION" row** under "Other". The talk key now has its own "Forever AI Companion" section (a `category`, as Questie does, instead of a `header`). An existing binding is kept.
 
-### Security
+#### Security
 
 - **Request key.** The app writes a random key into the addon folder (`RequestKey.lua`), every request from the addon carries it, and the app ignores requests without it on every channel. This closes a gap where anything able to speak with the silent Windows voice, very likely including a web page using the browser's text-to-speech, could send the app questions. With voice questions it would also have been able to open the microphone. An addon loaded before the update is told to `/reload`.
 - Audio is never written to disk. The key is never logged.
 
-### Not yet verified on Windows
+#### Tested on Windows
 
-See `docs/voice-questions.md`: real microphone capture, the key-release binding in the client, timing and accuracy.
+Microphone capture, OpenAI transcription with the answer from another AI, and the talk key were confirmed in the game. See `docs/voice-questions.md` for what is still open.
 
-## Unreleased: security hardening
-
-Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). Addon is now **1.10.4**. The app `VERSION` in `companion/src/app/controller.js` is still 1.9.0: set it before releasing.
+### Security hardening
 
 This update addresses the seven findings of the v1.9.0 security review. No npm dependencies were added: everything uses Node's built-in `crypto` or tools that ship with Windows. The bundled code grew by about 15 KB.
 
-### Security
+#### Security
 
 - **Silent voice: elevated programs load an admin-only copy of the DLL** (finding 1). The machine-wide (HKLM) COM registration used to point at the DLL in `%LOCALAPPDATA%\Programs\ForeverAICompanion`, which any process running as the user could replace. The administrator step now:
   - copies the DLL to `%ProgramFiles%\ForeverAICompanion`;
@@ -90,7 +96,7 @@ This update addresses the seven findings of the v1.9.0 security review. No npm d
 - **API keys encrypted with DPAPI** (finding 6). Keys in `%APPDATA%\ForeverAICompanion\config.json` are stored as `{ "dpapi": "..." }`, encrypted for the current Windows user (CurrentUser scope, with app-specific entropy) through .NET's `ProtectedData`. Plain-text keys from earlier versions are encrypted the next time the app starts. If encryption fails, the key is not saved at all. Outside Windows (development) keys stay as plain text, as before.
 - **The channel test watches the game's files only while it runs** (finding 7). Before, the probe monitor ran all the time, re-reading up to 2 MB of the chat log every time it changed. Now it is idle until the addon starts `/ia probe`, stops 15 minutes later (to catch files the game writes at logout), and reads only the part of the chat log added since its last check.
 
-### Changes players will notice
+#### Changes players will notice
 
 - On PCs where invisible sending is on, the app offers **Update invisible sending** once: one UAC prompt, then restart WoW. Until then it keeps working as before.
 - Updates and guide downloads stay off until a signing key is pinned in `TRUSTED_KEYS`. Without a key, the app uses the guide built into it and does not update itself.
@@ -98,14 +104,14 @@ This update addresses the seven findings of the v1.9.0 security review. No npm d
 - If a future Codex stops accepting one of the safety switches, questions fail with a message asking to update the app or choose another AI.
 - The Codex PC search skips copies that aren't signed by OpenAI and logs which ones it skipped.
 
-### Compatibility and upgrade notes
+#### Compatibility and upgrade notes
 
 - **API keys:** the move to encrypted keys is one-way. An older version of the app can't read encrypted keys, so after a downgrade the keys must be pasted again.
 - **Guides from earlier versions:** a guide downloaded by an earlier version has no signature, so it is ignored and the built-in guide is used instead.
 - **Mixed app and addon versions:** the channel test works with mismatched versions. A new app with an old addon reports "run the test again" on the first run. An old app with the new addon answers the start request as an ordinary question, and the test continues.
 - **Update source:** updates and the guide now come from `RELEASE_REPO` in `companion/src/config.js`. It is currently set to `zemnexx/forever-ai-companion-zemmod`, which should be the repository whose maintainer holds the signing key.
 
-### For maintainers
+#### For maintainers
 
 - New files:
   - `companion/src/signing.js`: signature checks and the `TRUSTED_KEYS` list.
@@ -117,11 +123,7 @@ This update addresses the seven findings of the v1.9.0 security review. No npm d
 - One-time setup: create a P-256 key (Key Vault recommended) and paste its public key into `TRUSTED_KEYS`. See "Signing key" in the README.
 - Tests: 121 run, 117 pass, 4 skipped (Windows only), 0 fail.
 
-### Not yet verified on Windows
+#### Tested on Windows
 
-These parts depend on Windows and were only covered by unit tests and generated-script checks. Test them on a Windows PC before releasing:
-
-- turning invisible sending on and off, and the update prompt on an existing install;
-- saving and loading an API key (DPAPI through PowerShell);
-- Codex search and in-app install (Authenticode check);
-- the voice engine under SAPI (it was compiled and its message filter tested with Mono only).
+- Confirmed: invisible sending with the protected voice copy, the silent voice under SAPI, and API keys saved and read back encrypted (OpenAI and Claude keys).
+- Not covered yet: Codex search and in-app install (the Authenticode check), since testing used API keys.
