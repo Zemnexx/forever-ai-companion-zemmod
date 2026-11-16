@@ -1,6 +1,6 @@
 {
   "name": "forever-ai-companion",
-  "version": "2.0.0",
+  "version": "1.11.1",
   "private": true,
   "description": "Forever AI Companion: reads questions from the WoW Forever addon and answers them with an AI.",
   "repository": "github:lucasmenares/forever-ai-companion",
@@ -14,7 +14,7 @@
     "install-addon": "node bin/install-addon.js",
     "ask": "node bin/ask.js",
     "build": "node scripts/build.js",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0"

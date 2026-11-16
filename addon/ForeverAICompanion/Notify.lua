@@ -1,5 +1,5 @@
 -- Notification cards: "Fizzi has an answer!" (or Rizzik's) with the chat name and a preview of
--- the answer, next to the floating button (or at the top of the screen).
+-- the answer, next to the minimap button (or at the top of the screen).
 -- Click a card to open that chat. Cards fade out after a few seconds and
 -- stack when several answers arrive.
 local _, ns = ...
@@ -119,7 +119,7 @@ local function card(i)
   return c
 end
 
--- Where cards go: beside the floating button, growing away from the screen
+-- Where cards go: beside the minimap button, growing away from the screen
 -- edge it is closest to; otherwise at the top center of the screen.
 function Notify:Layout()
   local visible = {}

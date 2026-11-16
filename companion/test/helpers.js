@@ -101,7 +101,23 @@ export function runLua(script, globals = {}, addonFiles = ['Json.lua', 'Uplink.l
   };
   addonFiles.forEach((f, i) => setStr(`SRC_${i}`, fs.readFileSync(path.join(ADDON_SRC, f), 'utf8')));
   for (const [k, v] of Object.entries(globals)) setStr(k, v);
+  // WoW's bit library (32-bit, results 0..2^32-1), which Lua 5.3 doesn't have.
+  // fengari's integers are 32-bit and signed, so values are wrapped first.
+  const bitLib = `
+    if not bit then
+      local function i(x) x = x % 4294967296; if x >= 2147483648 then x = x - 4294967296 end; return math.tointeger(x) end
+      local function u(x) return x % 4294967296 end
+      bit = {
+        band = function(a, b) return u(i(a) & i(b)) end,
+        bor = function(a, b) return u(i(a) | i(b)) end,
+        bxor = function(a, b) return u(i(a) ~ i(b)) end,
+        bnot = function(a) return u(~i(a)) end,
+        rshift = function(a, n) return u(i(a) >> n) end,
+        lshift = function(a, n) return u(i(a) << n) end,
+      }
+    end`;
   const harness = `
+    ${bitLib}
     ${prelude}
     ns = {}
     for i = 0, ${addonFiles.length - 1} do

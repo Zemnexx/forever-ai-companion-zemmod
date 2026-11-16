@@ -1,5 +1,5 @@
-// Every request from the addon carries this PC's request key, and the app
-// ignores requests without it.
+// Every request from the addon carries a code made with this PC's request
+// key, and the app ignores requests without a valid one.
 //
 // Any program that can speak with the silent Windows voice can hand the app
 // a request (Chrome doesn't offer the voice to web pages; other programs
@@ -7,6 +7,12 @@
 // folder (RequestKey.lua, created by this app, never part of the addon's
 // published files) tells the addon's requests apart from anything else.
 // The same check covers the on-screen line and screenshots.
+//
+// The key itself never travels: the code is HMAC-SHA256(key, the request's
+// id) (Core:AuthCode in the addon), because the on-screen line can be seen
+// by screenshots, recordings and streams. A code fits only its own id, the
+// app answers an id once (state.processed), and an id holds the second it
+// was made, so an old one is refused too.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,9 +55,21 @@ export function ensureRequestKey(wowDir) {
   return key;
 }
 
-// True when the request carries `key`. Compared in constant time.
-export function hasRequestKey(req, key) {
-  const given = req && typeof req.auth === 'string' ? Buffer.from(req.auth) : null;
-  const want = key ? Buffer.from(String(key)) : null;
-  return Boolean(given && want && given.length === want.length && crypto.timingSafeEqual(given, want));
+// The code for request `id` (lowercase hex).
+export const requestCode = (key, id) => crypto.createHmac('sha256', String(key)).update(String(id)).digest('hex');
+
+// Request ids: the second it was made and 4 random digits ("s" after it: the
+// end of a voice question's recording).
+const ID_RE = /^(\d{10})\d{4}s?$/;
+export const MAX_REQUEST_AGE_S = 24 * 3600;
+
+// True when the request carries the code of its own id, made with `key` in
+// the last day. Compared in constant time.
+export function hasRequestKey(req, key, { now = Date.now() } = {}) {
+  if (!key || !req || typeof req.auth !== 'string' || typeof req.id !== 'string') return false;
+  const made = ID_RE.exec(req.id);
+  if (!made || Math.abs(now / 1000 - Number(made[1])) > MAX_REQUEST_AGE_S) return false;
+  const given = Buffer.from(req.auth);
+  const want = Buffer.from(requestCode(key, req.id));
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
 }

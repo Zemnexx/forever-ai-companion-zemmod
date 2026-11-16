@@ -1,6 +1,7 @@
 // Runs the whole in-game send path (Core:Ask -> Collect -> Json -> Uplink:Send
 // -> Draw -> Screenshot) against a fake WoW UI, then renders the textures the
 // addon created and checks the companion can decode them.
+import crypto from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -366,8 +367,15 @@ test('chats: each chat keeps its own history, answers land in the right chat', (
 test('floating button: opens the chats, new chat, unread badge, drag, hide', () => {
   const out = runLua(`
     IsShiftKeyDown = function() return SHIFT end
+    -- A round minimap 140 px wide, centered at (1000, 700); the mouse above it.
+    Minimap = CreateFrame("Frame"); Minimap.w, Minimap.h = 140, 140
+    Minimap.GetCenter = function() return 1000, 700 end
+    Minimap.GetEffectiveScale = function() return 1 end
+    Minimap.GetFrameLevel = function() return 2 end
+    GetCursorPosition = function() return 1000, 900 end
     START()
     local b = ForeverAICompanionFloatingButton
+    b.SetPoint = function(self, p, rel, rp, x, y) self.anchorX, self.anchorY = math.floor((x or 0) + 0.5), math.floor((y or 0) + 0.5) end
     assert(b, "button not created")
     b.dragging = false -- the fake UI answers unknown fields with a function
     local shownAtStart = tostring(b.shown)
@@ -386,10 +394,11 @@ test('floating button: opens the chats, new chat, unread badge, drag, hide', () 
     local badge = tostring(ns.Button.badge.shown) .. "," .. ns.Button.badgeText:GetText()
     local thinking = tostring(ns.Button.thinking)
 
-    b.GetPoint = function() return "BOTTOMLEFT", UIParent, "BOTTOMLEFT", 300, 120 end
+    -- Dragged to straight above the minimap's center: it slides there (90°).
     b.scripts.OnDragStart(b)
+    b.scripts.OnUpdate(b, 0.016)
     b.scripts.OnDragStop(b)
-    local saved = ns.db.button.point .. "," .. ns.db.button.x .. "," .. ns.db.button.y
+    local saved = tostring(ns.db.button.angle) .. "," .. tostring(b.anchorX) .. "," .. tostring(b.anchorY)
     b.dragging = false
 
     SHIFT = true
@@ -406,7 +415,7 @@ test('floating button: opens the chats, new chat, unread badge, drag, hide', () 
   assert.equal(newChat, 'true,true');
   assert.equal(badge.split(',')[0], 'true');
   assert.equal(thinking, 'true', 'a pending question makes the icon breathe');
-  assert.equal(saved, 'BOTTOMLEFT,300,120');
+  assert.match(saved, /^90(\.0)?,0,75$/, 'on the minimap edge, above it (radius 70 + 5)');
   assert.equal(hidden, 'false,false');
 });
 
@@ -790,6 +799,322 @@ test('chat header shows whether the app is open, ready, and why not', () => {
   assert.equal(tip, 'App status unknown');
 });
 
+// --- macOS: sound files are checked a moment later ------------------------------
+// WoW for Mac says PlaySoundFile will play any file that exists, empty or not;
+// only C_Sound.IsPlaying a moment later tells them apart. Trusting the first
+// answer took every signal as rung and used up the 50 mailboxes in ~5 questions.
+const MAC_SOUND = RECORD_TEXT + PRELUDE_DRIVE + `
+  IsMacClient = function() return true end
+  REAL = { ok = true, st = true }   -- sound files with real content
+  HANDLES = {}
+  PlaySoundFile = function(path)
+    HANDLES[#HANDLES + 1] = path:match("sig\\\\([%w%-]+)%.wav$") or ""
+    return true, #HANDLES          -- "will play", like the Mac client says for every file
+  end
+  StopSound = function() end
+  C_Sound = { IsPlaying = function(h) return REAL[HANDLES[h]] == true end }
+  TIMERS = {}
+  C_Timer.After = function(_, fn) TIMERS[#TIMERS + 1] = fn end
+  function FLUSH() local list = TIMERS; TIMERS = {}; for _, fn in ipairs(list) do fn() end end
+  LOADS, LOADED = 0, {}
+  C_AddOns = {
+    IsAddOnLoaded = function(n) return LOADED[n] end,
+    LoadAddOn = function(n) LOADED[n] = true; LOADS = LOADS + 1; return true end,
+    EnableAddOn = function() end,
+  }
+`;
+
+test('Mac: a mailbox is opened only when the app really rings, not on every check', () => {
+  const out = runLua(`
+    START()
+    FLUSH()                                   -- the start-up scan finds nothing rung
+    ns.Core.HasPending = function() return true end
+    local first = ns.db.nextSig
+    for i = 1, 15 do ns.Live:Tick(); FLUSH() end   -- 30 s waiting for an answer
+    local idle = LOADS .. "/" .. ns.db.nextSig
+    REAL[string.format("%03d", ns.db.nextSig)] = true   -- the app rings
+    ns.Live:Tick(); FLUSH()
+    local rung = LOADS .. "/" .. ns.db.nextSig
+    for i = 1, 5 do ns.Live:Tick(); FLUSH() end    -- the next signal is still empty
+    RESULT = first .. "#" .. idle .. "#" .. rung .. "#" .. LOADS .. "#" .. tostring(ns.Live.deferred)
+  `, {}, ALL_FILES, MAC_SOUND);
+  const [first, idle, rung, after, deferred] = out.split('#');
+  assert.equal(deferred, 'true');
+  assert.equal(idle, `0/${first}`, 'no mailbox used and no signal skipped while nothing rang');
+  assert.equal(rung, `1/${Number(first) + 1}`, 'one ring, one mailbox');
+  assert.equal(after, '1');
+});
+
+test('Mac: signals rung while the game was closed are skipped at start, one check at a time', () => {
+  const out = runLua(`
+    REAL["001"], REAL["002"], REAL["003"] = true, true, true
+    START()
+    local during = tostring(ns.Live.scanning)
+    for i = 1, 5 do FLUSH() end
+    RESULT = during .. "#" .. ns.db.nextSig .. "#" .. tostring(ns.Live.scanning)
+  `, {}, ALL_FILES, MAC_SOUND);
+  assert.equal(out, 'true#4#false');
+});
+
+test('Mac: the chat header tells closed from ready (not "unknown")', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    ns.UI:Show()
+    FLUSH()
+    local states = {}
+    local function check() NOW = NOW + 2; ns.Live:CheckApp(); FLUSH(); states[#states + 1] = ns.Live:AppState() end
+    check(); check()                                   -- nothing beats: closed
+    REAL.beat1 = true; check()
+    REAL.beat1, REAL.beat2 = nil, true; check()        -- it switches: ready
+    REAL["need-ai"] = true; REAL.beat1, REAL.beat2 = true, nil; check()
+    RESULT = table.concat(states, ",")
+  `, {}, ALL_FILES, MAC_SOUND);
+  assert.equal(out.split(',').slice(-4).join(','), 'closed,closed,ready,need-ai');
+});
+
+test('Mac without C_Sound.IsPlaying: signals are not trusted, mailboxes go by the timer', () => {
+  const out = runLua(`
+    START()
+    ns.Core.HasPending = function() return true end
+    for i = 1, 10 do ns.Live:Tick() end
+    RESULT = LOADS .. "#" .. tostring(ns.Live.soundOK) .. "#" .. ns.Live:CheckApp()
+  `, {}, ALL_FILES, MAC_SOUND + 'C_Sound = nil\n');
+  assert.equal(out, '0#false#unknown');
+});
+
+// --- A slow answer through the invisible voice ------------------------------------
+const VOICE_ON = RECORD_TEXT + PRELUDE_DRIVE + `
+  SPOKEN = {}
+  C_VoiceChat = {
+    GetTtsVoices = function() return { { voiceID = 7, name = "ForeverAICompanion" } } end,
+    SpeakText = function(_, text) SPOKEN[#SPOKEN + 1] = text; return true end,
+  }
+  C_Timer.After = function(_, fn) fn() end
+  function UNTIL_IDLE()
+    for i = 1, 6000 do
+      if not ns.Core.working and not ns.Uplink.busy then return end
+      RUN_FRAMES(1)
+    end
+  end
+`;
+
+test('a slow answer through the voice: sent again as the same question, and the voice stays on', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    local id = ns.Core:Ask("¿Qué mazmorra me conviene?")
+    UNTIL_IDLE()
+    local chat = ns.Chats:Current()
+    local entry = chat.messages[#chat.messages]
+    local spoke = #SPOKEN
+    entry.t = time() - 46                       -- no answer after 45 s (a slow first answer)
+    ns.Core:HasPending()
+    UNTIL_IDLE()
+    local again = (ns.Uplink.last and ns.Uplink.last.bytes or 0) > 0
+    local count = #chat.messages
+    local stillPending = entry.status
+    ns.Core:HasPending()                        -- only once
+    UNTIL_IDLE()
+    -- The answer to the first copy arrives (the app answers an id once).
+    ns.Core:ApplyInbox({ answers = { { id = id, ok = true, answer = "Las Minas de la Muerte." } } })
+    RESULT = table.concat({ spoke, tostring(again), count, stillPending, entry.id == id and "same-id" or "new-id",
+      entry.status, tostring(ns.Voice.broken), tostring(ns.Voice:Available()) }, "#")
+  `, {}, ALL_FILES, VOICE_ON);
+  assert.equal(out, '1#true#1#pending#same-id#done#nil#true');
+});
+
+test('no answer at all through the voice: the question fails and the voice is given up, until an answer still arrives', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    ns.Core:Ask("¿Hola?")
+    UNTIL_IDLE()
+    local chat = ns.Chats:Current()
+    local entry = chat.messages[#chat.messages]
+    entry.t = time() - 46; ns.Core:HasPending(); UNTIL_IDLE()
+    entry.t = time() - 151; ns.Core:HasPending()
+    local given = entry.status .. "#" .. tostring(ns.Voice.broken)
+    -- The answer still arrives later: it is shown, and the voice is back.
+    ns.Core:ApplyInbox({ answers = { { id = entry.id, ok = true, answer = "Hola, aventurera." } } })
+    RESULT = given .. "#" .. entry.status .. "#" .. tostring(entry.answer) .. "#" .. tostring(ns.Voice.broken)
+  `, {}, ALL_FILES, VOICE_ON);
+  assert.equal(out, 'error#true#done#Hola, aventurera.#nil');
+});
+
+// --- Asking in combat ----------------------------------------------------------------
+const IN_COMBAT = RECORD_TEXT + PRELUDE_DRIVE + `
+  INCOMBAT = false
+  UnitAffectingCombat = function() return INCOMBAT end
+  InCombatLockdown = function() return INCOMBAT end
+  HEALTH, MAXH = 800, 1000
+  UnitHealth = function() return HEALTH end
+  UnitHealthMax = function() return MAXH end
+  function FIRE(event, ...)
+    for _, f in ipairs(FRAMES) do
+      if f.scripts.OnEvent then pcall(f.scripts.OnEvent, f, event, ...) end
+    end
+  end
+`;
+
+// The files in the order the game loads them (the .toc), with this fork's Fade,
+// Compact and Options: the combat warning is a choice there (dimming is the default).
+const COMBAT_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Fade.lua', 'Compact.lua', 'Options.lua', 'Button.lua', 'Notify.lua', 'Probe.lua', 'Core.lua'];
+
+test('in combat you can ask, and the window warns you to watch the game (and flashes when you get hit)', () => {
+  const out = runLua(`
+    START()
+    ns.Fade:Set("combatWarn", true)                       -- Options: the warning instead of dimming
+    ns.Personas:Set("fizzi")
+    ns.UI:Show()
+    INCOMBAT = true
+    FIRE("PLAYER_REGEN_DISABLED")
+    local id = ns.Core:Ask("¿Qué hago con este mob?")
+    local chat = ns.Chats:Current()
+    local asked = id and chat.messages[#chat.messages].status or "blocked"
+    local C = ns.Combat
+    local bar = tostring(C.bar.shown) .. ":" .. tostring(C.text.textValue)
+    FIRE("UNIT_COMBAT", "target", "WOUND", "", 50)       -- someone else hit: nothing
+    local other = tostring(C.hitAt)
+    FIRE("UNIT_COMBAT", "player", "WOUND", "", 200)      -- the player is hit
+    C:Fade(0.1)
+    local hit = string.format("%.2f", C.glow.alpha) .. ":" .. tostring(C.text.textValue) .. ":" .. tostring(C.hpText.textValue)
+    NOW = NOW + 5; C:Fade(0.1)                            -- a few seconds later
+    local calm = tostring(C.text.textValue)
+    INCOMBAT = false
+    FIRE("PLAYER_REGEN_ENABLED")
+    RESULT = table.concat({ asked, bar, other, hit, calm, tostring(C.bar.shown) }, "#")
+  `, {}, COMBAT_FILES, IN_COMBAT);
+  const [asked, bar, other, hit, calm, after] = out.split('#');
+  assert.equal(asked, 'pending', 'the question is sent in combat');
+  assert.equal(bar, 'true:In combat: keep an eye on the game');
+  assert.equal(other, 'nil', 'only hits on the player count');
+  assert.match(hit, /^0\.34:.*You're being hit! Watch the game.*:80%$/, 'the edges glow (discreetly); the health shows');
+  assert.equal(calm, 'In combat: keep an eye on the game');
+  assert.equal(after, 'false', 'the bar goes away after combat');
+});
+
+test('in combat, with the game hiding health from addons: the warning still works, without errors', () => {
+  const out = runLua(`
+    issecretvalue = function(v) return type(v) == "number" end   -- like the game in combat
+    START()
+    ns.Fade:Set("combatWarn", true)
+    ns.UI:Show()
+    INCOMBAT = true
+    FIRE("PLAYER_REGEN_DISABLED")
+    FIRE("UNIT_HEALTH", "player")
+    FIRE("UNIT_COMBAT", "player", "WOUND", "", 120)   -- what WoW Forever sends: the amount hidden
+    ns.Combat:Fade(0.1)
+    RESULT = tostring(ns.Combat.bar.shown) .. "#" .. tostring(ns.Combat.text.textValue) .. "#" .. string.format("%.2f", ns.Combat.glow.alpha)
+  `, {}, COMBAT_FILES, 'LOCALE = "esES"\n' + IN_COMBAT);
+  const [shown, text, flash] = out.split('#');
+  assert.equal(shown, 'true');
+  assert.match(text, /¡Te están golpeando! Mira el juego\|r$/);
+  assert.equal(flash, '0.34', 'the hit is seen even with its amount hidden');
+});
+
+test('in combat it is one or the other: the window dims (default) or shows the warning, switched in the options', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    ns.UI:Show()
+    INCOMBAT = true
+    FIRE("PLAYER_REGEN_DISABLED")
+    FIRE("UNIT_COMBAT", "player", "WOUND", "", 200)
+    ns.Combat:Fade(0.1)
+    local r = {}
+    local function state(name)
+      r[#r + 1] = name .. "=" .. tostring(ns.Combat.bar.shown) .. "," .. string.format("%.2f", ns.Combat.glow.alpha) .. ","
+        .. string.format("%.2f", ns.Fade:Target(GetTime())) .. "," .. ns.Fade:Settings().combatStyle
+    end
+    state("dim")
+    -- Mid-fight, the player ticks "Show the combat warning instead": the bar shows right away.
+    local o = ns.Options
+    o.combatWarnControl.GetChecked = function() return true end
+    o.combatWarnControl:GetScript("OnClick")(o.combatWarnControl)
+    FIRE("UNIT_COMBAT", "player", "WOUND", "", 200)
+    ns.Combat:Fade(0.1)
+    state("warn")
+    r[#r + 1] = "saved=" .. tostring(ns.db.fade.combatStyle)
+    -- Ticking "Dim the window in combat" again picks dimming: the bar goes away.
+    local c = o.combatControls
+    c.enabled.GetChecked = function() return true end
+    c.enabled:GetScript("OnClick")(c.enabled)
+    state("dimAgain")
+    -- Saved by an earlier test build with combat dimming turned off: the warning.
+    ns.db.fade = { v = 2, combat = false }
+    r[#r + 1] = "legacy=" .. ns.Fade:Settings().combatStyle
+    RESULT = table.concat(r, " ")
+  `, {}, COMBAT_FILES, IN_COMBAT);
+  const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
+  assert.deepEqual(got, {
+    dim: 'false,0.00,0.30,dim',      // no bar, no glow; the window dims
+    warn: 'true,0.34,1.00,warn',     // the bar and the glow; the window stays fully visible
+    saved: 'warn',
+    dimAgain: 'false,0.34,0.30,dim', // (the last glow fades by itself)
+    legacy: 'warn',
+  });
+});
+
+test('a voice question can be asked in combat too', () => {
+  const out = runLua(`
+    START()
+    InCombatLockdown = function() return true end
+    UnitAffectingCombat = function() return true end
+    ns.requestKey = KEY
+    ns.Core:TalkKey("down")
+    for i = 1, 4000 do if not ns.Core.working then break end RUN_FRAMES(1) end
+    local msgs = ns.Chats:Current().messages
+    RESULT = tostring(#SPOKEN > 0) .. "#" .. tostring(msgs[#msgs] and msgs[#msgs].listen) .. "#" .. tostring(ns.Core.listening ~= nil)
+  `, { KEY: 'ab'.repeat(32) }, FILES, FAKE_UI + PRELUDE_DRIVE + `
+    SPOKEN = {}
+    C_VoiceChat = {
+      GetTtsVoices = function() return { { voiceID = 7, name = "ForeverAICompanion" } } end,
+      SpeakText = function(id, text) SPOKEN[#SPOKEN + 1] = text end,
+    }
+  `);
+  assert.equal(out, 'true#true#true', 'sent through the voice, listening, no combat refusal');
+});
+
+test('a slow question is sent again as text only: never a recording, never opening the window or the box', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    ns.Compact:Set("enabled", true)
+    local reqs = {}
+    local build = ns.Core.BuildFrame
+    ns.Core.BuildFrame = function(self, req, ...) reqs[#reqs + 1] = req; return build(self, req, ...) end
+    local id = ns.Core:Ask("¿Qué mazmorra me conviene?")
+    UNTIL_IDLE()
+    local chat = ns.Chats:Current()
+    local typed = chat.messages[#chat.messages]
+    local shows, boxes = 0, 0
+    local show, box = ns.UI.Show, ns.Compact.Show
+    ns.UI.Show = function(...) shows = shows + 1; return show(...) end
+    ns.Compact.Show = function(...) boxes = boxes + 1; return box(...) end
+    typed.t = time() - 46
+    ns.Core:HasPending()
+    UNTIL_IDLE()
+    local resent = reqs[#reqs]
+    local r = { #reqs, tostring(resent.id == id), tostring(resent.listen), tostring(ns.Core.listening), shows, boxes }
+    -- Called the way the upstream code calls it (the entry 4th): still not a recording.
+    ns.Core:Ask(typed.question, nil, chat.id, typed)
+    UNTIL_IDLE()
+    r[#r + 1] = tostring(reqs[#reqs].listen) .. "," .. tostring(ns.Core.listening)
+    -- A pending voice question is never sent again, and doesn't give up the voice.
+    ns.Core.working = false
+    local before = #reqs
+    local voiceQ = { id = "1", question = "", status = "pending", t = time() - 46, viaVoice = true, listen = true }
+    ns.Chats:AddMessage(chat, voiceQ)
+    ns.Core:HasPending(); UNTIL_IDLE()
+    r[#r + 1] = tostring(#reqs == before)
+    voiceQ.t = time() - 151; ns.Core:HasPending()
+    r[#r + 1] = voiceQ.status .. "," .. tostring(ns.Voice.broken)
+    RESULT = table.concat(r, "#")
+  `, {}, COMBAT_FILES, VOICE_ON);
+  assert.equal(out, '2#true#nil#nil#0#0#nil,nil#true#error,nil');
+});
+
 test('the "thinking" bubble is big enough for every phrase it cycles through', () => {
   const out = runLua(`
     START()
@@ -970,15 +1295,39 @@ test('/ia talk: hold the key, speak, release; the transcript becomes the questio
   const [listen, stop, followUp, stop2] = reqs;
   assert.equal(listen.listen, true);
   assert.equal(listen.question, '');
-  assert.equal(listen.auth, KEY, 'carries this PC\'s key');
+  const code = (id) => crypto.createHmac('sha256', KEY).update(id).digest('hex');
+  assert.equal(listen.auth, code(listen.id), 'carries the code of its id, made with this PC\'s key');
+  assert.ok(!JSON.stringify(reqs).includes(KEY), 'the key itself is never sent');
   assert.ok(listen.context?.character, 'with the character data, like a typed question');
-  assert.deepEqual([stop.listenStop, stop.auth, stop.question], [listen.id, KEY, '']);
+  assert.deepEqual([stop.listenStop, stop.auth, stop.question], [listen.id, code(`${listen.id}s`), '']);
   assert.equal(stop.context, undefined, 'the stop is tiny');
   assert.equal(before, 'true|pending|nil|true');
   assert.equal(after, 'Where do I go now?|done');
   assert.deepEqual(followUp.history.at(-1), { q: 'Where do I go now?', a: 'Head to Westfall.' }, 'follow-ups see the earlier turn');
   assert.equal(stop2.listenStop, followUp.id);
   assert.equal(count, '2');
+});
+
+test('the request code: the addon\'s SHA-256 and HMAC-SHA256 match Node\'s', () => {
+  const key = crypto.randomBytes(32).toString('hex');
+  const ids = ['17634000001234', '17634000001234s', '1', ''];
+  const msgs = ['', 'abc', 'a'.repeat(55), 'a'.repeat(56), 'a'.repeat(64), 'a'.repeat(200), 'ñandú ü'];
+  const out = runLua(`
+    local function hex(s) return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end)) end
+    local r = {}
+    ns.requestKey = KEY
+    for id in string.gmatch(IDS, "([^,]*),") do r[#r + 1] = ns.Core:AuthCode(id) end
+    for m in string.gmatch(MSGS, "([^\\1]*)\\1") do r[#r + 1] = hex(ns.Core.Sha256(m)) end
+    ns.requestKey = nil
+    r[#r + 1] = tostring(ns.Core:AuthCode("1"))
+    RESULT = table.concat(r, " ")
+  `, { KEY: key, IDS: ids.map((i) => `${i},`).join(''), MSGS: msgs.map((m) => `${m}\u0001`).join('') }, FILES, FAKE_UI + PRELUDE_DRIVE);
+  const want = [
+    ...ids.map((id) => crypto.createHmac('sha256', key).update(id).digest('hex')),
+    ...msgs.map((m) => crypto.createHash('sha256').update(Buffer.from(m, 'utf8')).digest('hex')),
+    'nil',
+  ];
+  assert.deepEqual(out.split(' '), want);
 });
 
 test('/ia talk without invisible sending explains it and sends nothing', () => {
@@ -1131,9 +1480,11 @@ test('the chat window also dims in combat, with its own opacity and delay; the l
     -- Opened mid-fight: full until the fight ends.
     ns.Fade:Reset(); TICK(0.6); note("openedInCombat")
     COMBAT = false; TICK(0.2); COMBAT = true; TICK(0.6); note("nextFight")
-    -- Combat dimming off: only moving dims.
-    ns.Fade:Set("combat", false); TICK(0.6); note("combatOff")
-    SPEED = 7; TICK(0.6); note("combatOffMoving")
+    -- The combat warning instead of dimming (unticking "dim in combat" picks it):
+    -- fully visible for the whole fight, moving too; after it, moving dims again.
+    ns.Fade:Set("combat", false); TICK(0.6); note("warn")
+    SPEED = 7; TICK(0.6); note("warnMoving")
+    COMBAT = false; TICK(0.6); note("warnAfterFightMoving")
     RESULT = table.concat(r, " ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
@@ -1141,7 +1492,7 @@ test('the chat window also dims in combat, with its own opacity and delay; the l
     fighting: '0.30', fightingMoving: '0.30', leftCombatMoving: '0.30',
     'afterCombat1.2': '0.30', 'afterCombat1.7': '0.30', 'afterCombat2.3': '1.00',
     mouseOver: '1.00', openedInCombat: '1.00', nextFight: '0.30',
-    combatOff: '1.00', combatOffMoving: '0.60',
+    warn: '1.00', warnMoving: '1.00', warnAfterFightMoving: '0.60',
   });
 });
 
@@ -1307,11 +1658,12 @@ test('compact answers: problems show in the box, and the settings are on the opt
     START()
     local r = {}
     ns.Compact:Set("enabled", true)
-    InCombatLockdown = function() return true end
+    -- A problem (a question still being sent) shows in the box, which then goes away.
+    ns.Core.working = true
     ns.Core:Listen()
-    r[#r + 1] = "combat: window=" .. tostring(ns.UI:IsShown()) .. " " .. ns.Compact.view.state .. " " .. tostring(ns.Compact.view.body:find(ns.L.IN_COMBAT, 1, true) ~= nil)
+    r[#r + 1] = "busy: window=" .. tostring(ns.UI:IsShown()) .. " " .. ns.Compact.view.state .. " " .. tostring(ns.Compact.view.body:find(ns.L.WAIT_PREVIOUS, 1, true) ~= nil)
     STEP(6.5); r[#r + 1] = "gone=" .. tostring(not ns.Compact:IsShown())
-    InCombatLockdown = function() return false end
+    ns.Core.working = false
     -- Settings: 20 s by default, 5 to 60 in steps of 5; only changes are saved.
     local s = ns.Compact:Settings()
     r[#r + 1] = string.format("%s %d", tostring(s.enabled), s.seconds)
@@ -1328,7 +1680,7 @@ test('compact answers: problems show in the box, and the settings are on the opt
     SlashCmdList.FOREVERAICOMPANION("compacto"); r[#r + 1] = tostring(ns.Compact:Settings().enabled)
     RESULT = table.concat(r, " ; ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
-  assert.equal(out, 'combat: window=false message true ; gone=true ; true 20 ; 5 ; 60 ; slider=35 ; box=false ; true ; false');
+  assert.equal(out, 'busy: window=false message true ; gone=true ; true 20 ; 5 ; 60 ; slider=35 ; box=false ; true ; false');
 });
 
 test('turning the camera with the mouse over the window does not keep it from dimming (combat)', () => {
@@ -1393,11 +1745,10 @@ test('in combat the speed is a secret: dimming keeps working, with movement even
       ns.UI.frame.IsMouseOver = function() return false end; TICK(0.6); note("mouseAway")
       -- Opening the window mid-fight (Reset read the speed: the error in the report).
       ns.Fade:Reset(); TICK(0.6); note("openedInFight")
-      -- Movement in the fight comes from the events (combat dimming off to see it).
-      ns.Fade:Set("combat", false)
+      -- Movement in the fight comes from the events (opened mid-fight, combat
+      -- doesn't dim until the fight ends, so moving shows on its own).
       FIRE("PLAYER_STOPPED_MOVING"); TICK(1.6); note("fightStopped")
       FIRE("PLAYER_STARTED_MOVING"); TICK(0.6); note("fightMoving")
-      ns.Fade:Set("combat", true)
       COMBAT_OFF(); MOVING = false; FIRE("PLAYER_STOPPED_MOVING"); TICK(2.6); note("after")
       r[#r + 1] = "error=" .. tostring(ns.Fade.lastError)
       RESULT = table.concat(r, " ")
@@ -1422,13 +1773,13 @@ test('IsPlayerMoving (readable in combat) is used before the secret speed', () =
     local r = {}
     local function note(name) r[#r + 1] = name .. "=" .. A() end
     COMBAT_ON()
-    ns.Fade:Set("combat", false)
+    ns.db.fade = { v = 2, combatOpacity = 95 } -- combat barely dims: moving shows
     MOVING = true; TICK(0.6); note("fightMoving")
     MOVING = false; TICK(1.6); note("fightStopped")
     r[#r + 1] = "error=" .. tostring(ns.Fade.lastError)
     RESULT = table.concat(r, " ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + SECRET_APIS);
-  assert.equal(out, 'fightMoving=0.50 fightStopped=1.00 error=nil', 'no movement events needed');
+  assert.equal(out, 'fightMoving=0.50 fightStopped=0.95 error=nil', 'no movement events needed');
 });
 
 test('an unexpected error in the dimming shows the window fully instead of freezing it, and /ia status says why', () => {

@@ -256,7 +256,7 @@ test('a voice question that could not be heard fails with a clear message', asyn
 test('through the watcher: only keyed requests count, and releasing the key stops the recording at once', async (t) => {
   const { env } = await import('../src/config.js');
   const { startWatcher } = await import('../src/watcher.js');
-  const { readRequestKey } = await import('../src/request-key.js');
+  const { readRequestKey, requestCode } = await import('../src/request-key.js');
   const { runLua } = await import('./helpers.js');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-watch-'));
   const wow = path.join(root, 'wow');
@@ -290,14 +290,18 @@ test('through the watcher: only keyed requests count, and releasing the key stop
   const inbox = () => fs.readFileSync(path.join(wowPaths(wow).slotDir(1), 'Inbox.lua'), 'utf8');
   const until = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 30)); };
 
-  speak({ id: 'forged', question: 'Spend my API credits' });
-  speak({ id: 'l1', question: '', listen: true, auth: key, lang: 'en' });
-  speak({ id: 'l1s', question: '', listenStop: 'l1', auth: key });
-  await until(() => /id = "l1"/.test(inbox()));
-  assert.deepEqual(begun, ['l1'], 'recording started when the request arrived');
-  assert.deepEqual(stopped, ['l1'], 'the stop went straight to the recording');
+  // Ids as the addon makes them (the second, then 4 digits), each with its own code.
+  const l1 = `${Math.floor(Date.now() / 1000)}0001`;
+  const forgedId = `${Math.floor(Date.now() / 1000)}0002`;
+  speak({ id: forgedId, question: 'Spend my API credits' });
+  speak({ id: `${Math.floor(Date.now() / 1000)}0003`, question: 'With the key itself', auth: key });
+  speak({ id: l1, question: '', listen: true, auth: requestCode(key, l1), lang: 'en' });
+  speak({ id: `${l1}s`, question: '', listenStop: l1, auth: requestCode(key, `${l1}s`) });
+  await until(() => new RegExp(`id = "${l1}"`).test(inbox()));
+  assert.deepEqual(begun, [l1], 'recording started when the request arrived');
+  assert.deepEqual(stopped, [l1], 'the stop went straight to the recording');
   assert.match(inbox(), /question = "Where is Westfall\?"/);
-  assert.doesNotMatch(inbox(), /forged|l1s/, 'no answer for a request without the key, nor for the stop');
+  assert.doesNotMatch(inbox(), new RegExp(`${forgedId}|${l1}s|With the key`), 'no answer without a valid code (the key itself isn\'t one), nor for the stop');
   assert.ok(logs.some((l) => /without this PC's addon key/.test(l)));
   assert.ok(events.some((e) => e.type === 'problem' && /The addon was updated/.test(e.message)), 'an addon loaded before the update is told to reload');
   assert.ok(!logs.some((l) => l.includes(key)), 'the key is never logged');

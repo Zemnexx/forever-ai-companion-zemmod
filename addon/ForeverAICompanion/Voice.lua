@@ -1,7 +1,8 @@
 -- Invisible channel: the game's text-to-speech API with the silent
--- "ForeverAICompanion" Windows voice installed by the companion app. Windows hands the
--- "spoken" text to that voice, which passes it to the app: nothing is drawn
--- and nothing is heard. Used whenever the voice exists; otherwise the strip.
+-- "ForeverAICompanion" voice installed by the companion app (a SAPI voice on
+-- Windows, a speech synthesis extension inside the app on macOS). The system
+-- hands the "spoken" text to that voice, which passes it to the app: nothing
+-- is drawn and nothing is heard. Used whenever the voice exists; otherwise the strip.
 --
 -- Messages: "FAIC:<request id>:<part>/<parts>:<base64 chunk of the frame>".
 local _, ns = ...

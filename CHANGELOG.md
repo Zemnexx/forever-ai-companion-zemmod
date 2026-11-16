@@ -1,5 +1,38 @@
 # Changelog
 
+## Sync test with upstream 1.11.1 (app 1.11.1, addon 1.11.10)
+
+Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows only, on a test branch. It uses upstream's version numbers; 2.0 stays for this fork's main line, so the version goes back to 2.0.x when this is copied there.
+
+### Kept from upstream 1.11.0 and 1.11.1
+
+- **Asking in combat**, with a combat warning: a red bar with your health, and a red glow inside the window each time you get hit. Here it's a choice in the options (see below).
+- **Slow answers aren't lost.** A question sent through the invisible voice with no answer after 45 seconds is sent again through the on-screen line with the same id, the voice is only given up when nothing comes back at all, and an answer that arrives late is still shown.
+- **The button sits on the minimap's edge** and slides around it when dragged. Positions saved before are reset.
+- **Dashboard in sections** (needed to play, the AI's answers, the app), with a mark on each row, a Sign in button when Claude Code or Codex is signed out, a row for your own notes and a shorter list of recent questions.
+- Mailboxes: one per answer again, longer silent signals, and a "Reload" prompt when they run out.
+- Errors nobody caught are written to the log before the app closes, and the app can't quit twice.
+- Tests give the same results on any machine language and line endings.
+
+### Left out (this fork is Windows only)
+
+- **The Mac version**: the native app, its silent voice, Keychain-encrypted keys, Mac updates and the Mac build (with its `postject` build dependency). The addon's few runtime checks for Mac clients stay, so the addon stays close to upstream.
+- **The CurseForge upload** (script and workflow). This fork doesn't publish there, and the zip it built would have carried one PC's request key to every player.
+- Upstream's Mac folder names in the Codex disk search, which also made the Windows search skip folders named `dev`, `music`, `system` and so on.
+
+### Changed in this fork
+
+- **In combat: dim or warn.** Options > AddOns > Forever AI Companion, "In combat": **Dim the window in combat** (the default, as before) or **Show the combat warning instead**. Ticking one unticks the other. With the warning, the window stays fully visible for the whole fight, moving too, so the warning can be seen; with dimming, the bar and the glow stay hidden. A setting saved by an earlier test build with combat dimming turned off becomes the warning.
+- **Voice questions in combat**, like typed ones.
+- **A code instead of the request key.** Every request carries HMAC-SHA256(this PC's key, the request's id) instead of the key itself, so the key never appears on the on-screen line (which screenshots, recordings and streams can see) or in the voice's inbox. A code fits only its own id, the app answers an id once, and ids more than a day old are refused. An addon loaded before the update is told to `/reload`.
+- **Resends never become recordings.** A slow question is sent again as text only. Voice questions are never sent again and don't count against the voice. A resend doesn't open the window or the compact box.
+- The combat warning checks whether the game hid a value before comparing it, so it can't raise "secret value" errors.
+- Building: upstream moved the bundling step into `scripts/bundle.js`; the microphone helper is embedded there too.
+
+### Known issues
+
+- Upstream's GitHub Actions Windows build (`.github/workflows/build-windows.yml`, `scripts/smoke-windows.mjs`) is kept, but its smoke test expects an update without a signature, so it fails at that step in this fork, whose updates need one.
+
 ## 2.0.0 (addon 1.15.0)
 
 Based on upstream app 1.10.1 and addon 1.10.9 (commit `4acd431`). Upstream 1.10.1 merged this fork's security hardening (lucasmenares/forever-ai-companion pull request #1), all of it except signed updates and signed guides, and added changes of its own (see "Merged from upstream 1.10.1" below). On top of upstream, this release:

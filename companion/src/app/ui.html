@@ -210,10 +210,24 @@
   .rowi:first-child { border-top: none; }
   .rowi .ic { width: 38px; height: 38px; border-radius: 10px; flex: none; display: grid; place-items: center; background: var(--surface-3); }
   .rowi .ic svg { width: 19px; height: 19px; }
+  /* Whether a setup step works: a badge on the corner of its icon. */
+  .rowi .ic { position: relative; }
+  .rowi .ic .mark { position: absolute; right: -6px; bottom: -6px; width: 19px; height: 19px; border-radius: 50%;
+    display: grid; place-items: center; border: 2.5px solid var(--surface); }
+  .rowi .ic .mark svg { width: 11px; height: 11px; }
+  .rowi .ic .mark.ok { background: var(--ok); }
+  .rowi .ic .mark.warn { background: var(--warn); }
+  .rowi .ic .mark.off { background: var(--surface-3); }
+  .rowi .ic .mark.off::after { content: ''; width: 7px; height: 2px; border-radius: 1px; background: var(--muted); }
   .rowi .t { flex: 1; min-width: 0; }
   .rowi .t > b { display: block; font-weight: 600; }
   .rowi .t span { color: var(--muted); font-size: 13.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .section-title { font-size: 12.5px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; margin: 0 0 8px 4px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 4px 8px; }
+  .section-head .section-title { margin: 0; }
+  .section-head .count { font-size: 12.5px; font-weight: 600; color: var(--ok); }
+  .section-head .count.warn { color: var(--warn); }
+  .section-sub { color: var(--faint); font-size: 13px; margin: -4px 4px 10px; }
   .feed { list-style: none; margin: 0; padding: 0; }
   .feed li { padding: 14px 18px; border-top: 1px solid var(--line); }
   .feed li:first-child { border-top: none; }
@@ -222,6 +236,12 @@
   .feed .a { color: var(--muted); white-space: pre-wrap; font-size: 14px; }
   .feed .a.bad { color: var(--bad); }
   .feed .a.wait { display: flex; align-items: center; gap: 8px; }
+  .feed .a.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .feed-toggle { background: none; border: 0; padding: 0; margin-top: 6px; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+  .feed-toggle:hover, .feed-more:hover { text-decoration: underline; }
+  .feed-more { display: block; width: 100%; background: none; border: 0; border-top: 1px solid var(--line); padding: 12px 18px;
+    color: var(--accent); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: center; }
+  .section-head .count.muted { color: var(--faint); }
   .feed .a.wait .spin { border-color: rgba(91,140,255,.3); border-top-color: var(--accent); }
   .empty { text-align: center; padding: 26px 16px; color: var(--muted); }
 
@@ -383,7 +403,7 @@ const I18N = {
     'welcome.title': 'Your AI companion for WoW Forever',
     'welcome.lead': 'Ask it anything without leaving the game: which quest to do, how to improve your gear, where to go. The AI sees your character and answers you inside the game.',
     'welcome.f1.title': 'Ask from the game',
-    'welcome.f1.text': 'Click the floating button on your screen and type what you want to know.',
+    'welcome.f1.text': 'Click the minimap button on your screen and type what you want to know.',
     'welcome.f2.title': 'Knows your character',
     'welcome.f2.text': 'Your class, level, gear, quests and where you are, without you having to explain.',
     'welcome.f3.title': 'Answers in the game',
@@ -411,7 +431,7 @@ const I18N = {
 
     // Addon
     'addon.title': 'Install the addon',
-    'addon.lead': 'The addon is the part that lives inside the game: the floating button and the chat window where you ask and read the answers.',
+    'addon.lead': 'The addon is the part that lives inside the game: the minimap button and the chat window where you ask and read the answers.',
     'addon.restart': 'Addon installed. Restart the game',
     'addon.restartText': 'WoW is open: close it completely and open it again so it loads the addon (/reload isn\'t enough).',
     'addon.installed': 'Addon installed',
@@ -510,8 +530,8 @@ const I18N = {
     'done.lead': 'Here\'s how to use it in the game:',
     'done.s1': 'Open WoW Forever',
     'done.s1Text': 'If it was already open, close it completely and open it again.',
-    'done.s2': 'Click the floating button',
-    'done.s2Text': 'It\'s a circle with your assistant\'s portrait, at the top right of the screen next to the minimap. You can drag it wherever is most comfortable for you. Clicking it opens the chat window.',
+    'done.s2': 'Click the minimap button',
+    'done.s2Text': 'It\'s a circle with your assistant\'s portrait on the edge of the minimap, like other addons\' buttons. Drag it to slide it around the minimap. Clicking it opens the chat window.',
     'done.s3': 'Choose your assistant (first time only)',
     'done.s3Text': 'Fizzi, the gnome inventor (Alliance), or Rizzik, the goblin dealmaker (Horde). You can change this whenever you want.',
     'done.s4': 'Ask anything',
@@ -554,11 +574,10 @@ const I18N = {
     'toast.updLatest': 'You already have the latest version.',
     'toast.updAvailable': 'Version {v} is available.',
     'dash.ok': 'Everything is working',
-    'dash.okText': 'In the game, click the floating button (top right, next to the minimap) and ask anything.',
+    'dash.okText': 'In the game, click the button on the edge of the minimap and ask anything.',
     'dash.testMode': '<b>You\'re in Test mode:</b> once you see it works, choose an AI.',
     'dash.missing': 'Something still needs setting up',
     'dash.missingText': 'Check what\'s marked below.',
-    'dash.settings': 'Settings',
     'dash.game': 'Game',
     'dash.notFound': 'Not found',
     'dash.addon': 'Addon',
@@ -618,6 +637,23 @@ const I18N = {
     'talk.hint': 'Needs a microphone and an OpenAI API key',
     'toast.talkOn': 'Voice questions are on',
     'toast.talkOff': 'Voice questions are off',
+    'sec.essential': 'Needed to play',
+    'sec.essentialText': 'What the app needs to answer you in the game.',
+    'sec.ready': '{n} of {m} ready',
+    'sec.answers': 'The AI\'s answers',
+    'sec.answersText': 'What the AI knows and where it looks things up.',
+    'sec.app': 'The app',
+    'sec.more': 'Other actions',
+    'dash.notesTitle': 'Your own notes',
+    'dash.notesText': '.md or .txt files the AI reads with every question (they take priority over the guide)',
+    'dash.notesOpen': 'Open folder',
+    'mark.ok': 'Working',
+    'mark.warn': 'Needs attention',
+    'mark.off': 'Off (optional)',
+    'dash.needKey': 'Missing its API key',
+    'dash.needLogin': 'Not signed in: questions won\'t be answered',
+    'dash.signIn': 'Sign in',
+
     'dash.close': 'When closing this window',
     'dash.closeText': 'The app can keep running next to the Windows clock.',
     'dash.closeAsk': 'Ask me',
@@ -625,12 +661,14 @@ const I18N = {
     'dash.closeQuit': 'Close the app',
     'dash.autostartText': 'That way the app is always ready when you play.',
     'dash.recent': 'Recent questions',
+    'feed.expand': 'Show the whole answer',
+    'feed.collapse': 'Show less',
+    'feed.older': 'Show {n} older',
+    'feed.less': 'Show only the latest',
     'dash.thinking': 'Thinking…',
     'dash.tokens': '{n} tokens',
     'dash.tokensTip': 'Read: {i} (from cache: {c}) · Written: {o}',
-    'dash.empty': 'No questions yet. In the game, click the floating button and ask something: you\'ll see it here.',
-    'dash.more': 'More options',
-    'dash.knowledge': 'Server knowledge…',
+    'dash.empty': 'No questions yet. In the game, click the minimap button and ask something: you\'ll see it here.',
     'dash.wizard': 'Run setup again',
     'dash.quit': 'Close the app',
     'dash.uninstall': 'Uninstall',
@@ -747,7 +785,7 @@ const I18N = {
     'welcome.title': 'Tu compañero con IA para WoW Forever',
     'welcome.lead': 'Pregúntale lo que quieras sin salir del juego: qué misión hacer, cómo mejorar tu equipo, a dónde ir. La IA ve tu personaje y te responde dentro del juego.',
     'welcome.f1.title': 'Preguntas desde el juego',
-    'welcome.f1.text': 'Pulsa el botón flotante que aparece en tu pantalla y escribe lo que quieras saber.',
+    'welcome.f1.text': 'Pulsa el botón del minimapa que aparece en tu pantalla y escribe lo que quieras saber.',
     'welcome.f2.title': 'Conoce a tu personaje',
     'welcome.f2.text': 'Tu clase, nivel, equipo, misiones y dónde estás, sin que tengas que explicarlo.',
     'welcome.f3.title': 'Respuestas en el juego',
@@ -773,7 +811,7 @@ const I18N = {
     'game.detectFail': 'Tampoco lo encontramos esta vez. Usa <b>Elegir carpeta…</b>.',
 
     'addon.title': 'Instalar el addon',
-    'addon.lead': 'El addon es la parte que vive dentro del juego: el botón flotante y la ventana de chats donde preguntas y lees las respuestas.',
+    'addon.lead': 'El addon es la parte que vive dentro del juego: el botón del minimapa y la ventana de chats donde preguntas y lees las respuestas.',
     'addon.restart': 'Addon instalado. Reinicia el juego',
     'addon.restartText': 'WoW está abierto: ciérralo por completo y vuelve a abrirlo para que cargue el addon (con /reload no basta).',
     'addon.installed': 'Addon instalado',
@@ -869,8 +907,8 @@ const I18N = {
     'done.lead': 'Así se usa en el juego:',
     'done.s1': 'Abre WoW Forever',
     'done.s1Text': 'Si ya estaba abierto, ciérralo por completo y vuelve a abrirlo.',
-    'done.s2': 'Pulsa el botón flotante',
-    'done.s2Text': 'Es un círculo con el retrato de tu asistente, arriba a la derecha de la pantalla, junto al minimapa. Puedes arrastrarlo a donde te quede más cómodo. Al pulsarlo se abre la ventana de chats.',
+    'done.s2': 'Pulsa el botón del minimapa',
+    'done.s2Text': 'Es un círculo con el retrato de tu asistente en el borde del minimapa, como el botón de otros addons. Arrástralo para moverlo alrededor del minimapa. Al pulsarlo se abre la ventana de chats.',
     'done.s3': 'Elige a tu asistente (solo la primera vez)',
     'done.s3Text': 'Fizzi, la inventora gnoma (Alianza), o Rizzik, el negociante goblin (Horda). Puedes cambiarlo cuando quieras.',
     'done.s4': 'Pregunta lo que quieras',
@@ -912,11 +950,10 @@ const I18N = {
     'toast.updLatest': 'Ya tienes la versión más reciente.',
     'toast.updAvailable': 'Hay una versión nueva: {v}.',
     'dash.ok': 'Todo funciona',
-    'dash.okText': 'En el juego pulsa el botón flotante (arriba a la derecha, junto al minimapa) y pregunta lo que quieras.',
+    'dash.okText': 'En el juego pulsa el botón del borde del minimapa y pregunta lo que quieras.',
     'dash.testMode': '<b>Estás en Modo prueba:</b> cuando veas que funciona, elige una IA.',
     'dash.missing': 'Falta algo por configurar',
     'dash.missingText': 'Revisa lo que está marcado abajo.',
-    'dash.settings': 'Configuración',
     'dash.game': 'Juego',
     'dash.notFound': 'No encontrado',
     'dash.addon': 'Addon',
@@ -976,6 +1013,23 @@ const I18N = {
     'talk.hint': 'Necesita un micrófono y una clave de API de OpenAI',
     'toast.talkOn': 'Preguntas por voz activadas',
     'toast.talkOff': 'Preguntas por voz desactivadas',
+    'sec.essential': 'Lo necesario para jugar',
+    'sec.essentialText': 'Lo que necesita la app para responderte en el juego.',
+    'sec.ready': '{n} de {m} listos',
+    'sec.answers': 'Las respuestas de la IA',
+    'sec.answersText': 'Lo que sabe la IA y dónde busca información.',
+    'sec.app': 'La app',
+    'sec.more': 'Otras acciones',
+    'dash.notesTitle': 'Tus propias notas',
+    'dash.notesText': 'Archivos .md o .txt que la IA lee en cada pregunta (tienen prioridad sobre la guía)',
+    'dash.notesOpen': 'Abrir carpeta',
+    'mark.ok': 'Funciona',
+    'mark.warn': 'Necesita atención',
+    'mark.off': 'Desactivado (opcional)',
+    'dash.needKey': 'Falta su clave de API',
+    'dash.needLogin': 'Sin sesión iniciada: no responderá las preguntas',
+    'dash.signIn': 'Iniciar sesión',
+
     'dash.close': 'Al cerrar esta ventana',
     'dash.closeText': 'La app puede seguir funcionando junto al reloj de Windows.',
     'dash.closeAsk': 'Preguntarme',
@@ -983,12 +1037,14 @@ const I18N = {
     'dash.closeQuit': 'Cerrar la app',
     'dash.autostartText': 'Así la app siempre está lista cuando juegas.',
     'dash.recent': 'Últimas preguntas',
+    'feed.expand': 'Ver respuesta completa',
+    'feed.collapse': 'Ver menos',
+    'feed.older': 'Ver las {n} anteriores',
+    'feed.less': 'Ver solo las últimas',
     'dash.thinking': 'Pensando…',
     'dash.tokens': '{n} tokens',
     'dash.tokensTip': 'Leídos: {i} (de caché: {c}) · Escritos: {o}',
-    'dash.empty': 'Todavía no hay preguntas. En el juego pulsa el botón flotante y pregunta algo: la verás aquí.',
-    'dash.more': 'Más opciones',
-    'dash.knowledge': 'Conocimiento del servidor…',
+    'dash.empty': 'Todavía no hay preguntas. En el juego pulsa el botón del minimapa y pregunta algo: la verás aquí.',
     'dash.wizard': 'Repetir la configuración',
     'dash.quit': 'Cerrar la app',
     'dash.uninstall': 'Desinstalar',
@@ -1130,6 +1186,8 @@ const ICON = {
   hide: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><path d="M4 4l16 16"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M8.5 21h7"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h5"/></svg>',
+
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 016.5 18H20v3H6.5A2.5 2.5 0 014 20.5z"/></svg>',
   power: '<svg viewBox="0 0 24 24" fill="none" stroke="#a3abb9" stroke-width="1.9" stroke-linecap="round"><path d="M12 3v8M6.3 6.3a8 8 0 1011.4 0"/></svg>',
 };
@@ -1599,11 +1657,38 @@ function guideText(g) {
   return t('guide.text', { date: esc(date), how, old });
 }
 
+// Recent questions: the newest few, each answer cut to a few lines until
+// clicked; the rest behind a button. They can be long and many.
+const FEED_SHOWN = 3;
+let feedAll = false;
+const feedOpen = new Set(); // ids of answers shown in full
+function feedItems(events) {
+  return (feedAll ? events : events.slice(0, FEED_SHOWN)).map((e) => {
+    const long = !e.pending && String(e.answer || '').length > 220;
+    const open = feedOpen.has(e.id);
+    return `<li>
+      <div class="meta">${ago(e.time)} · ${esc(e.who)}${e.tokens ? ` · <span title="${esc(t('dash.tokensTip', { i: fmtNum(e.tokens.i), c: fmtNum(e.tokens.c), o: fmtNum(e.tokens.o) }))}">${t('dash.tokens', { n: fmtTokens(e.tokens.i + e.tokens.o) })}</span>` : ''}</div>
+      <div class="q">${esc(e.question)}</div>
+      ${e.pending ? `<div class="a wait"><span class="spin"></span>${t('dash.thinking')}</div>`
+        : `<div class="a ${e.ok === false ? 'bad' : ''} ${long && !open ? 'clamp' : ''}">${esc(e.answer)}</div>
+          ${long ? `<button class="feed-toggle" data-feed="${esc(e.id)}">${open ? t('feed.collapse') : t('feed.expand')}</button>` : ''}`}
+    </li>`;
+  });
+}
+
 function renderDash() {
   const s = status;
   const ok = setupComplete() && s.running;
   const p = ALL[s.ai.preset];
-  const row = (icon, title, sub, btn) => `<div class="rowi"><span class="ic">${icon}</span><div class="t"><b>${title}</b><span>${sub}</span></div>${btn}</div>`;
+  // mark: "ok" | "warn" | "off" | undefined — whether that setup step works.
+  const badge = (mark) => (mark ? `<i class="mark ${mark}" title="${esc(t(`mark.${mark}`))}">${mark === 'ok' ? ICON.check : mark === 'warn' ? ICON.alert : ''}</i>` : '');
+  const row = (icon, title, sub, btn, mark) => `<div class="rowi"><span class="ic">${icon}${badge(mark)}</span><div class="t"><b>${title}</b><span>${sub}</span></div>${btn}</div>`;
+  const warnText = (text) => `<span style="color:var(--warn)">${text}</span>`;
+  const aiIssue = !p ? null : s.ai.issue === 'need-login' ? t('dash.needLogin') : s.ai.issue === 'need-ai' ? t('dash.needKey') : null;
+  const essentials = [s.wow.valid, s.wow.addonInstalled, Boolean(p && !aiIssue)];
+  if (voiceStepNeeded() && voice) essentials.push(!voice.legacy);
+  const steps = essentials.length;
+  const ready = essentials.filter(Boolean).length;
   const u = s.update;
   const updating = u && ['available', 'downloading', 'ready'].includes(u.status);
   const html = `
@@ -1616,19 +1701,38 @@ function renderDash() {
     ${ok
       ? callout('ok', t('dash.ok'), `${t('dash.okText')}${s.ai.preset === 'echo' ? ` ${t('dash.testMode')}` : ''}`)
       : callout('warn', t('dash.missing'), esc(s.problem || t('dash.missingText')))}
-    <div class="section-title">${t('dash.settings')}</div>
+    <div class="section-head"><div class="section-title">${t('sec.essential')}</div>
+      <span class="count ${ready < steps ? 'warn' : ''}">${t('sec.ready', { n: ready, m: steps })}</span></div>
+    <p class="section-sub">${t('sec.essentialText')}</p>
     <div class="rows">
-      ${row(ICON.game, t('dash.game'), s.wow.valid ? esc(s.wow.dir) : `<span style="color:var(--warn)">${t('dash.notFound')}</span>`, `<button class="btn small" data-open="game">${t('btn.change')}</button>`)}
-      ${row(ICON.puzzle, t('dash.addon'), s.wow.addonInstalled ? t('dash.addonInstalled', { v: esc(s.wow.addonVersion) }) : `<span style="color:var(--warn)">${t('dash.notInstalled')}</span>`, `<button class="btn small" data-open="addon">${s.wow.addonInstalled ? t('btn.reinstall') : t('btn.install')}</button>`)}
-      ${row(ICON.star, t('dash.ai'), p ? `${esc(p.name)}${modelLabel(s.ai.preset) ? ' · ' + esc(modelLabel(s.ai.preset)) : ''}` : `<span style="color:var(--warn)">${t('dash.notChosen')}</span>`, `<button class="btn small" data-open="ai">${t('btn.change')}</button>`)}
+      ${row(ICON.game, t('dash.game'), s.wow.valid ? esc(s.wow.dir) : warnText(t('dash.notFound')), `<button class="btn small" data-open="game">${t('btn.change')}</button>`,
+        s.wow.valid ? 'ok' : 'warn')}
+      ${row(ICON.puzzle, t('dash.addon'), s.wow.addonInstalled ? t('dash.addonInstalled', { v: esc(s.wow.addonVersion) }) : warnText(t('dash.notInstalled')), `<button class="btn small" data-open="addon">${s.wow.addonInstalled ? t('btn.reinstall') : t('btn.install')}</button>`,
+        s.wow.addonInstalled ? 'ok' : 'warn')}
+      ${row(ICON.star, t('dash.ai'), p ? `${esc(p.name)}${modelLabel(s.ai.preset) ? ' · ' + esc(modelLabel(s.ai.preset)) : ''}${aiIssue ? ` · ${warnText(aiIssue)}` : ''}` : warnText(t('dash.notChosen')),
+        `<button class="btn small" data-open="ai">${s.ai.issue === 'need-login' ? t('dash.signIn') : t('btn.change')}</button>`,
+        p && !aiIssue ? 'ok' : 'warn')}
+      ${voiceStepNeeded() && voice ? row(ICON.hide, t('dash.voice'),
+        voice.legacy ? warnText(t('dash.voiceLegacy')) : voice.active ? t('dash.voiceOn') : t('dash.voiceOff'),
+        `<button class="btn small" data-open="voice">${voice.legacy ? t('dash.voiceUpdate') : voice.active ? t('btn.change') : t('dash.voiceActivate')}</button>`,
+        voice.legacy ? 'warn' : voice.active ? 'ok' : 'off') : ''}
+    </div>
+    <div class="section-title">${t('sec.answers')}</div>
+    <p class="section-sub">${t('sec.answersText')}</p>
+    <div class="rows">
       ${SEARCHES.includes(s.ai.preset) ?`<div class="rowi"><span class="ic">${ICON.spark}</span><div class="t"><b>${t('dash.web')}</b><span>${s.ai.webSearch ? t('dash.webOn') : t('dash.webOff')}</span></div>
         <label class="switch" title="${esc(t('dash.web'))}"><input type="checkbox" id="web-search" ${s.ai.webSearch ? 'checked' : ''}><i></i></label></div>` : ''}
       ${s.guide ? row(ICON.book, t('dash.guide'), guideText(s.guide),
         s.guide.autoUpdate ? `<button class="btn small" data-act="guide">${spinner('guide', t('dash.guideCheck'), t('dash.guideChecking'))}</button>` : '') : ''}
+      ${row(ICON.notes, t('dash.notesTitle'), t('dash.notesText'), `<button class="btn small" data-act="knowledge">${t('dash.notesOpen')}</button>`)}
+    </div>
+    <div class="section-title">${t('sec.app')}</div>
+    <div class="rows">
       ${u ? row(ICON.download, t('upd.row'), u.status === 'checking' ? t('upd.checking') : u.status === 'error' ? t('upd.error') : updating ? t('upd.title', { v: esc(u.latest) }) : u.status === 'latest' ? t('upd.latest', { v: esc(u.current) }) : t('upd.idle'),
         updating ? '' : `<button class="btn small" data-act="updateCheck">${spinner('updateCheck', t('upd.check'), t('upd.checkingBtn'))}</button>`) : ''}
-      ${voiceStepNeeded() && voice ? row(ICON.hide, t('dash.voice'), voice.legacy ? `<span style="color:var(--warn)">${t('dash.voiceLegacy')}</span>` : voice.active ? t('dash.voiceOn') : t('dash.voiceOff'), `<button class="btn small" data-open="voice">${voice.legacy ? t('dash.voiceUpdate') : voice.active ? t('btn.change') : t('dash.voiceActivate')}</button>`) : ''}
-      ${talkInfo?.supported ? row(ICON.mic, t('dash.talk'), talkInfo.enabled ? t('dash.talkOn') : t('dash.talkOff'), `<button class="btn small" data-open="talk">${talkInfo.enabled ? t('btn.change') : t('dash.talkSetup')}</button>`) : ''}
+      ${talkInfo?.supported ? row(ICON.mic, t('dash.talk'), talkInfo.enabled ? t('dash.talkOn') : t('dash.talkOff'), `<button class="btn small" data-open="talk">${talkInfo.enabled ? t('btn.change') : t('dash.talkSetup')}</button>`,
+        talkInfo.enabled ? 'ok' : 'off') : ''}
+
       ${s.tray ? `<div class="rowi"><span class="ic"><img src="/icon.png" alt="" style="width:22px;height:22px"></span><div class="t"><b>${t('dash.close')}</b><span>${t('dash.closeText')}</span></div>
         <select id="close-action" class="select" title="${esc(t('dash.close'))}">
           <option value="ask" ${s.closeAction === 'ask' ? 'selected' : ''}>${t('dash.closeAsk')}</option>
@@ -1638,14 +1742,12 @@ function renderDash() {
       ${s.autostart === null ? '' : `<div class="rowi"><span class="ic">${ICON.power}</span><div class="t"><b>${t('autostart')}</b><span>${t('dash.autostartText')}</span></div>
         <label class="switch" title="${esc(t('autostart'))}"><input type="checkbox" id="autostart" ${s.autostart ? 'checked' : ''}><i></i></label></div>`}
     </div>
-    <div class="section-title">${t('dash.recent')}</div>
-    <div class="rows"><ul class="feed">${s.events.length ? s.events.map((e) => `<li>
-        <div class="meta">${ago(e.time)} · ${esc(e.who)}${e.tokens ? ` · <span title="${esc(t('dash.tokensTip', { i: fmtNum(e.tokens.i), c: fmtNum(e.tokens.c), o: fmtNum(e.tokens.o) }))}">${t('dash.tokens', { n: fmtTokens(e.tokens.i + e.tokens.o) })}</span>` : ''}</div><div class="q">${esc(e.question)}</div>
-        ${e.pending ? `<div class="a wait"><span class="spin"></span>${t('dash.thinking')}</div>` : `<div class="a ${e.ok === false ? 'bad' : ''}">${esc(e.answer)}</div>`}</li>`).join('')
-      : `<li class="empty">${t('dash.empty')}</li>`}</ul></div>
-    <div class="section-title">${t('dash.more')}</div>
+    <div class="section-head"><div class="section-title">${t('dash.recent')}</div>
+      ${s.events.length ? `<span class="count muted">${s.events.length}</span>` : ''}</div>
+    <div class="rows"><ul class="feed">${s.events.length ? feedItems(s.events).join('') : `<li class="empty">${t('dash.empty')}</li>`}</ul>
+      ${s.events.length > FEED_SHOWN ? `<button class="feed-more" data-act="feedAll">${feedAll ? t('feed.less') : t('feed.older', { n: s.events.length - FEED_SHOWN })}</button>` : ''}</div>
+    <div class="section-title">${t('sec.more')}</div>
     <div class="links">
-      <button class="btn small" data-act="knowledge">${t('dash.knowledge')}</button>
       <button class="btn small" data-act="wizard">${t('dash.wizard')}</button>
       <button class="btn small" data-act="quit">${t('dash.quit')}</button>
       <button class="btn small danger" data-act="uninstall">${t('dash.uninstall')}</button>
@@ -1658,6 +1760,12 @@ function renderDash() {
   document.querySelectorAll('#dash [data-act]').forEach((b) => { b.onclick = () => ACTIONS[b.dataset.act](); });
   bindAutostart();
   bindWebSearch();
+  document.querySelectorAll('[data-feed]').forEach((b) => {
+    b.onclick = () => {
+      if (feedOpen.has(b.dataset.feed)) feedOpen.delete(b.dataset.feed); else feedOpen.add(b.dataset.feed);
+      renderDash();
+    };
+  });
   const ca = $('close-action');
   if (ca) ca.onchange = async () => {
     try {
@@ -1778,6 +1886,8 @@ const ACTIONS = {
       talkResult = callout('bad', t('talk.testFail'), esc(e.message));
     }
   }),
+  feedAll: () => { feedAll = !feedAll; renderDash(); },
+
   detect: () => run('detect', async () => {
     const r = await api('detect-wow');
     if (!r.found.length) toast('bad', t('game.detectFail'));

@@ -2,7 +2,7 @@
 -- first time the window opens (suggested by faction) and can change it later:
 --   Alliance: Fizzi Chispatuerca, gnome inventor from Gnomeregan.
 --   Horde:    Rizzik Bujíaveloz, goblin engineer and dealer of the Bilgewater Cartel.
--- A persona sets the window colors, the texts, the floating button and the
+-- A persona sets the window colors, the texts, the minimap button and the
 -- personality the AI plays (the companion app has the matching prompt).
 -- Texts come from Locale.lua (English names: Fizzi Sparkwrench, Rizzik Fastfuse).
 local _, ns = ...

@@ -45,7 +45,7 @@ export function writeAtomic(file, content) {
 }
 
 // 16-bit mono PCM WAV with `ms` of silence.
-export function silentWav(ms = 50, rate = 22050) {
+export function silentWav(ms = 300, rate = 22050) {
   const samples = Math.round((rate * ms) / 1000);
   const dataLen = samples * 2;
   const buf = Buffer.alloc(44 + dataLen);

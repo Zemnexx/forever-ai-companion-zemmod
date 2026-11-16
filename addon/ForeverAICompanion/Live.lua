@@ -8,6 +8,12 @@
 -- sig/NNN.wav: an empty file cannot be played, a short silent WAV can.
 -- WoW only sees files that existed at startup, so all of them are created
 -- empty by the installer and only their content changes afterwards.
+--
+-- On Windows, PlaySoundFile refuses an empty file right away. On macOS it
+-- says yes to any file that exists, but an empty one stops at once: there
+-- the files are played and checked a moment later with C_Sound.IsPlaying
+-- ("deferred" checks, see Live:Probe). Trusting the first answer on a Mac
+-- took every signal as rung and used up the mailboxes in a few questions.
 local _, ns = ...
 
 local Live = {}
@@ -40,6 +46,46 @@ local function playable(path)
   return false
 end
 
+local IsPlaying = C_Sound and C_Sound.IsPlaying
+local DEFERRED_DELAY = 0.01 -- next frame: an empty file has stopped, a real one plays on
+
+-- Plays every path and calls cb({ [path] = true / false }): whether it really
+-- plays. Right away where the game refuses empty files; a moment later where
+-- it doesn't (Live.deferred). Every sound is stopped.
+function Live:Probe(paths, cb)
+  local results, handles, waiting = {}, {}, false
+  for _, path in ipairs(paths) do
+    local ok, willPlay, handle = pcall(PlaySoundFile, path, "Master")
+    if not (ok and willPlay) then
+      results[path] = false
+    elseif self.deferred and handle then
+      handles[path] = handle
+      waiting = true
+    else
+      results[path] = true
+      if handle and StopSound then StopSound(handle) end
+    end
+  end
+  if not waiting then return cb(results) end
+  C_Timer.After(DEFERRED_DELAY, function()
+    for path, handle in pairs(handles) do
+      local ok, playing = pcall(IsPlaying, handle)
+      results[path] = (ok and playing) and true or false
+      if StopSound then StopSound(handle) end
+    end
+    cb(results)
+  end)
+end
+
+-- How this game tells an empty sound file from a real one. Without a way to
+-- tell (a Mac game with no C_Sound.IsPlaying) the signals are not used:
+-- mailboxes are opened on a timer instead.
+function Live:Calibrate()
+  local mac = IsMacClient and IsMacClient() or false
+  self.deferred = mac and IsPlaying ~= nil
+  self.noSignals = mac and IsPlaying == nil
+end
+
 local function slotName(i)
   return string.format("ForeverAICompanion_S%02d", i)
 end
@@ -48,11 +94,16 @@ function Live:Init()
   local db = ns.db
   db.nextSig = db.nextSig or 1
   self.failed = {}
-  self.soundOK = playable(OK_PATH)
+  self:Calibrate()
+  self.soundOK = playable(OK_PATH) and not self.noSignals
   -- Skip signals that were rung while we were offline / before a /reload.
   if self.soundOK and not db.sigWait then
-    while db.nextSig <= self.SIGNALS and playable(SIG_PATH:format(db.nextSig)) do
-      db.nextSig = db.nextSig + 1
+    if self.deferred then
+      self:SkipRung()
+    else
+      while db.nextSig <= self.SIGNALS and playable(SIG_PATH:format(db.nextSig)) do
+        db.nextSig = db.nextSig + 1
+      end
     end
   end
   -- Pick up anything answered while we were away.
@@ -63,6 +114,26 @@ function Live:Init()
   C_Timer.NewTicker(APP_TICK, function()
     if ns.UI:IsShown() then Live:CheckApp() end
   end)
+end
+
+-- The same skip, one signal per check (deferred checks take a frame each).
+-- Signals are not used for slots until it is done.
+function Live:SkipRung()
+  local db = ns.db
+  self.scanning = true
+  local function step()
+    if db.nextSig > self.SIGNALS then self.scanning = false return end
+    local path = SIG_PATH:format(db.nextSig)
+    self:Probe({ path }, function(r)
+      if r[path] then
+        db.nextSig = db.nextSig + 1
+        step()
+      else
+        self.scanning = false
+      end
+    end)
+  end
+  step()
 end
 
 -- App status ------------------------------------------------------------------
@@ -81,7 +152,24 @@ function Live:AppState()
   return self.app and self.app.state or "checking"
 end
 
+local STATUS_FILES = { "ok", "st", "beat1", "beat2", "need-ai", "need-login", "problem" }
+
+-- Checks the status files (at once, or a moment later on a Mac) and updates
+-- the state. Returns the state known so far.
 function Live:CheckApp()
+  if self.checkingApp then return self:AppState() end
+  local paths = {}
+  for i, name in ipairs(STATUS_FILES) do paths[i] = name == "ok" and OK_PATH or STATUS_PATH:format(name) end
+  self.checkingApp = true
+  self:Probe(paths, function(r)
+    self.checkingApp = false
+    self:ApplyAppCheck(function(name) return r[name == "ok" and OK_PATH or STATUS_PATH:format(name)] == true end)
+  end)
+  return self:AppState()
+end
+
+-- plays(name): whether that status file plays.
+function Live:ApplyAppCheck(plays)
   local app = self.app or {}
   self.app = app
   local before = app.state
@@ -92,13 +180,14 @@ function Live:CheckApp()
     app.pattern, app.changedAt = nil, nil
   end
   app.lastCheck = now
-  if not playable(OK_PATH) then
+  if self.noSignals then
+    app.state = "unknown"
+  elseif not plays("ok") then
     app.state = "nosound"
-  elseif not playable(STATUS_PATH:format("st")) then
+  elseif not plays("st") then
     app.state = "restart"
   else
-    local pattern = (playable(STATUS_PATH:format("beat1")) and 1 or 0)
-      + (playable(STATUS_PATH:format("beat2")) and 2 or 0)
+    local pattern = (plays("beat1") and 1 or 0) + (plays("beat2") and 2 or 0)
     if pattern ~= app.pattern then
       if app.pattern and pattern ~= 0 and app.pattern ~= 0 then app.switched = true end
       app.pattern, app.changedAt = pattern, now
@@ -119,7 +208,7 @@ function Live:CheckApp()
       else
         app.state = "ready"
         for _, reason in ipairs(REASONS) do
-          if playable(STATUS_PATH:format(reason)) then app.state = reason break end
+          if plays(reason) then app.state = reason break end
         end
       end
     end
@@ -153,13 +242,28 @@ end
 function Live:Tick()
   if not ns.Core:HasPending() then return end
   local db = ns.db
-  self.soundOK = playable(OK_PATH)
-  local useSignals = self.soundOK and not db.sigWait and db.nextSig <= self.SIGNALS
+  self.soundOK = playable(OK_PATH) and not self.noSignals
+  local useSignals = self.soundOK and not db.sigWait and db.nextSig <= self.SIGNALS and not self.scanning
 
-  if useSignals and playable(SIG_PATH:format(db.nextSig)) then
-    db.nextSig = db.nextSig + 1
-    self:LoadNextSlot()
-    return
+  if useSignals then
+    local path = SIG_PATH:format(db.nextSig)
+    if self.deferred then
+      -- Checked a moment later; the timer below still runs as a safety net.
+      if not self.checkingSig then
+        self.checkingSig = true
+        self:Probe({ path }, function(r)
+          self.checkingSig = false
+          if r[path] and SIG_PATH:format(db.nextSig) == path then
+            db.nextSig = db.nextSig + 1
+            self:LoadNextSlot()
+          end
+        end)
+      end
+    elseif playable(path) then
+      db.nextSig = db.nextSig + 1
+      self:LoadNextSlot()
+      return
+    end
   end
 
   if self.sentAt then
@@ -196,7 +300,27 @@ function Live:LoadNextSlot()
     end
   end
   ns.UI:SetStatus("|cffff6060" .. ns.L.MAILBOX_OUT .. "|r")
+  self:OfferReload()
   return false
+end
+
+-- Out of mailboxes: one click reloads the interface, which makes all of them
+-- usable again (asked once per session; the chat keeps its messages).
+function Live:OfferReload()
+  if self.reloadOffered or not StaticPopup_Show or not StaticPopupDialogs then return end
+  self.reloadOffered = true
+  local L = ns.L
+  StaticPopupDialogs.FOREVERAICOMPANION_RELOAD = StaticPopupDialogs.FOREVERAICOMPANION_RELOAD or {
+    text = L.MAILBOX_OUT_POPUP,
+    button1 = L.RELOAD,
+    button2 = CANCEL or L.CANCEL,
+    OnAccept = function() if ReloadUI then ReloadUI() end end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+  StaticPopup_Show("FOREVERAICOMPANION_RELOAD")
 end
 
 function Live:Status()

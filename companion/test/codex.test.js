@@ -108,7 +108,8 @@ test('asking through Codex end to end (fake codex in a folder with spaces)', { s
   const cfg = applyPreset({ ...loadConfig(path.join(dir, 'none.json')), preset: 'codex', timeoutMs: 30000 });
   cfg.codex = { ...cfg.codex, bin };
   const messages = [{ role: 'user', content: '¿Qué hago ahora?' }];
-  const r = await ask(cfg, 'Eres Fizzi.', messages, {});
+  // A Spanish player's request (whatever the language of the machine running the test).
+  const r = await runInLang('es', () => ask(cfg, 'Eres Fizzi.', messages, {}));
   assert.equal(r.text, 'Respuesta de Codex');
   assert.match(r.model, /suscripción/);
   const call = JSON.parse(fs.readFileSync(logFile, 'utf8'));

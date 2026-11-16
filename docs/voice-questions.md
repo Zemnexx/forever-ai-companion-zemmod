@@ -1,6 +1,6 @@
 # Voice questions (speech to text): scope
 
-Status: in app 2.0.0 (addon 1.15.0). Tested on Windows with the earlier 2.0.0 test builds (addon 1.14.x); the build merged with upstream 1.10.1 hasn't been tested on Windows yet.
+Status: in the fork's app 2.0.0 (addon 1.15.0), and in the sync test with upstream 1.11.1 (app 1.11.1, addon 1.11.10, upstream's numbering). Tested on Windows with the earlier 2.0.0 test builds (addon 1.14.x); the builds merged with upstream (1.10.1, 1.11.1) haven't been tested on Windows yet.
 
 ## Goal
 
@@ -15,7 +15,7 @@ The player holds a key (or clicks a mic button in the chat window), says the que
 
 ## Flow
 
-1. **Trigger.** The player holds a new keybind (key down to start, key up to stop) or clicks a mic button in the chat window. Not in combat, same rule as typing.
+1. **Trigger.** The player holds a new keybind (key down to start, key up to stop) or clicks a mic button in the chat window. In combat too, like typed questions (since the sync with upstream 1.11.1).
 2. **Listen request.** The addon sends a request like a normal question: character data included, `listen = true`, no text. The chat shows "Listening...".
 3. **Recording.** The app opens the microphone and plays a short beep so the player knows to speak.
 4. **Stop.** Recording ends when the player releases the key (a tiny second message over invisible sending), after about 1.5 s of silence, or at a 30 s hard cap.
@@ -103,7 +103,7 @@ Making the transcription base URL a setting, like the existing OpenAI-compatible
 
 | Part | Files |
 |---|---|
-| Request key | `companion/src/request-key.js`, `RequestKey.lua` written per PC into the addon folder (listed in the toc, never shipped), checked in `watcher.js` for every channel |
+| Request key | `companion/src/request-key.js`, `RequestKey.lua` written per PC into the addon folder (listed in the toc, never shipped). Requests carry HMAC-SHA256(key, request id) (`Core:AuthCode` in `Core.lua`), checked in `watcher.js` for every channel |
 | Addon | `Bindings.xml` (hold-to-talk, runs on key up), Talk button and "Listening..." bubble in `UI.lua`, `Core:Listen` / `StopListening` / `TalkKey` in `Core.lua`, `/ia talk` (`hablar`), locale strings. Addon version 1.11.0 |
 | Microphone | `companion/mic/Mic.cs` (capture and beeps only), `companion/src/mic.js` (helper control), `companion/src/vad.js` (end of question, WAV) |
 | Transcription | `companion/src/stt.js` (OpenAI `/audio/transcriptions`, vocabulary prompt), `companion/src/talk.js` (listen requests) |

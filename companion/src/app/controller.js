@@ -32,7 +32,7 @@ import { createMic, ensureMicExe } from '../mic.js';
 import { createTalk, talkSettings } from '../talk.js';
 import { TRUSTED_KEYS } from '../signing.js';
 
-export const VERSION = '2.0.0';
+export const VERSION = '1.11.1';
 
 // Where the silent voice's DLL lives (it is loaded by the game while in use).
 // Only programs running as the player load this copy (per-user registration);
@@ -312,6 +312,9 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
           models: cfg.models || {},
           defaults: Object.fromEntries(Object.entries(PRESETS).map(([k, v]) => [k, v.model || null])),
           webSearch: cfg.webSearch !== false,
+          // Why the chosen AI can't answer yet: "need-ai" (no AI or no key),
+          // "need-login" (Claude Code / Codex signed out), or null.
+          issue: ['need-ai', 'need-login'].includes(notReadyReason()) ? notReadyReason() : null,
         },
         running: Boolean(watcher),
         problem: watcherError,

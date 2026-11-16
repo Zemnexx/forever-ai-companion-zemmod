@@ -667,6 +667,7 @@ function UI:Build()
     if current then current.unread = nil end
     if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN or 839) end
     if ns.Live.CheckApp then pcall(ns.Live.CheckApp, ns.Live) end
+    if ns.Combat then pcall(ns.Combat.Update, ns.Combat) end -- the "in combat" bar
     UI:Refresh()
     if ns.Button then ns.Button:Update() end
   end)
@@ -801,10 +802,14 @@ function UI:Row(i)
   name:SetJustifyH("LEFT")
   if name.SetWordWrap then name:SetWordWrap(false) end
   row.name = name
+  -- One line under the title: a long status ("Fizzi is typing...") is cut
+  -- with "..." instead of wrapping up over the title.
   local info = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  info:SetPoint("BOTTOMLEFT", face, "BOTTOMRIGHT", 8, 0)
+  info:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
   info:SetPoint("RIGHT", -22, 0)
   info:SetJustifyH("LEFT")
+  if info.SetWordWrap then info:SetWordWrap(false) end
+  if info.SetMaxLines then info:SetMaxLines(1) end
   row.info = info
   -- Unread: a green light on the avatar, like an online friend.
   local dot = row:CreateTexture(nil, "OVERLAY")
@@ -1508,5 +1513,216 @@ if windowWatcher then
   -- Next frame: after Collect has noted which window is open.
   windowWatcher:SetScript("OnEvent", function()
     C_Timer.After(0, function() pcall(UI.OnGameWindow, UI) end)
+  end)
+end
+
+-- Combat ----------------------------------------------------------------------
+-- (Kept in this file, not a new one: WoW only loads files that existed when
+-- the game started, so a new file would need a full restart after updating.)
+-- Questions can be asked in combat, but the chat window makes sure the player
+-- keeps an eye on the game:
+--   - in combat, a red bar above the text box: "In combat: keep an eye on the
+--     game", with the player's health bar on its right;
+--   - on each hit taken, the window glows red at its edges for a moment
+--     (the game's low-health vignette, soft and inside the window's frame),
+--     the bar lights up and says "You're being hit!".
+-- What WoW Forever lets addons see in combat (measured in the game): entering
+-- and leaving combat (PLAYER_REGEN_*); every hit (UNIT_COMBAT "WOUND"), with
+-- the amount hidden; health changes (UNIT_HEALTH) with the values hidden
+-- ("secret values"). Hidden values can't be read or compared, but the game's
+-- own widgets can still draw them: the health bar is a StatusBar fed straight
+-- from UnitHealth, like the game's unit frames.
+local Combat = {}
+ns.Combat = Combat
+
+Combat.BAR_H = 26
+local HIT_HOLD = 4        -- seconds "You're being hit!" stays after the last hit
+local FLASH_TIME = 0.8    -- seconds the red glow takes to fade out
+local FLASH_PEAK = 0.45   -- how strong the glow is right after a hit (discreet)
+local FLASH_GAP = 0.35    -- at most one flash this often
+local INSET = 4           -- the glow stays inside the window's frame: no square edge of its own
+local VIGNETTE = "Interface\\FullScreenTextures\\LowHealth"
+local SWORDS = "Interface\\CharacterFrame\\UI-StateIcon" -- crossed swords (lower right of the sheet)
+local BAR_TEX = "Interface\\TargetingFrame\\UI-StatusBar"
+local BAR_BG = { 0.45, 0.04, 0.04, 0.9 }
+local BAR_LIT = { 0.62, 0.07, 0.05, 0.92 }
+
+-- A value the addon may use (not hidden from it by the game). Asked first:
+-- comparing a hidden value, even with nil, can raise an error.
+local function plain(v)
+  if issecretvalue and issecretvalue(v) then return false end
+  return v ~= nil
+end
+
+-- The player chose the warning (Options: "Show the combat warning instead")
+-- rather than dimming the window in combat (Fade.lua).
+function Combat:Wanted()
+  local ok, s = pcall(function() return ns.Fade and ns.Fade:Settings() end)
+  if not (ok and s) then return true end
+  return s.combatStyle == "warn"
+end
+
+function Combat:InCombat()
+  local ok, v = pcall(UnitAffectingCombat, "player")
+  return ok and plain(v) and v and true or false
+end
+
+-- The player's health in percent when the game shares it (nil in combat on
+-- WoW Forever: there the health bar shows it instead).
+function Combat:HealthPct()
+  local ok, pct = pcall(function()
+    local h, m = UnitHealth("player"), UnitHealthMax("player")
+    if not plain(h) or not plain(m) or m <= 0 then return nil end
+    return floor(h / m * 100 + 0.5)
+  end)
+  return ok and pct or nil
+end
+
+-- The bar, the health bar and the red border, inside the chat window.
+function Combat:Build()
+  local UI = ns.UI
+  if self.bar or not (UI and UI.frame and UI.main) then return end
+  local bar = CreateFrame("Frame", nil, UI.main)
+  bar:SetPoint("BOTTOMLEFT", 10, 64)
+  bar:SetPoint("BOTTOMRIGHT", -10, 64)
+  bar:SetHeight(self.BAR_H)
+  local bg = bar:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(BAR_BG[1], BAR_BG[2], BAR_BG[3], BAR_BG[4])
+  local line = bar:CreateTexture(nil, "BORDER")
+  line:SetPoint("TOPLEFT")
+  line:SetPoint("TOPRIGHT")
+  line:SetHeight(1)
+  line:SetColorTexture(1, 0.25, 0.2, 0.9)
+  local icon = bar:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(20, 20)
+  icon:SetPoint("LEFT", 6, 0)
+  icon:SetTexture(SWORDS)
+  icon:SetTexCoord(0.5, 1, 0, 0.49)
+
+  -- The player's health, drawn by the game itself (works with hidden values).
+  local hp = CreateFrame("StatusBar", nil, bar)
+  hp:SetSize(90, 12)
+  hp:SetPoint("RIGHT", -8, 0)
+  if hp.SetStatusBarTexture then pcall(hp.SetStatusBarTexture, hp, BAR_TEX) end
+  if hp.SetStatusBarColor then pcall(hp.SetStatusBarColor, hp, 0.15, 0.85, 0.2) end
+  local hpBg = hp:CreateTexture(nil, "BACKGROUND")
+  hpBg:SetAllPoints()
+  hpBg:SetColorTexture(0, 0, 0, 0.7)
+  local hpText = hp:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  hpText:SetPoint("CENTER", 0, 0)
+
+  local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+  text:SetPoint("RIGHT", hp, "LEFT", -8, 0)
+  text:SetJustifyH("LEFT")
+  if text.SetWordWrap then text:SetWordWrap(false) end
+  bar:Hide()
+
+  -- A soft red glow at the window's edges, over everything (not catching the
+  -- mouse). Inside the frame, so it ends at the window's own border.
+  local over = CreateFrame("Frame", nil, UI.frame)
+  over:SetPoint("TOPLEFT", INSET, -INSET)
+  over:SetPoint("BOTTOMRIGHT", -INSET, INSET)
+  over:SetFrameLevel((UI.frame:GetFrameLevel() or 1) + 40)
+  local glow = over:CreateTexture(nil, "OVERLAY")
+  glow:SetAllPoints()
+  glow:SetTexture(VIGNETTE)
+  if glow.SetBlendMode then glow:SetBlendMode("ADD") end
+  glow:SetVertexColor(1, 0.2, 0.15)
+  glow:SetAlpha(0)
+  over:SetScript("OnUpdate", function(_, elapsed) Combat:Fade(elapsed or 0) end)
+
+  self.bar, self.bg, self.text, self.icon = bar, bg, text, icon
+  self.hp, self.hpText, self.glow = hp, hpText, glow
+end
+
+-- The health bar (and its percent, when the game shares it or can format it).
+function Combat:UpdateHealth()
+  if not self.hp then return end
+  pcall(function()
+    self.hp:SetMinMaxValues(0, UnitHealthMax("player"))
+    self.hp:SetValue(UnitHealth("player"))
+  end)
+  local pct = self:HealthPct()
+  if pct then
+    self.hpText:SetText(pct .. "%")
+  elseif not pcall(function()
+    -- A hidden value can still be written by the game's own text widgets.
+    self.hpText:SetFormattedText("%d%%", UnitHealthPercent("player", true, CurveConstants.ScaleTo100))
+  end) then
+    self.hpText:SetText("")
+  end
+end
+
+-- Shows or hides the bar, says what is going on, and makes room for it.
+function Combat:Update()
+  self:Build()
+  if not self.bar then return end
+  local now = GetTime()
+  local hit = self.hitAt and now - self.hitAt < HIT_HOLD
+  local show = self:Wanted() and (self:InCombat() or hit) or false
+  self.text:SetText(hit and ("|cffffd0c8" .. L.COMBAT_HIT .. "|r") or L.COMBAT_ON)
+  self:UpdateHealth()
+  if show ~= self.bar:IsShown() then
+    self.bar:SetShown(show)
+    -- The messages end above the bar while it shows.
+    local scroll = ns.UI.scroll
+    if scroll then
+      scroll:SetPoint("BOTTOMRIGHT", -28, 66 + (show and self.BAR_H + 4 or 0))
+      if ns.UI.RefreshConversation then pcall(ns.UI.RefreshConversation, ns.UI) end
+    end
+  end
+end
+
+-- A hit taken: the glow and the bar light up (not more often than FLASH_GAP).
+function Combat:Hit()
+  if not self:Wanted() then return end
+  local now = GetTime()
+  if self.hitAt and now - self.hitAt < FLASH_GAP then return end
+  self.hitAt = now
+  self.flash = FLASH_TIME
+  self:Update()
+end
+
+function Combat:Fade(elapsed)
+  if self.flash and self.flash > 0 then
+    self.flash = math.max(0, self.flash - elapsed)
+    local k = self.flash / FLASH_TIME
+    k = k * k -- eases out: fades fast, then lingers softly
+    self.glow:SetAlpha(FLASH_PEAK * k)
+    local r, g, b = BAR_BG[1] + (BAR_LIT[1] - BAR_BG[1]) * k, BAR_BG[2] + (BAR_LIT[2] - BAR_BG[2]) * k, BAR_BG[3] + (BAR_LIT[3] - BAR_BG[3]) * k
+    self.bg:SetColorTexture(r, g, b, BAR_BG[4])
+  end
+  -- "You're being hit!" goes back to "In combat" after a while.
+  if self.hitAt and GetTime() - self.hitAt >= HIT_HOLD then
+    self.hitAt = nil
+    self:Update()
+  end
+end
+
+function Combat:OnEvent(event, unit, action, _, amount)
+  if event == "UNIT_COMBAT" then
+    -- "WOUND": the player took damage (its amount may be hidden).
+    if unit == "player" and plain(action) and action == "WOUND" and (not plain(amount) or (tonumber(amount) or 0) > 0) then
+      self:Hit()
+    end
+    return
+  end
+  if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+    if unit == "player" and self.bar and self.bar:IsShown() then self:UpdateHealth() end
+    return
+  end
+  -- Entering or leaving combat, or a loading screen.
+  self:Update()
+end
+
+local events = CreateFrame and CreateFrame("Frame")
+if events then
+  for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "UNIT_COMBAT", "UNIT_HEALTH", "UNIT_MAXHEALTH", "PLAYER_ENTERING_WORLD" }) do
+    pcall(events.RegisterEvent, events, e)
+  end
+  events:SetScript("OnEvent", function(_, event, ...)
+    pcall(Combat.OnEvent, Combat, event, ...)
   end)
 end

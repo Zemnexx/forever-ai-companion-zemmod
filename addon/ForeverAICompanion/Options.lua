@@ -1,6 +1,7 @@
 -- The addon's page in Options > AddOns ("Forever AI Companion"), also opened
 -- by the gear in the chat window and by /ia options: dimming the window while
--- moving and in combat (Fade.lua) and compact answers (Compact.lua).
+-- moving and in combat (Fade.lua), or the combat warning instead (ns.Combat in
+-- UI.lua), and compact answers (Compact.lua).
 --
 -- Controls are built by hand (no option templates, which differ between game
 -- versions), and the page is registered with the Settings API when the game
@@ -187,8 +188,15 @@ function Options:Build(panel)
     heading = "FADE_COMBAT_HEADING", enable = "FADE_COMBAT_ENABLE", tip = "FADE_COMBAT_TIP", opacity = "FADE_COMBAT_OPACITY", delay = "FADE_COMBAT_DELAY",
   }, 34)
 
+  -- In combat it's one or the other: dimming (the box above) or the warning.
+  local warn = checkbox(content, L.COMBAT_WARN_ENABLE)
+  warn:SetPoint("TOPLEFT", combat.bottom, "BOTTOMLEFT", -8, -26)
+  local warnTip = label(content, "GameFontDisableSmall", L.COMBAT_WARN_TIP)
+  warnTip:SetPoint("TOPLEFT", warn, "BOTTOMLEFT", 30, 0)
+  warnTip:SetWidth(WIDTH + 100)
+
   local note = label(content, "GameFontDisableSmall", L.FADE_NOTE)
-  note:SetPoint("TOPLEFT", combat.bottom, "BOTTOMLEFT", -4, -28)
+  note:SetPoint("TOPLEFT", warnTip, "BOTTOMLEFT", -26, -20)
   note:SetWidth(WIDTH + 140)
 
   local compact = ns.Compact and compactSection(content, note)
@@ -196,12 +204,18 @@ function Options:Build(panel)
   local function show()
     move.show()
     combat.show()
+    warn:SetChecked(ns.Fade:Settings().combatWarn)
     if compact then compact.show() end
   end
+  warn:SetScript("OnClick", function(self)
+    ns.Fade:Set("combatWarn", self:GetChecked() and true or false)
+    show()
+  end)
   panel:SetScript("OnShow", show)
   panel.refresh = show -- older Interface Options call this
   self.controls = move
   self.combatControls = combat
+  self.combatWarnControl = warn
   self.compactControls = compact
   self.show = show
 end

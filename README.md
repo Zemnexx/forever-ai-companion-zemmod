@@ -48,7 +48,7 @@ Forever AI Companion has two parts that work together:
 
 | Part | Where it lives | What it does |
 |---|---|---|
-| **The addon** | Inside WoW Forever | The floating button, the chat window and your assistant. It reads your character's data and shows the answers. |
+| **The addon** | Inside WoW Forever | The minimap button, the chat window and your assistant. It reads your character's data and shows the answers. |
 | **The app** (`ForeverAICompanion.exe`) | On your Windows PC | Receives your question, asks the AI you chose and sends the answer back to the game. |
 
 With every question the AI receives, without you having to explain anything:
@@ -115,11 +115,11 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 
 ## Using it in the game
 
-1. **Click the floating button**: the circle with your assistant's portrait, top right next to the minimap. You can drag it anywhere.
+1. **Click the minimap button**: the circle with your assistant's portrait, on the edge of the minimap like other addons' buttons. Drag it to slide it around the minimap.
 2. **The first time, choose your assistant**: Fizzi (Alliance) or Rizzik (Horde). It suggests the one for your faction.
 3. **Type your question** and click Send. The answer arrives in a few seconds; if the window was closed, you get a notification.
 
-- **Chats by topic**: each chat remembers its conversation (gear, quests, dungeons…). Right-click the floating button to start a new chat.
+- **Chats by topic**: each chat remembers its conversation (gear, quests, dungeons…). Right-click the minimap button to start a new chat.
 - **Ask about a specific item**: while typing, shift-click an item (in your bags, a vendor, a quest reward…) to put it in the question, like in the chat box: *"Is [this ring] better than mine?"*. The AI gets its full stats, and the link stays clickable in your message.
 - **Clickable items in the answers**: when the assistant names an item from your gear, bags, bank, quest rewards or an open vendor, it shows up as a real item link. Hover it for the tooltip, click to open it, shift-click to paste it in the chat or ctrl-click to try it on. Items that aren't in your data (for example, dungeon loot) are written as plain text.
 - **Ask about what's open**: with a quest, vendor, trainer, Beast Training, flight map, auction house or loot window open, the AI sees it, and a new chat suggests questions about that window. Try *"Should I accept this quest?"*, *"Which reward should I pick?"*, *"What should I buy here?"*, *"What should I teach my pet?"* or *"What from my bags should I sell here?"*.
@@ -128,9 +128,10 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 - **Is the app ready?** The line under the chat title tells you. Green: the app is open and ready. Red: questions won't be answered yet, and it says why (the app is closed or not responding, no AI is chosen, or your AI needs you to sign in). Hover it for what to do.
 - **Tokens used**: next to each answer's time you see how many tokens it used (*"18.2k tokens"*), and under the text box, below **Send**, the whole chat's total. Hover them for the detail: tokens read (your data, the guide and what it looked up; the part from the cache counts much less) and written. It's what your plan or API key is measured in. The dashboard's recent questions show it too.
 - **See what is sent**: in the window click **See the data I send**.
-- **See-through while you move or fight**: the window dims while your character walks, runs, rides or swims, and in combat, then comes back a moment after you stop or the fight ends. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Moving and combat each have their own on/off, opacity and delay in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
-- **Compact answers** (optional): ask with the window closed (talk key, `/ia talk` or `/ia <question>`) and, instead of the window opening, a small see-through box shows the answer for 20 seconds (adjustable) and goes away by itself. Hover it to keep it up, click the item links in it, drag it where you like, or click **Open in chat**. The answer is also in the chat (click the floating button). Turn it on in the same options page or with `/ia compact`.
-- **In combat** you can't ask (on purpose): wait until combat ends.
+- **See-through while you move or fight**: the window dims while your character walks, runs, rides or swims, and in combat (unless you choose the combat warning below), then comes back a moment after you stop or the fight ends. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Moving and combat each have their own on/off, opacity and delay in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
+- **Compact answers** (optional): ask with the window closed (talk key, `/ia talk` or `/ia <question>`) and, instead of the window opening, a small see-through box shows the answer for 20 seconds (adjustable) and goes away by itself. Hover it to keep it up, click the item links in it, drag it where you like, or click **Open in chat**. The answer is also in the chat (click the minimap button). Turn it on in the same options page or with `/ia compact`.
+- **In combat** you can still ask, typed or by voice, but keep your eyes on the game. In **Options > AddOns > Forever AI Companion** you choose what the window does in combat: **dim** (it turns see-through, as above; the default) or **warn** (it stays fully visible, a red bar shows your health, and the window's edge glows red each time you get hit).
+
 
 ### Asking with your voice (optional)
 
@@ -154,7 +155,7 @@ Every command also works with its Spanish word (shown in parentheses).
 | `/ia compact` (`compacto`) | Turns compact answers on or off |
 | `/ia new` (`nuevo`) | Starts a new chat |
 | `/ia assistant` (`asistente`) | Choose between Fizzi and Rizzik (`/ia assistant fizzi` or `/ia assistant rizzik`) |
-| `/ia button` (`boton`) | Shows or hides the floating button (`/ia button reset` puts it back in place) |
+| `/ia button` (`boton`) | Shows or hides the minimap button (`/ia button reset` puts it back in place) |
 | `/ia sound` (`sonido`) | Turns the answer notification sound on or off |
 | `/ia data` (`datos`) | Shows the data that is sent |
 | `/ia status` (`estado`) · `/ia inbox` (`buzon`) | Diagnostics: connection status and check for pending answers |
@@ -229,7 +230,7 @@ sequenceDiagram
 | Requirements | Administrator permission once (Windows only allows adding voices that way) | WoW visible when asking (not minimized or covered) |
 | What gets installed | A silent voice in Windows' voice list | Nothing |
 
-Technically, the voice is a small SAPI engine that the app compiles on your PC with the C# compiler included in Windows. When the game asks it to speak, it saves the text in `%APPDATA%\ForeverAICompanion\tts-inbox\` instead of producing audio. Messages travel in chunks of up to 24,000 characters (a normal question is a single one) (`FAIC:<id>:<part>/<total>:<data>`) and the app joins them back.
+Technically, on Windows the voice is a small SAPI engine that the app compiles on your PC with the C# compiler included in Windows. When the game asks it to speak, it saves the text in `%APPDATA%\ForeverAICompanion\tts-inbox\` instead of producing audio. Messages travel in chunks of up to 24,000 characters (a normal question is a single one) (`FAIC:<id>:<part>/<total>:<data>`) and the app joins them back.
 
 ### Coming back: from the app to the game
 
@@ -297,7 +298,7 @@ Each player can also add their own knowledge from the app's dashboard (**Server 
 - **Invisible sending:** the silent voice's file used by elevated programs lives in `%ProgramFiles%\ForeverAICompanion`, which only administrators can change (installs from before this change are offered **Update invisible sending** to move it). The voice keeps only this app's own messages: anything else any program speaks with it is dropped without being written or logged.
 - **Codex:** when the app searches the PC for Codex, or installs it, it only runs a `codex.exe` that Windows confirms is signed by OpenAI. If a future Codex stops accepting one of the safety switches the app relies on (no commands, no file or browser access), the app refuses to use it rather than dropping the switch.
 - The `/ia probe` channel test only watches the game's files while a test is running (and for 15 minutes after, for files the game writes at logout).
-- **Only the addon can ask.** Every request carries a random key the app writes into the addon's folder on this PC (`RequestKey.lua`), and the app ignores requests without it. Any program can speak with the silent voice, but without that key it can't send the app questions or open the microphone. (Chrome doesn't offer the voice to web pages.)
+- **Only the addon can ask.** The app writes a random key into the addon's folder on this PC (`RequestKey.lua`). Every request carries a code made from that key and the request's own id (HMAC-SHA256), never the key itself, so the key doesn't show on the on-screen line, in screenshots or in a stream. The app ignores requests without a valid code, answers each request once and refuses codes more than a day old. Any program can speak with the silent voice, but without the key it can't send the app questions or open the microphone. (Chrome doesn't offer the voice to web pages.)
 - **Voice questions** are off until you turn them on. The microphone opens only when you press the talk key or click Talk, closes when you stop (30 seconds at most), and the recording is sent to OpenAI for transcription without ever being written to disk.
 
 - The app window is a local page (`127.0.0.1`) that doesn't accept connections from other computers or other web pages.
@@ -334,7 +335,7 @@ Blizzard's Terms of Use and EULA forbid bots, cheats and unauthorized third-part
 | Plays for you, presses keys or clicks | **No.** You type (or say) every question, and every answer is just text you read, like looking something up on a website. Voice questions only replace typing: you press the key and speak each one, and nothing is typed or pressed in the game for you. |
 | Reads or changes the game's memory | **No.** It doesn't read, inject into or modify the game process. |
 | Changes the game's files | **No.** The app only writes inside its own addon folders in `Interface\AddOns`. |
-| Works during combat | **No.** The addon refuses questions while you are in combat, in line with Blizzard's goal that addons shouldn't give an advantage in combat. |
+| Works during combat | **You can ask, but it only shows text.** It never acts in the game for you. While you're in combat the window dims, or, if you choose the combat warning in the options, shows a red "In combat" bar and flashes when you get hit, so your attention goes back to the game. Versions before 1.11.1 refused questions in combat: asking for advice in the middle of a fight is the closest this project gets to what Blizzard doesn't want addons to give, so keep that in mind. |
 | Can be inspected | **Yes.** All of the code is public in this repository. |
 
 ### Where the risks are
@@ -359,7 +360,7 @@ The app is free. With your Claude or ChatGPT subscription you pay nothing extra 
 - Type `/ia inbox` in the game to check for new answers.
 - With the on-screen line, WoW must be visible when asking and in windowed or "fullscreen (windowed)" mode.
 
-**I can't see the floating button.**
+**I can't see the minimap button.**
 You may have hidden it (Shift + right-click). Type `/ia button`, or `/ia button reset` to put it back in place.
 
 **The AI test fails.**
@@ -367,9 +368,6 @@ Check the steps in *Your AI*: the program must be installed and signed in, or th
 
 **Does the app need to stay open?**
 Yes, while you play. When you close its window it can keep running next to the Windows clock (click the icon to open it again; right-click to close it). With **Open when Windows starts** you don't have to remember.
-
-**Does it work on Mac?**
-Not for now: Windows 10 and 11 only.
 
 ---
 
@@ -391,7 +389,7 @@ addon/ForeverAICompanion/   Addon (Lua 5.1, modern client, interface 16001)
   Uplink.lua                Game → app: builds the package and picks the path
   Voice.lua                 Invisible path (text to speech with the silent voice)
   Live.lua                  App → game: inboxes and bell
-  UI.lua Button.lua         Chat window and floating button
+  UI.lua Button.lua         Chat window (and the combat warning) and minimap button
   Chats.lua Notify.lua      Conversations and notifications
   Personas.lua              Fizzi and Rizzik
   Core.lua                  Events and /ia commands

@@ -132,7 +132,7 @@ local EN = {
   TIP_RIGHT_CLICK = "Right-click",
   TIP_NEW_CHAT = "new chat",
   TIP_DRAG = "Drag",
-  TIP_MOVE = "move",
+  TIP_MOVE = "move it around the minimap",
   TIP_SHIFT_RIGHT_CLICK = "Shift + right-click",
   TIP_HIDE = "hide",
 
@@ -144,10 +144,10 @@ local EN = {
   PREVIOUS_CONVERSATION = "Previous conversation",
 
   -- Asking
-  VOICE_LOST = "The invisible link didn't reach the app; I resent it with the on-screen strip.",
   NO_ANSWER = "No answer arrived. Is the companion app open on your PC?",
   FRAME_TOO_BIG = "%d bytes (JSON %d) even after trimming everything",
-  IN_COMBAT = "Can't ask during combat.",
+  COMBAT_ON = "In combat: keep an eye on the game",
+  COMBAT_HIT = "You're being hit! Watch the game",
   WAIT_PREVIOUS = "Wait a moment: I'm still sending the previous question.",
   PREPARING = "Preparing...",
   PREP_ERROR = "Error preparing the question: %s",
@@ -177,6 +177,8 @@ local EN = {
   FADE_COMBAT_TIP = "Makes the chat window see-through while you are in a fight, so you can see what's happening behind it.",
   FADE_COMBAT_OPACITY = "Window opacity in combat: %d%%",
   FADE_COMBAT_DELAY = "Back to full after combat: %s s",
+  COMBAT_WARN_ENABLE = "Show the combat warning instead",
+  COMBAT_WARN_TIP = "The window stays fully visible in a fight: a red bar says you're in combat and shows your health, and the window's edges glow red each time you get hit.",
   FADE_NOTE = "The window stays fully visible while your mouse is over it, while you type in it and while you ask by voice. Flight paths don't count as moving. Opening it while moving or in combat shows it fully until you stop or the fight ends. When both apply, the lower opacity is used.",
   SECONDS = "%s s",
   COMPACT_HEADING = "Compact answers",
@@ -199,11 +201,14 @@ local EN = {
   TALK_NEEDS_VOICE = "Voice questions need invisible sending: turn it on in the Forever AI Companion app.",
   TALK_SEND_FAILED = "The voice question could not be sent. Try again.",
   BINDING_TALK = "Talk to your assistant (hold)",
-  HELP = "/ia (or /ai) opens the window · /ia <question> asks in the open chat · /ia talk asks with your voice · /ia options opens the settings · /ia compact switches compact answers · /ia new creates a chat · /ia assistant picks Fizzi or Rizzik · /ia button shows or hides the floating button (/ia button reset moves it back) · /ia sound toggles the alert · /ia data shows what is sent · /ia status · /ia inbox checks for answers",
+  HELP = "/ia (or /ai) opens the window · /ia <question> asks in the open chat · /ia talk asks with your voice · /ia options opens the settings · /ia compact switches compact answers · /ia new creates a chat · /ia assistant picks Fizzi or Rizzik · /ia button shows or hides the minimap button (/ia button reset moves it back) · /ia sound toggles the alert · /ia data shows what is sent · /ia status · /ia inbox checks for answers",
 
   -- Mailboxes and /ia status
   MAILBOX_MISSING = "The addon's mailboxes are missing. Run 'npm run install-addon' and restart WoW.",
   MAILBOX_OUT = "Out of mailboxes for this session. Type /reload to get more answers.",
+  MAILBOX_OUT_POPUP = "Forever AI Companion: out of mailboxes for this session, so new answers can't reach the game.\n\nReload the interface to get them all back (your chats are kept).",
+  RELOAD = "Reload",
+  CANCEL = "Cancel",
   YES = "yes",
   STATUS_FADE_ERROR = " · Dimming paused by an error: %s",
   NO = "no",
@@ -408,7 +413,7 @@ local ES = {
   CONTEXT_TITLE = "Datos de tu personaje que recibe %s",
   ERROR = "Error",
 
-  -- Botón flotante
+  -- Botón del minimapa
   BUTTON_HIDDEN = "botón oculto. Escribe /ia boton para mostrarlo de nuevo.",
   UNREAD_ONE = "%d chat con respuestas nuevas",
   UNREAD_MANY = "%d chats con respuestas nuevas",
@@ -417,7 +422,7 @@ local ES = {
   TIP_RIGHT_CLICK = "Clic derecho",
   TIP_NEW_CHAT = "nuevo chat",
   TIP_DRAG = "Arrastrar",
-  TIP_MOVE = "mover",
+  TIP_MOVE = "moverlo por el minimapa",
   TIP_SHIFT_RIGHT_CLICK = "Shift + clic derecho",
   TIP_HIDE = "ocultar",
 
@@ -429,10 +434,10 @@ local ES = {
   PREVIOUS_CONVERSATION = "Conversación anterior",
 
   -- Preguntas
-  VOICE_LOST = "El envío invisible no llegó a la app; lo reenvié con la línea en pantalla.",
   NO_ANSWER = "No llegó respuesta. ¿Está abierta la app compañera en tu PC?",
   FRAME_TOO_BIG = "%d bytes (JSON %d) incluso recortando todo",
-  IN_COMBAT = "No puedo preguntar durante el combate.",
+  COMBAT_ON = "En combate: atento al juego",
+  COMBAT_HIT = "¡Te están golpeando! Mira el juego",
   WAIT_PREVIOUS = "Espera un momento: todavía estoy enviando la pregunta anterior.",
   PREPARING = "Preparando...",
   PREP_ERROR = "Error preparando la pregunta: %s",
@@ -462,6 +467,8 @@ local ES = {
   FADE_COMBAT_TIP = "Hace la ventana del chat transparente mientras estás en combate, para que veas lo que pasa detrás.",
   FADE_COMBAT_OPACITY = "Opacidad de la ventana en combate: %d%%",
   FADE_COMBAT_DELAY = "Vuelve a verse entera tras el combate: %s s",
+  COMBAT_WARN_ENABLE = "Mostrar el aviso de combate en su lugar",
+  COMBAT_WARN_TIP = "La ventana se ve entera durante el combate: una barra roja indica que estás en combate y muestra tu salud, y los bordes de la ventana brillan en rojo cada vez que te golpean.",
   FADE_NOTE = "La ventana se ve entera mientras el ratón está encima, mientras escribes en ella y mientras preguntas por voz. Las rutas de vuelo no cuentan como movimiento. Si la abres en movimiento o en combate, se ve entera hasta que te detengas o termine el combate. Si se cumplen las dos cosas, se usa la opacidad más baja.",
   SECONDS = "%s s",
   COMPACT_HEADING = "Respuestas compactas",
@@ -484,11 +491,14 @@ local ES = {
   TALK_NEEDS_VOICE = "Las preguntas por voz necesitan el envío invisible: actívalo en la app Forever AI Companion.",
   TALK_SEND_FAILED = "No se pudo enviar la pregunta por voz. Vuelve a intentarlo.",
   BINDING_TALK = "Hablar con tu asistente (mantener)",
-  HELP = "/ia abre la ventana · /ia <pregunta> pregunta en el chat abierto · /ia hablar pregunta con tu voz · /ia opciones abre los ajustes · /ia compacto activa las respuestas compactas · /ia nuevo crea un chat · /ia asistente elige entre Fizzi y Rizzik · /ia boton muestra u oculta el botón flotante (/ia boton reset lo recoloca) · /ia sonido activa o silencia el aviso · /ia datos muestra lo que se envía · /ia estado · /ia buzon revisa respuestas",
+  HELP = "/ia abre la ventana · /ia <pregunta> pregunta en el chat abierto · /ia hablar pregunta con tu voz · /ia opciones abre los ajustes · /ia compacto activa las respuestas compactas · /ia nuevo crea un chat · /ia asistente elige entre Fizzi y Rizzik · /ia boton muestra u oculta el botón del minimapa (/ia boton reset lo recoloca) · /ia sonido activa o silencia el aviso · /ia datos muestra lo que se envía · /ia estado · /ia buzon revisa respuestas",
 
   -- Buzones y /ia estado
   MAILBOX_MISSING = "Faltan los buzones del addon. Ejecuta 'npm run install-addon' y reinicia WoW.",
   MAILBOX_OUT = "Se acabaron los buzones de esta sesión. Escribe /reload para recibir más respuestas.",
+  MAILBOX_OUT_POPUP = "Forever AI Companion: se acabaron los buzones de esta sesión, así que las respuestas nuevas no pueden llegar al juego.\n\nRecarga la interfaz para recuperarlos todos (tus chats se mantienen).",
+  RELOAD = "Recargar",
+  CANCEL = "Cancelar",
   YES = "sí",
   STATUS_FADE_ERROR = " · Atenuación en pausa por un error: %s",
   NO = "no",
@@ -580,6 +590,17 @@ local ES = {
 
 EN.code = "en"
 ES.code = "es"
+
+-- On a Mac the app lives in the menu bar and the Applications folder, not
+-- next to the Windows clock or in the Start menu.
+if IsMacClient and IsMacClient() then
+  EN.APP_CLOSED_TIP = "The app on your Mac isn't running, so nobody will answer your questions. Open Forever AI Companion from your Applications folder (or download it from its GitHub page if you don't have it yet)."
+  EN.APP_STUCK_TIP = "The app stopped giving signs of life (it may have crashed or frozen). Quit it from its icon in the menu bar, or with Force Quit (Option+Command+Esc), and open it again."
+  EN.APP_READY_TIP = "The app on your Mac is running and has an AI set up: ask away."
+  ES.APP_CLOSED_TIP = "La app de tu Mac no está funcionando, así que nadie responderá tus preguntas. Abre Forever AI Companion desde tu carpeta Aplicaciones (o descárgala de su página de GitHub si aún no la tienes)."
+  ES.APP_STUCK_TIP = "La app dejó de dar señales de vida (puede que se haya cerrado de golpe o congelado). Ciérrala desde su ícono en la barra de menús, o con Forzar salida (Opción+Comando+Esc), y vuelve a abrirla."
+  ES.APP_READY_TIP = "La app de tu Mac está funcionando y tiene una IA configurada: pregunta lo que quieras."
+end
 
 -- Unknown keys show their own name instead of nil.
 setmetatable(EN, { __index = function(_, key) return tostring(key) end })

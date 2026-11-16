@@ -31,7 +31,7 @@ test('the built-in guide has a date and the game build it describes', () => {
   // The detailed topics ship too, split in sections with keywords.
   const topics = validGuide(foreverGuide('wow-forever-topics.md'), { maxBytes: 600 * 1024 });
   assert.ok(topics, 'the topics file is a valid guide');
-  assert.match(topics.body, /^### .+\nkeywords: .+/m);
+  assert.match(topics.body, /^### .+\r?\nkeywords: .+/m); // \r\n: a Windows checkout
   // The first published guides used Spanish keys.
   const legacy = parseGuide('---\nfecha: 2026-11-13\nversionJuego: 1.60.1\nbuild: 70938\n---\nbody');
   assert.equal(legacy.meta.date, '2026-11-13');

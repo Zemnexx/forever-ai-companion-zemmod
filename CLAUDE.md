@@ -20,7 +20,7 @@ When the user asks for a build to test:
 
 The normal build needs Windows and Node 25.5 or later. A cloud session cross-builds the exe without running any Windows program:
 
-1. Bundle `companion/src/app/main.js` with esbuild exactly as step 1 of `companion/scripts/build.js` does, with the same embedded-assets module. Keep the two in step when `build.js` changes (for example, a new asset or guide file).
+1. Bundle with `bundleApp()` from `companion/scripts/bundle.js`, the same step `npm run build` uses (esbuild with every asset embedded). Call it rather than copying it, so the bundle always matches the normal build.
 2. Make the SEA blob with the local Node, which must be the same version as the `node.exe` below (22.23.4 so far), with `useCodeCache: false` and `useSnapshot: false` so the blob works on Windows.
 3. Download the official `node.exe` for `node-v22.23.4-win-x64` from nodejs.org and check it against that release's `SHASUMS256.txt` (`dccc52de28d8df2ee22d2062424f8c563070d95d8ad70c54c4bf01d590dec14f`).
 4. With `resedit` 3.1.1, installed outside the repository and never as a dependency of the app: put the blob in as RCDATA `NODE_SEA_BLOB`, replace the icon with `companion/assets/app.ico`, and set the version info from `VERSION` in `companion/src/app/controller.js`. This drops Node's own Authenticode signature, so the exe is unsigned.

@@ -16,8 +16,99 @@ function Core:FindEntry(id)
   return ns.Chats:FindEntry(id)
 end
 
+-- The request code ------------------------------------------------------------
+-- Every request carries HMAC-SHA256(this PC's key, the request's id) instead
+-- of the key itself (RequestKey.lua, written by the app): the app can tell the
+-- addon's requests apart, while the key never leaves the game, not through the
+-- voice and not on the on-screen line (which screenshots, recordings and
+-- streams can see). A code fits only its own id, and the app answers an id
+-- once. SHA-256 (FIPS 180-4) and HMAC (RFC 2104) with the game's bit library.
+local K256 = {
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+}
+
+-- The bit library's results as 0..2^32-1, whether it hands them back signed or not.
+local function u32(x) return x % 4294967296 end
+local function band(a, b) return u32(bit.band(a, b)) end
+local function bxor(a, b) return u32(bit.bxor(a, b)) end
+local function bnot(a) return u32(bit.bnot(a)) end
+local function shr(a, n) return u32(bit.rshift(a, n)) end
+local function rotr(x, n) return u32(bit.bor(bit.rshift(x, n), bit.lshift(x, 32 - n))) end
+
+local function word(n) -- 4 bytes, big-endian
+  return string.char(math.floor(n / 16777216) % 256, math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256)
+end
+
+local function sha256(msg)
+  local len = #msg
+  msg = msg .. "\128" .. string.rep("\0", (55 - len) % 64) .. word(math.floor(len * 8 / 4294967296)) .. word(len * 8 % 4294967296)
+  local H = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
+  local w = {}
+  for chunk = 1, #msg, 64 do
+    for i = 0, 15 do
+      local b1, b2, b3, b4 = msg:byte(chunk + i * 4, chunk + i * 4 + 3)
+      w[i] = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
+    end
+    for i = 16, 63 do
+      local v15, v2 = w[i - 15], w[i - 2]
+      local s0 = bxor(bxor(rotr(v15, 7), rotr(v15, 18)), shr(v15, 3))
+      local s1 = bxor(bxor(rotr(v2, 17), rotr(v2, 19)), shr(v2, 10))
+      w[i] = u32(w[i - 16] + s0 + w[i - 7] + s1)
+    end
+    local a, b, c, d, e, f, g, h = H[1], H[2], H[3], H[4], H[5], H[6], H[7], H[8]
+    for i = 0, 63 do
+      local S1 = bxor(bxor(rotr(e, 6), rotr(e, 11)), rotr(e, 25))
+      local ch = bxor(band(e, f), band(bnot(e), g))
+      local t1 = u32(h + S1 + ch + K256[i + 1] + w[i])
+      local S0 = bxor(bxor(rotr(a, 2), rotr(a, 13)), rotr(a, 22))
+      local maj = bxor(bxor(band(a, b), band(a, c)), band(b, c))
+      h, g, f, e, d, c, b, a = g, f, e, u32(d + t1), c, b, a, u32(t1 + S0 + maj)
+    end
+    H[1], H[2], H[3], H[4] = u32(H[1] + a), u32(H[2] + b), u32(H[3] + c), u32(H[4] + d)
+    H[5], H[6], H[7], H[8] = u32(H[5] + e), u32(H[6] + f), u32(H[7] + g), u32(H[8] + h)
+  end
+  local out = {}
+  for i = 1, 8 do out[i] = word(H[i]) end
+  return table.concat(out)
+end
+Core.Sha256 = sha256
+
+local function hmacSha256(key, msg)
+  if #key > 64 then key = sha256(key) end
+  key = key .. string.rep("\0", 64 - #key)
+  local ipad, opad = {}, {}
+  for i = 1, 64 do
+    local k = key:byte(i)
+    ipad[i] = string.char(bxor(k, 0x36))
+    opad[i] = string.char(bxor(k, 0x5c))
+  end
+  return sha256(table.concat(opad) .. sha256(table.concat(ipad) .. msg))
+end
+
+local function hex(s)
+  return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+-- The code for request `id` (nil without a key: the app then explains to /reload).
+function Core:AuthCode(id)
+  if type(ns.requestKey) ~= "string" or ns.requestKey == "" then return nil end
+  return hex(hmacSha256(ns.requestKey, tostring(id)))
+end
+
 -- A question sent through the invisible voice with no answer after this
--- long is re-sent through the strip, and the voice is skipped this session.
+-- long is also sent through the strip, as the same question (same id): the
+-- app answers it once, whichever copy it got. A slow answer (the AI taking a
+-- while, a first start) is not a lost question: the voice is only given up
+-- for the session when no answer comes back at all (PENDING_TIMEOUT). Giving
+-- it up after these 45 s left a Mac without the Screen Recording permission
+-- (the strip can't be read there) with no answers until /reload.
 local VOICE_TIMEOUT = 45
 
 function Core:HasPending()
@@ -25,26 +116,27 @@ function Core:HasPending()
   local any = false
   local resend
   ns.Chats:EachEntry(function(e, c)
-    -- (Voice questions can't be re-sent through the strip: there is no text yet.)
-    if e.status == "pending" and e.viaVoice and not e.listen and now - (e.t or now) > VOICE_TIMEOUT and not self.working then
+    if e.status ~= "pending" then return end
+    if now - (e.t or now) > PENDING_TIMEOUT then
       e.status = "error"
-      e.answer = L.VOICE_LOST
-      ns.Voice.broken = true
-      resend = { question = e.shown or e.question, chatId = c.id }
+      e.answer = L.NO_ANSWER
+      e.timedOut = true -- an answer that still arrives is shown (see ApplyInbox)
+      -- Sent through the voice and nothing came back, not even after the strip:
+      -- the voice isn't working this session. (Not for a voice question: it
+      -- can't go through the strip, and recording and transcribing take time.)
+      if e.viaVoice and not e.listen then ns.Voice.broken = true end
       ns.UI:Refresh()
-    elseif e.status == "pending" then
-      if now - (e.t or now) > PENDING_TIMEOUT then
-        e.status = "error"
-        e.answer = L.NO_ANSWER
-        ns.UI:Refresh()
-      else
-        any = true
-      end
+      return
+    end
+    any = true
+    -- (Voice questions can't be re-sent through the strip: there is no text yet.)
+    if e.viaVoice and not e.listen and not e.resent and not resend and not self.working and now - (e.t or now) > VOICE_TIMEOUT then
+      e.resent = true
+      resend = { entry = e, question = e.shown or e.question, chatId = c.id }
     end
   end)
   if resend then
-    C_Timer.After(0, function() Core:Ask(resend.question, nil, resend.chatId) end)
-    any = true
+    C_Timer.After(0, function() Core:Ask(resend.question, nil, resend.chatId, resend.entry) end)
   end
   return any
 end
@@ -345,7 +437,14 @@ end
 -- `listen`: a voice question: no text yet, the app records what the player
 -- says (see Core:Listen). Only through the invisible voice.
 -- Returns the request id, or nil when nothing was sent.
-function Core:Ask(question, extra, chatId, listen)
+-- `again`: a question already asked (its chat entry), sent once more through
+-- the strip with the same id (see VOICE_TIMEOUT). Upstream passes it as the
+-- 4th argument, so a table there is `again`, never `listen`: a resend must
+-- never start a recording.
+function Core:Ask(question, extra, chatId, listen, again)
+  if type(listen) == "table" then listen, again = nil, listen end
+  listen = listen == true or nil
+
   -- Items (and spells, quests...) linked with shift-click go along with their
   -- full description; the question itself keeps just their "[Name]".
   local linked = not listen and ns.Collect:Links(question) or nil
@@ -359,11 +458,11 @@ function Core:Ask(question, extra, chatId, listen)
     if compact then ns.Compact:Message(bad and ("|cffff6060" .. msg .. "|r") or msg)
     else ns.UI:SetStatus(bad and ("|cffff6060" .. msg .. "|r") or msg) end
   end
-  if not compact then ns.UI:Show() end
-  if InCombatLockdown() or UnitAffectingCombat("player") then
-    say(L.IN_COMBAT, true)
-    return
-  end
+  -- Asking in combat is allowed, typed or by voice: the window then warns the
+  -- player to keep an eye on the game, or dims, as chosen in the options (see
+  -- Combat in UI.lua and Fade.lua). A resend never opens the window.
+  if not compact and not again then ns.UI:Show() end
+
   if self.working or ns.Uplink.busy then
     say(L.WAIT_PREVIOUS)
     return
@@ -379,7 +478,7 @@ function Core:Ask(question, extra, chatId, listen)
 
   -- The question belongs to the open chat (or to the given one, for resends).
   local chatData = ns.Chats:Get(chatId) or ns.Chats:Current()
-  local id = string.format("%d%04d", time(), math.random(0, 9999))
+  local id = again and again.id or string.format("%d%04d", time(), math.random(0, 9999))
   local sig, resetSignals = ns.Live:RequestFields()
   local req = {
     v = 2,
@@ -391,15 +490,16 @@ function Core:Ask(question, extra, chatId, listen)
     assistant = ns.Personas:Current().id,
     lang = L.code,                  -- the app writes its error messages in this language
     history = self:RecentTurns(chatData, HISTORY_TURNS_SENT),
-    auth = ns.requestKey,           -- this PC's key (RequestKey.lua, written by the app)
+    auth = self:AuthCode(id),       -- this PC's code for this request (see Core:AuthCode)
   }
   for k, v in pairs(extra or {}) do req[k] = v end
   if listen then req.listen = true end
 
-  local entry = { id = id, question = question, shown = shown, status = "pending", t = time(), listen = listen or nil }
-  ns.Chats:AddMessage(chatData, entry)
+  local entry = again or { id = id, question = question, shown = shown, status = "pending", t = time(), listen = listen }
+  if not again then ns.Chats:AddMessage(chatData, entry) end
+
   req.chat = { id = chatData.id, title = chatData.title }
-  if compact then ns.Compact:Show(entry, chatData) end
+  if compact and not again then ns.Compact:Show(entry, chatData) end
 
   local function fail(msg)
     Core.working = false
@@ -418,7 +518,7 @@ function Core:Ask(question, extra, chatId, listen)
   -- Invisible voice channel when available; otherwise the strip on screen.
   local context = linked and { linkedItems = linked } or nil
   local co = coroutine.create(function()
-    if ns.Voice:Available() then
+    if not again and ns.Voice:Available() then
       local frame = Core:BuildFrame(req, Core.step, ns.Voice.MAX_FRAME_BYTES, context)
       if frame and ns.Voice:Send(frame, req.id, Core.step) then
         Core.lastChannel = "voice"
@@ -477,7 +577,11 @@ function Core:ApplyInbox(inbox)
   for _, a in ipairs(inbox.answers) do
     local entry, owner
     if type(a) == "table" then entry, owner = self:FindEntry(a.id) end
-    if entry and entry.status == "pending" then
+    -- Pending, or given up waiting: an answer that arrives late is still shown.
+    if entry and (entry.status == "pending" or entry.timedOut) then
+      entry.timedOut = nil
+      -- It came back: the app got the question, so the voice works after all.
+      if entry.viaVoice then ns.Voice.broken = nil end
       entry.status = a.ok and "done" or "error"
       entry.answer = a.answer
       -- Voice question: what the app heard becomes the question.
@@ -577,7 +681,7 @@ function Core:StopListening()
     l.stopWanted = true -- still being sent: stop right after
     return
   end
-  local json = ns.Json.Encode({ v = 2, id = l.id .. "s", question = "", listenStop = l.id, auth = ns.requestKey })
+  local json = ns.Json.Encode({ v = 2, id = l.id .. "s", question = "", listenStop = l.id, auth = Core:AuthCode(l.id .. "s") })
   ns.Voice:Send(ns.Uplink.Frame(json), l.id .. "s")
   self:EndListening()
   ns.UI:SetStatus(string.format(L.SENT_TO, ns.Personas:Current().name))

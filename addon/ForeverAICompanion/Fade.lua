@@ -1,7 +1,9 @@
 -- Dims the chat window while the character moves or is in combat, so it
 -- hides less of the world, and brings it back a moment after stopping or
 -- after the fight. Each has its own on/off, opacity and delay; when both
--- apply, the lower opacity wins.
+-- apply, the lower opacity wins. In combat the player can choose the combat
+-- warning instead (the red bar and glow, ns.Combat in UI.lua): the window
+-- then stays fully visible for the whole fight.
 --
 -- It stays fully visible while the player is using it: mouse over it, typing
 -- in it or asking by voice. Flight paths don't count as moving (a good time
@@ -15,9 +17,10 @@ ns.Fade = Fade
 
 -- "enabled" / "opacity" / "delay": while moving (the names from before combat
 -- was added, so saved settings keep working).
+-- combatStyle: "dim" (dims in combat) or "warn" (the combat warning instead).
 Fade.DEFAULTS = {
   enabled = true, opacity = 50, delay = 1,
-  combat = true, combatOpacity = 30, combatDelay = 2,
+  combatStyle = "dim", combatOpacity = 30, combatDelay = 2,
 }
 -- Values test builds 1.12.0 to 1.13.0 saved without the player choosing them.
 local SAVED_BY_TEST_BUILDS = { enabled = true, opacity = 60, delay = 1, combat = true, combatOpacity = 30, combatDelay = 2 }
@@ -56,7 +59,13 @@ function Fade:Settings()
     if t[k] == nil then s[k] = v else s[k] = t[k] end
   end
   s.enabled = s.enabled and true or false
-  s.combat = s.combat and true or false
+  -- Saved before the choice existed, with dimming in combat turned off: the
+  -- other choice, the warning.
+  if t.combatStyle == nil and t.combat == false then s.combatStyle = "warn" end
+  s.combatStyle = s.combatStyle == "warn" and "warn" or "dim"
+  -- The two boxes on the options page: always exactly one of them is ticked.
+  s.combat = s.combatStyle == "dim"
+  s.combatWarn = s.combatStyle == "warn"
   for _, k in ipairs({ "opacity", "combatOpacity" }) do
     s[k] = snap(s[k], self.OPACITY_STEP, self.MIN_OPACITY, self.MAX_OPACITY)
   end
@@ -68,12 +77,18 @@ end
 
 function Fade:Set(key, value)
   local t = saved()
+  -- In combat it's one or the other: ticking one box unticks the other.
+  if key == "combat" then key, value = "combatStyle", value and "dim" or "warn" end
+  if key == "combatWarn" then key, value = "combatStyle", value and "warn" or "dim" end
+  if key == "combatStyle" then t.combat = nil end
   t[key] = value
   local s = self:Settings()
   t[key] = s[key] -- saved within range
   if key == "opacity" or key == "combatOpacity" then
     self.previewUntil, self.previewAlpha = GetTime() + PREVIEW, s[key] / 100
   end
+  -- The combat warning shows or goes away right away, even mid-fight.
+  if key == "combatStyle" and ns.Combat and ns.Combat.Update then pcall(ns.Combat.Update, ns.Combat) end
   self.next = 0 -- look again right away
 end
 
@@ -168,6 +183,12 @@ function Fade:Target(now)
     return 1
   end
   local isMoving, inCombat = moving(), fighting()
+  -- The combat warning instead of dimming: fully visible for the whole fight
+  -- (moving too), so the warning can be seen.
+  if inCombat and s.combatStyle == "warn" then
+    self.movedAt, self.foughtAt = nil, nil
+    return 1
+  end
   -- Opened on the move or in a fight: full until the character stops or the fight ends.
   if self.holdMove then
     if isMoving then isMoving = false else self.holdMove = nil end

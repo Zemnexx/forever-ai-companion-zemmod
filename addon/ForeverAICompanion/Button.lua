@@ -1,4 +1,6 @@
--- Floating button: drag it anywhere; its position is remembered.
+-- Minimap button: on the edge of the minimap, like other addons' buttons
+-- (the LibDBIcon way): dragging slides it around the minimap, and its place
+-- (an angle) is remembered.
 --   Left click: open / close the chats.   Right click: new chat.
 --   Shift + right click: hide it (/ia button brings it back).
 -- Round, like the minimap buttons of other addons: the assistant's portrait
@@ -8,14 +10,35 @@
 -- and a round badge counts chats with unread answers.
 local _, ns = ...
 local L = ns.L
+local floor = math.floor
 
 local Button = {}
 ns.Button = Button
 
-local min = math.min
+local min, max = math.min, math.max
 local SIZE = 36                      -- clickable circle
 local RING = SIZE * 1.62              -- MiniMap-TrackingBorder art is offset: scale like LibDBIcon
-local DEFAULT = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -230, y = -18 }
+local DEFAULT_ANGLE = 200            -- degrees around the minimap (0 = right, 90 = top): left side
+local RADIUS = 5                     -- how far out from the minimap's edge
+local atan2 = math.atan2 or math.atan
+-- Minimap shapes (GetMinimapShape, set by minimap addons): for each quarter
+-- (1 bottom-right ... 4 top-left), whether that corner is round.
+local SHAPES = {
+  ROUND = { true, true, true, true },
+  SQUARE = { false, false, false, false },
+  ["CORNER-TOPLEFT"] = { false, false, false, true },
+  ["CORNER-TOPRIGHT"] = { false, false, true, false },
+  ["CORNER-BOTTOMLEFT"] = { false, true, false, false },
+  ["CORNER-BOTTOMRIGHT"] = { true, false, false, false },
+  ["SIDE-LEFT"] = { false, true, false, true },
+  ["SIDE-RIGHT"] = { true, false, true, false },
+  ["SIDE-TOP"] = { false, false, true, true },
+  ["SIDE-BOTTOM"] = { true, true, false, false },
+  ["TRICORNER-TOPLEFT"] = { false, true, true, true },
+  ["TRICORNER-TOPRIGHT"] = { true, false, true, true },
+  ["TRICORNER-BOTTOMLEFT"] = { true, true, false, true },
+  ["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
+}
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
 -- Makes a texture round (when the client supports masks).
@@ -32,11 +55,40 @@ local function settings()
   return ns.db.button
 end
 
-local function place(b)
+-- Puts the button on the minimap's edge at `angle` degrees (as LibDBIcon does).
+local function place(b, angle)
   local s = settings()
-  local pos = s.point and s or DEFAULT
+  angle = angle or s.angle or DEFAULT_ANGLE
   b:ClearAllPoints()
-  b:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
+  local map = _G.Minimap
+  if not map then
+    b:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -230, -18) -- no minimap: its old corner
+    return
+  end
+  local rad = math.rad(angle)
+  local x, y, q = math.cos(rad), math.sin(rad), 1
+  if x < 0 then q = q + 1 end
+  if y > 0 then q = q + 2 end
+  local shape = SHAPES[GetMinimapShape and GetMinimapShape() or "ROUND"] or SHAPES.ROUND
+  local w = (map:GetWidth() / 2) + RADIUS
+  local h = (map:GetHeight() / 2) + RADIUS
+  if shape[q] then
+    x, y = x * w, y * h
+  else
+    local dw, dh = math.sqrt(2 * w * w) - 10, math.sqrt(2 * h * h) - 10
+    x = max(-w, min(x * dw, w))
+    y = max(-h, min(y * dh, h))
+  end
+  b:SetPoint("CENTER", map, "CENTER", x, y)
+end
+
+-- The angle from the minimap's center to the mouse, in degrees.
+local function cursorAngle()
+  local map = _G.Minimap
+  local mx, my = map:GetCenter()
+  local px, py = GetCursorPosition()
+  local scale = map:GetEffectiveScale()
+  return math.deg(atan2(py / scale - my, px / scale - mx)) % 360
 end
 
 -- Ring light: the game's gold minimap ring; level 1 = normal, more = glowing.
@@ -51,12 +103,12 @@ end
 
 function Button:Init()
   if self.frame then return end
-  local b = CreateFrame("Button", "ForeverAICompanionFloatingButton", UIParent)
+  local map = _G.Minimap
+  local b = CreateFrame("Button", "ForeverAICompanionFloatingButton", map or UIParent)
   b:SetSize(SIZE, SIZE)
   b:SetFrameStrata("MEDIUM")
-  b:SetFrameLevel(20)
+  b:SetFrameLevel(map and ((map:GetFrameLevel() or 0) + 8) or 20)
   b:SetClampedToScreen(true)
-  b:SetMovable(true)
   b:EnableMouse(true)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   b:RegisterForDrag("LeftButton")
@@ -118,16 +170,18 @@ function Button:Init()
   badgeText:SetPoint("CENTER", 0, 0)
   badge:Hide()
 
+  -- Dragging slides it around the minimap (OnUpdate follows the mouse).
   b:SetScript("OnDragStart", function(self)
+    if not _G.Minimap then return end
     self.dragging = true
-    self:StartMoving()
+    self.moving = true
     if GameTooltip then GameTooltip:Hide() end
   end)
   b:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local point, _, relPoint, x, y = self:GetPoint(1)
-    local s = settings()
-    s.point, s.relPoint, s.x, s.y = point, relPoint, x, y
+    if not self.moving then return end
+    self.moving = false
+    settings().angle = floor(cursorAngle() * 10 + 0.5) / 10
+    place(self)
     -- The click that ends a drag must not open the window.
     C_Timer.After(0, function() self.dragging = false end)
   end)
@@ -180,6 +234,7 @@ function Button:Init()
   b:SetScript("OnUpdate", function(self, elapsed)
     elapsed = elapsed or 0
     t = t + elapsed
+    if self.moving then place(self, cursorAngle()) end
     if Button.thinking then
       local wave = math.abs(math.sin(t * 2.2))
       setRing(ring, 0.5 + 0.5 * wave)
@@ -201,7 +256,7 @@ function Button:Init()
     end
   end)
 
-  b.hovered, b.dragging = false, false
+  b.hovered, b.dragging, b.moving = false, false, false
   self.frame, self.icon, self.ring, self.gadget = b, icon, ring, gadget
   self.badge, self.badgeText = badge, badgeText
   self:ApplyPersona()
@@ -263,7 +318,8 @@ end
 
 function Button:Reset()
   local s = settings()
-  s.point, s.relPoint, s.x, s.y = nil, nil, nil, nil
+  s.angle = nil
+  s.point, s.relPoint, s.x, s.y = nil, nil, nil, nil -- free position from before 1.11.1
   if self.frame then place(self.frame) end
   self:SetShown(true)
 end
