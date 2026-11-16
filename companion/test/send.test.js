@@ -1068,3 +1068,74 @@ test('without the Settings API the page goes into the older Interface Options', 
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   assert.equal(out, 'Forever AI Companion|2', 'registered once, opened');
 });
+
+test('the chat window also dims in combat, with its own opacity and delay; the lower opacity wins', () => {
+  const out = runLua(`
+    COMBAT = false
+    UnitAffectingCombat = function(unit) return COMBAT end
+    InCombatLockdown = function() return COMBAT end
+    START()
+    ns.UI:Show()
+    local r = {}
+    local function note(name) r[#r + 1] = name .. "=" .. A() end
+    COMBAT = true; TICK(0.6); note("fighting")
+    SPEED = 7; TICK(0.3); note("fightingMoving")
+    COMBAT = false; TICK(0.6); note("leftCombatMoving")
+    -- Seconds since the fight ended: 0.6 moving, then stopped.
+    SPEED = 0; TICK(0.6); note("afterCombat1.2")
+    TICK(0.5); note("afterCombat1.7")
+    TICK(0.6); note("afterCombat2.3")
+    -- Hovering in a fight shows it.
+    COMBAT = true; TICK(0.6)
+    ns.UI.frame.IsMouseOver = function() return true end; TICK(0.5); note("mouseOver")
+    ns.UI.frame.IsMouseOver = function() return false end
+    -- Opened mid-fight: full until the fight ends.
+    ns.Fade:Reset(); TICK(0.6); note("openedInCombat")
+    COMBAT = false; TICK(0.2); COMBAT = true; TICK(0.6); note("nextFight")
+    -- Combat dimming off: only moving dims.
+    ns.Fade:Set("combat", false); TICK(0.6); note("combatOff")
+    SPEED = 7; TICK(0.6); note("combatOffMoving")
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
+  assert.deepEqual(got, {
+    fighting: '0.30', fightingMoving: '0.30', leftCombatMoving: '0.30',
+    'afterCombat1.2': '0.30', 'afterCombat1.7': '0.30', 'afterCombat2.3': '1.00',
+    mouseOver: '1.00', openedInCombat: '1.00', nextFight: '0.30',
+    combatOff: '1.00', combatOffMoving: '0.60',
+  });
+});
+
+test('combat settings: their own section of the page, kept in range and previewed', () => {
+  const out = runLua(`
+    START()
+    ns.UI:Show()
+    local r = {}
+    local s = ns.Fade:Settings()
+    r[#r + 1] = string.format("%s %g/%g", tostring(s.combat), s.combatOpacity, s.combatDelay)
+    ns.db.fade.combatOpacity, ns.db.fade.combatDelay = 0, 99
+    s = ns.Fade:Settings(); r[#r + 1] = string.format("%g/%g", s.combatOpacity, s.combatDelay)
+    local c = ns.Options.combatControls
+    c.opacity:GetScript("OnValueChanged")(c.opacity, 20)
+    TICK(0.5); r[#r + 1] = "preview=" .. A()
+    TICK(1.5); r[#r + 1] = "after=" .. A()
+    c.delay:GetScript("OnValueChanged")(c.delay, 3.5)
+    c.enabled.GetChecked = function() return false end
+    c.enabled:GetScript("OnClick")(c.enabled)
+    s = ns.Fade:Settings()
+    r[#r + 1] = string.format("%g/%g/%s", s.combatOpacity, s.combatDelay, tostring(s.combat))
+    r[#r + 1] = string.format("moving untouched %s %g/%g", tostring(s.enabled), s.opacity, s.delay)
+    RESULT = table.concat(r, " | ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 60/1');
+});
+
+test('settings saved before combat dimming existed keep working', () => {
+  const out = runLua(`
+    START()
+    ns.db.fade = { enabled = false, opacity = 75, delay = 4 }
+    local s = ns.Fade:Settings()
+    RESULT = string.format("%s %g/%g %s %g/%g", tostring(s.enabled), s.opacity, s.delay, tostring(s.combat), s.combatOpacity, s.combatDelay)
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  assert.equal(out, 'false 75/4 true 30/2');
+});

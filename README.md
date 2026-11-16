@@ -120,7 +120,7 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 - **Professions**: open each profession window once and the addon remembers your recipes, so you can ask *"What can I craft with what I have?"* or *"Which recipe should I make to level up?"*.
 - **Is the app ready?** The line under the chat title tells you. Green: the app is open and ready. Red: questions won't be answered yet, and it says why (the app is closed or not responding, no AI is chosen, or your AI needs you to sign in). Hover it for what to do.
 - **See what is sent**: in the window click **See the data I send**.
-- **See-through while you move**: the window dims while your character walks, runs, rides or swims, and comes back a moment after you stop. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Set how see-through it gets and how long it waits in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
+- **See-through while you move or fight**: the window dims while your character walks, runs, rides or swims, and in combat, then comes back a moment after you stop or the fight ends. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Moving and combat each have their own on/off, opacity and delay in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
 - **In combat** you can't ask (on purpose): wait until combat ends.
 
 ### Asking with your voice (optional)

@@ -1,20 +1,28 @@
--- Dims the chat window while the character moves, so it hides less of the
--- world, and brings it back a moment after stopping.
+-- Dims the chat window while the character moves or is in combat, so it
+-- hides less of the world, and brings it back a moment after stopping or
+-- after the fight. Each has its own on/off, opacity and delay; when both
+-- apply, the lower opacity wins.
 --
 -- It stays fully visible while the player is using it: mouse over it, typing
 -- in it or asking by voice. Flight paths don't count as moving (a good time
--- to read), and opening it on the move shows it fully until the next stop.
+-- to read). Opening it while moving or fighting shows it fully until the
+-- character stops or the fight ends.
 -- Settings: Options > AddOns > Forever AI Companion (Options.lua).
 local _, ns = ...
 
 local Fade = {}
 ns.Fade = Fade
 
-Fade.DEFAULTS = { enabled = true, opacity = 60, delay = 1 }
+-- "enabled" / "opacity" / "delay": while moving (the names from before combat
+-- was added, so saved settings keep working).
+Fade.DEFAULTS = {
+  enabled = true, opacity = 60, delay = 1,
+  combat = true, combatOpacity = 30, combatDelay = 2,
+}
 Fade.MIN_OPACITY, Fade.MAX_OPACITY, Fade.OPACITY_STEP = 10, 95, 5
 Fade.MAX_DELAY, Fade.DELAY_STEP = 10, 0.5
 
-local CHECK = 0.1          -- seconds between movement checks
+local CHECK = 0.1          -- seconds between checks
 local SPEED = 4            -- opacity change per second (a full fade in ~0.25 s)
 local PREVIEW = 1.5        -- seconds a changed opacity is shown in the options
 
@@ -30,8 +38,13 @@ function Fade:Settings()
   local s = ns.db.fade
   for k, v in pairs(self.DEFAULTS) do if s[k] == nil then s[k] = v end end
   s.enabled = s.enabled and true or false
-  s.opacity = snap(s.opacity, self.OPACITY_STEP, self.MIN_OPACITY, self.MAX_OPACITY)
-  s.delay = snap(s.delay, self.DELAY_STEP, 0, self.MAX_DELAY)
+  s.combat = s.combat and true or false
+  for _, k in ipairs({ "opacity", "combatOpacity" }) do
+    s[k] = snap(s[k], self.OPACITY_STEP, self.MIN_OPACITY, self.MAX_OPACITY)
+  end
+  for _, k in ipairs({ "delay", "combatDelay" }) do
+    s[k] = snap(s[k], self.DELAY_STEP, 0, self.MAX_DELAY)
+  end
   return s
 end
 
@@ -39,7 +52,9 @@ function Fade:Set(key, value)
   local s = self:Settings()
   s[key] = value
   self:Settings()
-  if key == "opacity" then self.previewUntil = GetTime() + PREVIEW end
+  if key == "opacity" or key == "combatOpacity" then
+    self.previewUntil, self.previewAlpha = GetTime() + PREVIEW, s[key] / 100
+  end
   self.next = 0 -- look again right away
 end
 
@@ -47,6 +62,11 @@ local function moving()
   if UnitOnTaxi and UnitOnTaxi("player") then return false end
   local speed = GetUnitSpeed and GetUnitSpeed("player")
   return (tonumber(speed) or 0) > 0
+end
+
+local function fighting()
+  if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
+  return InCombatLockdown and InCombatLockdown() and true or false
 end
 
 -- The player is using the window: never dimmed.
@@ -59,29 +79,40 @@ function Fade:InUse()
   return false
 end
 
+-- One reason to dim: its opacity while active, then for `delay` seconds after.
+function Fade:Part(now, on, active, opacity, delay, key)
+  if not on then
+    self[key] = nil
+    return 1
+  end
+  if active then
+    self[key] = now
+    return opacity / 100
+  end
+  if self[key] and now - self[key] < delay then return opacity / 100 end
+  self[key] = nil
+  return 1
+end
+
 -- How opaque the window should be right now (0-1).
 function Fade:Target(now)
   local s = self:Settings()
-  local dim = s.opacity / 100
-  if self.previewUntil and now < self.previewUntil and self.frame and self.frame:IsShown() then return dim end
-  if not s.enabled or self:InUse() then
-    self.movedAt = nil
+  if self.previewUntil and now < self.previewUntil and self.frame and self.frame:IsShown() then return self.previewAlpha end
+  if self:InUse() then
+    self.movedAt, self.foughtAt = nil, nil
     return 1
   end
-  local now_moving = moving()
-  -- Opened on the move: full until the character stops once.
-  if self.holdUntilStop then
-    if now_moving then return 1 end
-    self.holdUntilStop = nil
+  local isMoving, inCombat = moving(), fighting()
+  -- Opened on the move or in a fight: full until the character stops or the fight ends.
+  if self.holdMove then
+    if isMoving then isMoving = false else self.holdMove = nil end
   end
-  if now_moving then
-    self.movedAt = now
-    return dim
+  if self.holdCombat then
+    if inCombat then inCombat = false else self.holdCombat = nil end
   end
-  -- Stopped: back to full once the delay has passed.
-  if self.movedAt and now - self.movedAt < s.delay then return dim end
-  self.movedAt = nil
-  return 1
+  return min(
+    self:Part(now, s.enabled, isMoving, s.opacity, s.delay, "movedAt"),
+    self:Part(now, s.combat, inCombat, s.combatOpacity, s.combatDelay, "foughtAt"))
 end
 
 function Fade:Update(elapsed)
@@ -103,8 +134,9 @@ end
 
 -- Opening the window always shows it fully.
 function Fade:Reset()
-  self.current, self.target, self.movedAt, self.next = 1, 1, nil, 0
-  self.holdUntilStop = moving() or nil
+  self.current, self.target, self.movedAt, self.foughtAt, self.next = 1, 1, nil, nil, 0
+  self.holdMove = moving() or nil
+  self.holdCombat = fighting() or nil
   if self.frame then self.frame:SetAlpha(1) end
 end
 

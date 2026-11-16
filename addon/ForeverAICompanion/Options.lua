@@ -1,6 +1,6 @@
 -- The addon's page in Options > AddOns ("Forever AI Companion"), also opened
 -- by the gear in the chat window and by /ia options. For now: dimming the
--- window while moving (Fade.lua).
+-- window while moving and in combat (Fade.lua).
 --
 -- Controls are built by hand (no option templates, which differ between game
 -- versions), and the page is registered with the Settings API when the game
@@ -60,75 +60,96 @@ local function seconds(v)
   return (v == math.floor(v) and string.format("%d", v) or string.format("%.1f", v))
 end
 
--- Fills `panel` with the page's controls.
-function Options:Build(panel)
+-- One dimming section: heading, on/off, opacity and delay sliders, laid out
+-- under `anchor` (dx lines it up with the page's left edge). keys: the
+-- settings it edits (see Fade.DEFAULTS); text: its locale keys. Returns the
+-- section's widgets; .bottom is the last one.
+local function section(panel, anchor, dx, keys, text, gap)
   local Fade = ns.Fade
-  local title = label(panel, "GameFontNormalLarge", L.OPTIONS_TITLE)
-  title:SetPoint("TOPLEFT", 16, -16)
-  local intro = label(panel, "GameFontHighlightSmall", L.OPTIONS_INTRO)
-  intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-  intro:SetWidth(WIDTH + 140)
+  local heading = label(panel, "GameFontNormal", L[text.heading])
+  heading:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", dx, -gap)
 
-  local heading = label(panel, "GameFontNormal", L.FADE_HEADING)
-  heading:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -22)
-
-  local enabled = checkbox(panel, L.FADE_ENABLE)
-  enabled:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -4, -8)
-  local enabledTip = label(panel, "GameFontDisableSmall", L.FADE_ENABLE_TIP)
-  enabledTip:SetPoint("TOPLEFT", enabled, "BOTTOMLEFT", 30, 0)
-  enabledTip:SetWidth(WIDTH + 100)
+  local enabled = checkbox(panel, L[text.enable])
+  enabled:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -4, -6)
+  local tip = label(panel, "GameFontDisableSmall", L[text.tip])
+  tip:SetPoint("TOPLEFT", enabled, "BOTTOMLEFT", 30, 0)
+  tip:SetWidth(WIDTH + 100)
 
   local opacityText = label(panel, "GameFontHighlight", "")
-  opacityText:SetPoint("TOPLEFT", enabledTip, "BOTTOMLEFT", -26, -22)
+  opacityText:SetPoint("TOPLEFT", tip, "BOTTOMLEFT", -26, -16)
   local opacity = slider(panel, Fade.MIN_OPACITY, Fade.MAX_OPACITY, Fade.OPACITY_STEP)
   opacity:SetPoint("TOPLEFT", opacityText, "BOTTOMLEFT", 4, -8)
   opacity.low:SetText(Fade.MIN_OPACITY .. "%")
   opacity.high:SetText(Fade.MAX_OPACITY .. "%")
 
   local delayText = label(panel, "GameFontHighlight", "")
-  delayText:SetPoint("TOPLEFT", opacity, "BOTTOMLEFT", -4, -28)
+  delayText:SetPoint("TOPLEFT", opacity, "BOTTOMLEFT", -4, -24)
   local delay = slider(panel, 0, Fade.MAX_DELAY, Fade.DELAY_STEP)
   delay:SetPoint("TOPLEFT", delayText, "BOTTOMLEFT", 4, -8)
   delay.low:SetText(string.format(L.SECONDS, "0"))
   delay.high:SetText(string.format(L.SECONDS, seconds(Fade.MAX_DELAY)))
 
-  local note = label(panel, "GameFontDisableSmall", L.FADE_NOTE)
-  note:SetPoint("TOPLEFT", delay, "BOTTOMLEFT", -4, -30)
-  note:SetWidth(WIDTH + 140)
-
   local filling = false
   local function show()
     local s = Fade:Settings()
+    local on = s[keys.enabled]
     filling = true
-    enabled:SetChecked(s.enabled)
-    opacity:SetValue(s.opacity)
-    delay:SetValue(s.delay)
+    enabled:SetChecked(on)
+    opacity:SetValue(s[keys.opacity])
+    delay:SetValue(s[keys.delay])
     filling = false
-    opacityText:SetText(string.format(L.FADE_OPACITY, s.opacity))
-    delayText:SetText(string.format(L.FADE_DELAY, seconds(s.delay)))
-    local a = s.enabled and 1 or 0.45
+    opacityText:SetText(string.format(L[text.opacity], s[keys.opacity]))
+    delayText:SetText(string.format(L[text.delay], seconds(s[keys.delay])))
+    local a = on and 1 or 0.45
     for _, w in ipairs({ opacity, delay, opacityText, delayText }) do w:SetAlpha(a) end
-    if opacity.SetEnabled then opacity:SetEnabled(s.enabled) end
-    if delay.SetEnabled then delay:SetEnabled(s.enabled) end
+    if opacity.SetEnabled then opacity:SetEnabled(on) end
+    if delay.SetEnabled then delay:SetEnabled(on) end
   end
-
   enabled:SetScript("OnClick", function(self)
-    Fade:Set("enabled", self:GetChecked() and true or false)
+    Fade:Set(keys.enabled, self:GetChecked() and true or false)
     show()
   end)
   opacity:SetScript("OnValueChanged", function(_, v)
     if filling then return end
-    Fade:Set("opacity", v)
+    Fade:Set(keys.opacity, v)
     show()
   end)
   delay:SetScript("OnValueChanged", function(_, v)
     if filling then return end
-    Fade:Set("delay", v)
+    Fade:Set(keys.delay, v)
     show()
   end)
+  return { enabled = enabled, opacity = opacity, delay = delay, opacityText = opacityText, delayText = delayText, show = show, bottom = delay }
+end
+
+-- Fills `panel` with the page's controls.
+function Options:Build(panel)
+  local title = label(panel, "GameFontNormalLarge", L.OPTIONS_TITLE)
+  title:SetPoint("TOPLEFT", 16, -16)
+  local intro = label(panel, "GameFontHighlightSmall", L.OPTIONS_INTRO)
+  intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+  intro:SetWidth(WIDTH + 140)
+
+  local move = section(panel, intro, 0, { enabled = "enabled", opacity = "opacity", delay = "delay" }, {
+    heading = "FADE_HEADING", enable = "FADE_ENABLE", tip = "FADE_ENABLE_TIP", opacity = "FADE_OPACITY", delay = "FADE_DELAY",
+  }, 20)
+  local combat = section(panel, move.bottom, -4, { enabled = "combat", opacity = "combatOpacity", delay = "combatDelay" }, {
+    heading = "FADE_COMBAT_HEADING", enable = "FADE_COMBAT_ENABLE", tip = "FADE_COMBAT_TIP", opacity = "FADE_COMBAT_OPACITY", delay = "FADE_COMBAT_DELAY",
+  }, 34)
+
+  local note = label(panel, "GameFontDisableSmall", L.FADE_NOTE)
+  note:SetPoint("TOPLEFT", combat.bottom, "BOTTOMLEFT", -4, -28)
+  note:SetWidth(WIDTH + 140)
+
+  local function show()
+    move.show()
+    combat.show()
+  end
   panel:SetScript("OnShow", show)
   panel.refresh = show -- older Interface Options call this
-  self.controls = { enabled = enabled, opacity = opacity, delay = delay, opacityText = opacityText, delayText = delayText, show = show }
+  self.controls = move
+  self.combatControls = combat
+  self.show = show
 end
 
 -- Registers the page (once the saved settings are loaded).
