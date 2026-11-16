@@ -4,5 +4,3 @@ companion/state.json
 companion/dist/
 *.log
 companion/context-cache.json
-# Notes for Claude Code stay out of the repository
-CLAUDE.md
