@@ -68,7 +68,7 @@ Updates and guide downloads stay off until a signing key is in `TRUSTED_KEYS` (s
 
 #### Security
 
-- **Request key.** The app writes a random key into the addon folder (`RequestKey.lua`), every request from the addon carries it, and the app ignores requests without it on every channel. This closes a gap where anything able to speak with the silent Windows voice, very likely including a web page using the browser's text-to-speech, could send the app questions. With voice questions it would also have been able to open the microphone. An addon loaded before the update is told to `/reload`.
+- **Request key.** The app writes a random key into the addon folder (`RequestKey.lua`), every request from the addon carries it, and the app ignores requests without it on every channel. This closes a gap where any program able to speak with the silent Windows voice could send the app questions, and with voice questions open the microphone. It was suspected that web pages could too, through the browser's text-to-speech, but Chrome turned out not to offer the voice to web pages (tested on Windows). An addon loaded before the update is told to `/reload`.
 - Audio is never written to disk. The key is never logged.
 
 #### Tested on Windows

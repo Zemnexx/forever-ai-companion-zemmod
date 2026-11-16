@@ -1,9 +1,9 @@
 // Every request from the addon carries this PC's request key, and the app
 // ignores requests without it.
 //
-// Anything that can speak with the silent Windows voice can hand the app a
-// request, including a web page using the browser's text-to-speech. A page
-// can't read files on the PC, so a random key written into the addon's
+// Any program that can speak with the silent Windows voice can hand the app
+// a request (Chrome doesn't offer the voice to web pages; other programs
+// using Windows' classic voices can). A random key written into the addon's
 // folder (RequestKey.lua, created by this app, never part of the addon's
 // published files) tells the addon's requests apart from anything else.
 // The same check covers the on-screen line and screenshots.

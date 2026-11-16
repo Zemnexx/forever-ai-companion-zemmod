@@ -60,11 +60,11 @@ Making the transcription base URL a setting, like the existing OpenAI-compatible
 
 ## Security and privacy
 
-- **Request authentication first (prerequisite).** Chromium on Windows reads text aloud through the same Windows voice system the silent voice plugs into. So a web page can very likely pick the "ForeverAICompanion" voice with `speechSynthesis` and speak a crafted request into the app.
+- **Request authentication first (prerequisite).** Any program that can speak with the silent voice can hand the app a request.
   - Today that means unwanted AI calls on the player's key or plan.
-  - With voice questions, it would also mean a web page could open the microphone.
-  - Fix: the app writes a random secret into the addon folder at install, the addon includes it in every request, and the app drops requests without it. A web page can't read that folder. This protects the on-screen line too.
-  - To confirm the gap: on a PC with invisible sending on, run `speechSynthesis.getVoices().map(v => v.name)` in Chrome's developer console and look for the voice.
+  - With voice questions, it would also mean opening the microphone.
+  - Fix: the app writes a random secret into the addon folder at install, the addon includes it in every request, and the app drops requests without it. This protects the on-screen line too.
+  - Web pages were the main worry, through the browser's `speechSynthesis`. Tested on Windows: Chrome doesn't list the silent voice. Its voices are named like Windows' newer voice system (OneCore, "Microsoft David" without "Desktop"), which the silent voice isn't part of. Other browsers weren't tested.
 - **Off by default.** The microphone opens only on an authenticated listen request and closes right after. Windows shows its mic-in-use indicator. No always-listening mode and no wake word.
 - **Audio is never written to disk.** It goes from the helper to the app in memory and is uploaded directly. The transcript is kept like a typed question (chat and log).
 - **The API key** is stored encrypted with DPAPI and sent only to the transcription endpoint.
@@ -124,4 +124,4 @@ Not covered yet:
 
 - The message when Windows' microphone privacy setting blocks desktop apps.
 - Transcription accuracy for Spanish.
-- Whether a browser's `speechSynthesis` lists the silent voice. The request key closes that gap either way.
+- Browsers other than Chrome offering the silent voice to web pages (Chrome doesn't). The request key closes that gap either way.
