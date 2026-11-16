@@ -13,20 +13,21 @@
 // Each release (after `npm run build`) and each guide change:
 //   node scripts/sign.js release dist/ForeverAICompanion.exe --key <key.pem>     -> dist/ForeverAICompanion.exe.sig
 //   node scripts/sign.js guide knowledge-builtin/wow-forever.md --key <key.pem>  -> knowledge-builtin/wow-forever.md.sig
+//   (and the same for knowledge-builtin/wow-forever-topics.md when it changes)
 // or with Key Vault:
 //   node scripts/sign.js digest release dist/ForeverAICompanion.exe
 //   az keyvault key sign --vault-name <vault> --name faic-signing --algorithm ES256 --digest <printed digest>
 //   node scripts/sign.js attach release dist/ForeverAICompanion.exe <signature from az>
 // (attach checks the signature against TRUSTED_KEYS, or against --pubkey <public.pem>.)
 // Upload ForeverAICompanion.exe.sig with the exe to the GitHub release, and
-// commit wow-forever.md.sig next to the guide (the app reads both from GitHub).
+// commit each guide's .sig next to it (the app reads both from GitHub).
 // The release version signed is the one in src/app/controller.js unless
 // --version is given; it must match the release tag.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../src/config.js';
-import { GUIDE_FILE } from '../src/guide.js';
+import { GUIDE_FILE, TOPICS_FILE } from '../src/guide.js';
 import { ASSET_NAME } from '../src/updater.js';
 import {
   GUIDE_CONTEXT, TRUSTED_KEYS, UPDATE_CONTEXT, decodeSignature, encodeSignature, guideFields, signedMessage, updateFields,
@@ -41,7 +42,7 @@ function usage(msg) {
   node scripts/sign.js keygen <private-key.pem>
   node scripts/sign.js pubkey <public-or-private.pem>
   node scripts/sign.js release <exe> --key <private-key.pem> [--version X.Y.Z]
-  node scripts/sign.js guide <wow-forever.md> --key <private-key.pem>
+  node scripts/sign.js guide <wow-forever.md | wow-forever-topics.md> --key <private-key.pem>
   node scripts/sign.js digest release|guide <file> [--version X.Y.Z]
   node scripts/sign.js attach release|guide <file> <signature> [--version X.Y.Z] [--pubkey <public.pem>]`);
   process.exit(1);
@@ -72,8 +73,13 @@ function message(kind, file, version) {
     return { context: UPDATE_CONTEXT, fields };
   }
   if (kind === 'guide') {
-    if (path.basename(file) !== GUIDE_FILE) console.warn(`Warning: the app only downloads a guide named ${GUIDE_FILE}.`);
-    return { context: GUIDE_CONTEXT, fields: guideFields({ file: GUIDE_FILE, sha256: sha256(bytes) }) };
+    // The file name is signed too: a base guide signature can't pass for the topics file.
+    let name = path.basename(file);
+    if (name !== GUIDE_FILE && name !== TOPICS_FILE) {
+      console.warn(`Warning: the app only downloads guides named ${GUIDE_FILE} and ${TOPICS_FILE}; signing it as ${GUIDE_FILE}.`);
+      name = GUIDE_FILE;
+    }
+    return { context: GUIDE_CONTEXT, fields: guideFields({ file: name, sha256: sha256(bytes) }) };
   }
   return usage(`unknown kind "${kind}"`);
 }

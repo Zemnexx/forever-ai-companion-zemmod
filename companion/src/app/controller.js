@@ -26,7 +26,7 @@ import {
 import { removeLegacyInstallDir } from '../migrate.js';
 import * as sys from './system.js';
 import { err, getAppLang, setAppLang, t } from '../i18n.js';
-import { currentGuide, guideFreshness, startGuideUpdates } from '../guide.js';
+import { TOPICS_FILE, currentGuide, guideFreshness, startGuideUpdates, topicsUrl } from '../guide.js';
 import { createUpdater } from '../updater.js';
 import { createMic, ensureMicExe } from '../mic.js';
 import { createTalk, talkSettings } from '../talk.js';
@@ -86,7 +86,16 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   const guideUpdates = startGuideUpdates({
     url: cfg.guideUrl, dir: guideDir, log, onUpdate: () => { guide = currentGuide(guideDir); },
   });
-  const guides = { current: () => guide, onPatch: () => guideUpdates.check('patch') };
+  // Detailed topics (dungeons, zones, classes...): each question gets its sections.
+  let topics = currentGuide(guideDir, TOPICS_FILE);
+  const topicsUpdates = startGuideUpdates({
+    url: topicsUrl(cfg.guideUrl), dir: guideDir, file: TOPICS_FILE, log, onUpdate: () => { topics = currentGuide(guideDir, TOPICS_FILE); },
+  });
+  const guides = {
+    current: () => guide,
+    topics: () => topics,
+    onPatch: () => { guideUpdates.check('patch'); topicsUpdates.check('patch'); },
+  };
 
   // Voice questions: the microphone helper is compiled and started on first use.
   const talk = createTalk({
@@ -109,7 +118,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     }
     if (e.type === 'answer') {
       const q = events.find((x) => x.id === e.id);
-      if (q) Object.assign(q, { ok: e.ok, answer: e.answer, pending: false });
+      if (q) Object.assign(q, { ok: e.ok, answer: e.answer, pending: false, tokens: e.tokens || null });
       return;
     }
     if (e.type === 'heard') {
@@ -337,8 +346,8 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     },
 
     async checkGuide() {
-      const updated = await guideUpdates.check('manual');
-      return { updated, date: guide?.meta.date || null };
+      const [updated, topicsUpdated] = await Promise.all([guideUpdates.check('manual'), topicsUpdates.check('manual')]);
+      return { updated: updated || topicsUpdated, date: guide?.meta.date || null };
     },
 
     setTrayReady(v) { trayReady = Boolean(v); },
@@ -531,6 +540,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
       beacon.stop();
       clearInterval(loginTimer);
       guideUpdates.stop();
+      topicsUpdates.stop();
       updater?.stop();
       if (legacyTimer) clearInterval(legacyTimer);
       legacyTimer = null;

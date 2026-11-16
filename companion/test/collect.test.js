@@ -265,6 +265,322 @@ test('open windows: vendor with prices and repair, quest reward choices; nothing
   assert.deepEqual(screen.questReward.rewards.choices.map((c) => c.slots[0]), ['legs', 'ranged']);
 });
 
+// --- More context: pet, Beast Training, skills, target, items, bars, errors -------
+
+// WoW Forever style: pet functions in C_PetInfo, the pet's spellbook in C_SpellBook.
+const PET_WOW = `
+  GetPetHappiness = nil
+  C_PetInfo = {
+    GetPetHappiness = function() return 2, 100, 0 end,
+    GetPetLoyalty = function() return "Loyalty Level 4 (Faithful)" end,
+    GetPetTrainingPoints = function() return 120, 85 end,
+    GetPetFoodTypes = function() return "Meat", "Fish" end,
+  }
+  Enum = { SpellBookSpellBank = { Player = 0, Pet = 1 }, SpellBookItemType = { Spell = 1, FutureSpell = 2, PetAction = 3 } }
+  local petBook = {
+    { name = "Attack", itemType = 3 },
+    { name = "Claw", subName = "Rank 4", itemType = 1 },
+    { name = "Growl", subName = "Rank 3", itemType = 1 },
+    { name = "Great Stamina", subName = "Rank 2", itemType = 1, isPassive = true },
+  }
+  C_SpellBook = {
+    HasPetSpells = function() return #petBook, "PET" end,
+    GetSpellBookItemInfo = function(i, bank) return bank == 1 and petBook[i] or nil end,
+    GetSpellBookItemAutoCast = function(i, bank) if i == 2 then return true, true end if i == 3 then return true, false end return false, false end,
+  }
+  GetPetActionInfo = function(i)
+    if i == 1 then return "PET_ACTION_ATTACK", nil, true, false end
+    if i == 8 then return "PET_MODE_DEFENSIVE", nil, true, true end
+    if i == 9 then return "PET_MODE_PASSIVE", nil, true, false end
+  end
+  PET_MODE_DEFENSIVE = "Defensive"
+  UnitStat = function(u, i) return 0, ({ 40, 60, 80, 20, 30 })[i] end
+  UnitArmor = function(u) return 900, 1100 end
+  UnitAttackPower = function(u) return 300, 20, 0 end
+  UnitDamage = function(u) return 40.2, 55.9 end
+  UnitAttackSpeed = function(u) return 2 end
+  UnitResistance = function(u, i) return 0, i == 3 and 15 or 0 end
+`;
+
+test('the pet: abilities with rank and autocast, stance, loyalty, training points, diet and stats', () => {
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + PET_WOW));
+  assert.deepEqual(snap.pet.abilities, ['Claw (Rank 4) [autocast on]', 'Growl (Rank 3) [autocast off]', 'Great Stamina (Rank 2) [passive]']);
+  assert.equal(snap.pet.mode, 'Defensive');
+  assert.equal(snap.pet.happiness, 'content');
+  assert.equal(snap.pet.loyalty, 'Loyalty Level 4 (Faithful)');
+  assert.deepEqual(snap.pet.trainingPoints, { available: 35, spent: 85 });
+  assert.deepEqual(snap.pet.diet, ['Meat', 'Fish']);
+  assert.deepEqual(snap.pet.stats, {
+    strength: 40, agility: 60, stamina: 80, intellect: 20, spirit: 30,
+    armor: 1100, attackPower: 320, damage: '40-55', attackSpeed: 2, resistances: { nature: 15 },
+  });
+});
+
+test('Beast Training (a trainer window with no NPC in Forever) lists what the pet knows and what it can learn', () => {
+  const extra = `
+    UnitClass = function() return "Hunter", "HUNTER" end
+    local lines = {
+      { "Claw", "header", true, false },
+      { "Bite", "header", true, false },
+    }
+    local expandedLines = {
+      { "Claw", "header", true, true },
+      { "Claw", "Rank 4", "used" },
+      { "Claw", "Rank 5", "available", nil, 10, 40 },
+      { "Bite", "header", true, true },
+      { "Bite", "Rank 6", "unavailable", nil, 12, 40 },
+    }
+    local shown = lines
+    GetNumTrainerServices = function() return #shown end
+    GetTrainerServiceInfo = function(i) local l = shown[i]; return l[1], l[2] ~= "header" and l[2] or "", l[2] == "header" and "header" or l[3], l[4] end
+    ExpandTrainerSkillLine = function(i) EXPANDED = i; shown = expandedLines end
+    GetTrainerServiceCost = function(i) return 0, shown[i][5] or 0 end
+    GetTrainerServiceLevelReq = function(i) return shown[i][6] or 1 end
+    GetTrainerServiceSkillReq = function() return nil end
+  `;
+  const out = runLua(`
+    ns.Collect.open.trainer = true
+    local screen = ns.Collect:Snapshot().screen
+    RESULT = ns.Json.Encode(screen) .. "#" .. tostring(EXPANDED) .. "#" .. ns.Json.Encode(ns.Collect:BeastTraining())
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + PET_WOW + extra);
+  const [screenJson, expanded, rememberedJson] = out.split('#');
+  const screen = JSON.parse(screenJson);
+  assert.equal(expanded, '0', 'the collapsed categories were expanded');
+  assert.equal(screen.trainer.beastTraining, true);
+  assert.deepEqual(screen.trainer.services, [
+    { name: 'Claw', rank: 'Rank 4', status: 'known' },
+    { name: 'Claw', rank: 'Rank 5', status: 'available', trainingPoints: 10, level: 40 },
+    { name: 'Bite', rank: 'Rank 6', status: 'unavailable', trainingPoints: 12, level: 40 },
+  ]);
+  const remembered = JSON.parse(rememberedJson);
+  assert.equal(remembered.pet, 'Garra');
+  assert.equal(remembered.petTrainingPoints, 35);
+  assert.equal(remembered.abilities.length, 3);
+});
+
+test('a class trainer still lists only what can be learned', () => {
+  const extra = `
+    GetNumTrainerServices = function() return 2 end
+    GetTrainerServiceInfo = function(i) if i == 1 then return "Serpent Sting", "Rank 2", "used" end return "Serpent Sting", "Rank 3", "available" end
+    GetTrainerServiceCost = function(i) return 1200, false end
+    GetTrainerServiceLevelReq = function() return 18 end
+  `;
+  const out = runLua(`
+    ns.Collect.open.trainer = true
+    RESULT = ns.Json.Encode(ns.Collect:Snapshot().screen.trainer)
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + `UnitName = function(u) if u == "npc" then return "Hogger" end return "Sharp" end
+    UnitExists = function(u) return u == "npc" or u == "player" end` + extra);
+  assert.deepEqual(JSON.parse(out), {
+    npc: 'Hogger', services: [{ name: 'Serpent Sting', rank: 'Rank 3', status: 'available', cost: '0g 12s 0c', level: 18 }],
+  });
+});
+
+test('weapon skills from C_SkillInfo (WoW Forever), and rested XP as points plus % of the level', () => {
+  const extra = `
+    GetProfessions = function() return nil end
+    local lines = {
+      { skillName = "Weapon Skills", isHeader = true },
+      { skillName = "Bows", skillRank = 150, skillMaxRank = 180 },
+      { skillName = "Daggers", skillRank = 1, skillMaxRank = 180 },
+    }
+    C_SkillInfo = { GetNumSkillLines = function() return #lines end, GetSkillLineInfo = function(i) return lines[i] end }
+    UnitXP = function() return 1150 end
+    UnitXPMax = function() return 71600 end
+    GetXPExhaustion = function() return 76 end
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.skills, [
+    { name: 'Bows', rank: 150, max: 180, group: 'Weapon Skills' },
+    { name: 'Daggers', rank: 1, max: 180, group: 'Weapon Skills' },
+  ]);
+  assert.equal(snap.character.restedXp, 76);
+  assert.equal(snap.character.restedPctOfLevel, 0.1);
+});
+
+test('the target: npc id, family, reaction, quest relation and tooltip lines', () => {
+  const extra = `
+    UnitExists = function(u) return u == "player" or u == "target" end
+    UnitName = function(u) return u == "target" and "Snapjaw Crocolisk" or "Sharp" end
+    UnitIsPlayer = function() return false end
+    UnitGUID = function() return "Creature-0-AB12-0-CD34-1150-0000ABCDEF" end
+    UnitCreatureFamily = function(u) return u == "target" and "Crocolisk" or nil end
+    UnitReaction = function() return 2 end
+    C_QuestLog.UnitIsRelatedToActiveQuest = function() return true end
+    C_TooltipInfo = { GetUnit = function() return { lines = {
+      { leftText = "Snapjaw Crocolisk" }, { leftText = "Level 35 Beast" },
+      { leftText = "|cffffffffSnapjaw Hides: 3/8|r" }, { leftText = "Skinnable" },
+    } } end }
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.equal(snap.target.npcId, 1150);
+  assert.equal(snap.target.family, 'Crocolisk');
+  assert.equal(snap.target.reaction, 'hostile');
+  assert.equal(snap.target.questRelated, true);
+  assert.deepEqual(snap.target.tooltip, ['Level 35 Beast', 'Snapjaw Hides: 3/8', 'Skinnable']);
+});
+
+test('items carry their Equip/Use effects and weapon speed from the tooltip', () => {
+  const extra = `
+    ITEM_SPELL_TRIGGER_ONEQUIP = "Equip:"
+    ITEM_SPELL_TRIGGER_ONUSE = "Use:"
+    ITEM_SET_BONUS = "Set: %s"
+    C_TooltipInfo = { GetHyperlink = function(l)
+      if l:find("item:3000") then return { lines = {
+        { leftText = "Repetidora" }, { leftText = "45 - 68 Damage", rightText = "Speed 2.90" },
+        { leftText = "Equip: Improves your chance to hit by 1%." }, { leftText = "Set: +10 Agility." },
+      } } end
+      return { lines = { { leftText = "Poción" }, { leftText = "Use: Restores 140 to 180 health." } } }
+    end }
+  `;
+  const out = runLua(`
+    local q = "|Hitem:3000|h[a]|h y |Hitem:858|h[b]|h"
+    RESULT = ns.Json.Encode(ns.Collect:Links(q))
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  const [weapon, potion] = JSON.parse(out);
+  assert.equal(weapon.weaponDamage, '45 - 68');
+  assert.equal(weapon.weaponSpeed, 2.9);
+  assert.deepEqual(weapon.effects, ['Equip: Improves your chance to hit by 1%.', 'Set: +10 Agility.']);
+  assert.deepEqual(potion.effects, ['Use: Restores 140 to 180 health.']);
+});
+
+test('action bars with keys, and known spells that are on no bar', () => {
+  const extra = `
+    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+    local book = {
+      { name = "Arcane Shot", subName = "Rank 1", itemType = 1 }, { name = "Serpent Sting", subName = "Rank 1", itemType = 1 },
+      { name = "Aspect of the Hawk", itemType = 1 }, { name = "Volley", itemType = 2 },
+    }
+    C_SpellBook = {
+      GetNumSpellBookSkillLines = function() return 1 end,
+      GetSpellBookSkillLineInfo = function() return { name = "Marksmanship", itemIndexOffset = 0, numSpellBookItems = #book } end,
+      GetSpellBookItemInfo = function(i) return book[i] end,
+      GetSpellBookItemLevelLearned = function(i) return i == 4 and 40 or 1 end,
+    }
+    local bar = { [1] = { "spell", 1 }, [2] = { "flyout", 7 }, [61] = { "macro", 3 } }
+    HasAction = function(s) return bar[s] ~= nil end
+    GetActionInfo = function(s) return bar[s][1], bar[s][2] end
+    C_Spell = { GetSpellName = function(id) return id == 1 and "Arcane Shot" or nil end }
+    GetFlyoutInfo = function() return "Aspect", "", 1 end
+    GetFlyoutSlotInfo = function() return 9, 9, true, "Aspect of the Hawk" end
+    GetMacroInfo = function() return "PetAttack" end
+    GetBindingKey = function(b) if b == "ACTIONBUTTON1" then return "1" end if b == "MULTIACTIONBAR1BUTTON1" then return "SHIFT-1" end end
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.actionBars, ['Arcane Shot [1]', 'Aspect', 'macro PetAttack [SHIFT-1]']);
+  assert.deepEqual(snap.spellsNotOnBars, ['Serpent Sting']);
+  assert.deepEqual(snap.spells, [{ tab: 'Marksmanship', spells: ['Arcane Shot (Rank 1)', 'Serpent Sting (Rank 1)', 'Aspect of the Hawk'], notLearned: ['Volley (level 40)'] }]);
+});
+
+test('recent red error messages and deaths go along for a while', () => {
+  const extra = `
+    FRAMES = {}
+    CreateFrame = function()
+      local f = { events = {} }
+      function f:RegisterEvent(e) self.events[e] = true end
+      function f:SetScript(_, fn) self.onEvent = fn end
+      FRAMES[#FRAMES + 1] = f
+      return f
+    end
+    function FIRE(event, ...)
+      for _, f in ipairs(FRAMES) do if f.events[event] and f.onEvent then f.onEvent(f, event, ...) end end
+    end
+    NOW = 1000
+    GetTime = function() return NOW end
+    GetRealZoneText = function() return "Stranglethorn Vale" end
+    GetSubZoneText = function() return "" end
+  `;
+  const snap = JSON.parse(runLua(`
+    FIRE("UI_ERROR_MESSAGE", 50, "Out of range.")
+    FIRE("UI_ERROR_MESSAGE", 51, "Your pet is dead.")
+    FIRE("UI_ERROR_MESSAGE", 50, "Out of range.")
+    FIRE("PLAYER_DEAD")
+    NOW = 1000 + 5 * 60
+    RESULT = ns.Json.Encode(ns.Collect:Snapshot())
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.recentErrors, [
+    { text: 'Out of range.', minutesAgo: 5 },
+    { text: 'Your pet is dead.', minutesAgo: 5 },
+  ]);
+  assert.deepEqual(snap.recentDeaths, [{ minutesAgo: 5, zone: 'Stranglethorn Vale', level: 33 }]);
+});
+
+test('the open flight map lists where the player can fly and the cost', () => {
+  const extra = `
+    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
+    C_TaxiMap = { GetAllTaxiNodes = function() return {
+      { name = "Stormwind, Elwynn", state = 0, slotIndex = 1 },
+      { name = "Booty Bay, Stranglethorn", state = 1, slotIndex = 2 },
+      { name = "Thelsamar, Loch Modan", state = 2, slotIndex = 3 },
+    } end }
+    GetTaxiMapID = function() return 13 end
+    TaxiNodeCost = function(i) return i == 2 and 4500 or 0 end
+    GetNumRoutes = function(i) return i == 2 and 3 or 1 end
+  `;
+  const out = runLua(`
+    ns.Collect.open.taxi = true
+    RESULT = ns.Json.Encode(ns.Collect:Snapshot().screen.flightMap)
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  assert.deepEqual(JSON.parse(out), {
+    from: 'Stormwind, Elwynn', destinations: [{ name: 'Booty Bay, Stranglethorn', cost: '0g 45s 0c', stops: 3 }],
+  });
+});
+
+test('the open auction house: results, the item searched, my auctions; prices seen are sent for my items', () => {
+  const extra = `
+    C_AuctionHouse = {
+      GetBrowseResults = function() return {
+        { itemKey = { itemID = 4306 }, minPrice = 1500, totalQuantity = 340 },
+        { itemKey = { itemID = 9999 }, minPrice = 98000, totalQuantity = 2 },
+      } end,
+      GetItemKeyInfo = function(key)
+        local names = { [4306] = "Paño de seda", [9999] = "Leotardos de cuero", [858] = "Poción de sanación inferior" }
+        return { itemName = names[key.itemID] }
+      end,
+      GetNumCommoditySearchResults = function() return 2 end,
+      GetCommoditySearchResultInfo = function(id, i) return { unitPrice = i == 1 and 1400 or 1550, quantity = i == 1 and 20 or 200 } end,
+      GetNumOwnedAuctions = function() return 1 end,
+      GetOwnedAuctionInfo = function() return { itemKey = { itemID = 858 }, quantity = 5, buyoutAmount = 2500, status = 0 } end,
+    }
+  `;
+  const out = runLua(`
+    ns.Collect.open.auction = true
+    ns.Core = {
+      CharData = function() return {} end,
+      Prices = function() return { [4306] = { name = "Paño de seda", unit = 1400, seenAt = "2026-11-16 10:00" },
+                                   [12345] = { name = "Not mine", unit = 5, seenAt = "2026-11-16 10:00" } } end,
+    }
+    local snap = ns.Collect:Snapshot()
+    RESULT = ns.Json.Encode(snap.screen.auction) .. "#" .. ns.Json.Encode(snap.auctionPrices) .. "#" .. ns.Json.Encode(ns.Collect:AuctionPrices())
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  const [auctionJson, pricesJson, seenJson] = out.split('#');
+  const auction = JSON.parse(auctionJson);
+  assert.deepEqual(auction.results, [
+    { name: 'Paño de seda', itemId: 4306, quantity: 340, price: '0g 15s 0c' },
+    { name: 'Leotardos de cuero', itemId: 9999, quantity: 2, price: '9g 80s 0c' },
+  ]);
+  assert.deepEqual(auction.myAuctions, [{ name: 'Poción de sanación inferior', itemId: 858, quantity: 5, price: '0g 5s 0c' }]);
+  // Only items in the bags or bank get their remembered price.
+  assert.deepEqual(JSON.parse(pricesJson), [{ name: 'Paño de seda', itemId: 4306, price: '0g 14s 0c', seenAt: '2026-11-16 10:00' }]);
+  assert.deepEqual(JSON.parse(seenJson).map((p) => [p.itemId, p.unit]), [[4306, 1500], [9999, 98000]]);
+});
+
+test('the classic auction house window is read too', () => {
+  const extra = `
+    GetNumAuctionItems = function(kind) return kind == "list" and 2 or 0 end
+    GetAuctionItemInfo = function(kind, i)
+      if i == 1 then return "Paño de seda", 0, 20, 1, true, 0, nil, 1000, 0, 30000, 0, false, nil, "x", nil, 0, 4306 end
+      return "Paño de seda", 0, 10, 1, true, 0, nil, 500, 0, 12000, 0, false, nil, "y", nil, 0, 4306
+    end
+  `;
+  const out = runLua(`
+    ns.Collect.open.auction = true
+    RESULT = ns.Json.Encode(ns.Collect:Snapshot().screen.auction) .. "#" .. ns.Json.Encode(ns.Collect:AuctionPrices())
+  `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  const [auctionJson, seenJson] = out.split('#');
+  assert.deepEqual(JSON.parse(auctionJson).results[1], { name: 'Paño de seda', itemId: 4306, quantity: 10, price: '0g 12s 0c', bid: '0g 5s 0c' });
+  assert.deepEqual(JSON.parse(seenJson), [{ itemId: 4306, name: 'Paño de seda', quantity: 10, unit: 1200, bid: 500 }], 'cheapest per item');
+});
+
 test('recipes of the open profession window, with skill-up color and reagents', () => {
   const extra = `
     GetTradeSkillLine = function() return "Herrería", 75, 150 end

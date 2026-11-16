@@ -54,7 +54,13 @@ export function micCsSource() {
   return fs.readFileSync(path.join(ROOT, 'mic', 'Mic.cs'), 'utf8');
 }
 
-// Built-in guide about WoW Forever for the AI (knowledge-builtin/wow-forever.md).
-export function foreverGuide() {
-  return fs.readFileSync(path.join(ROOT, 'knowledge-builtin', 'wow-forever.md'), 'utf8');
+// Built-in guides about WoW Forever for the AI (knowledge-builtin/): the base
+// guide (wow-forever.md) and the detailed topics (wow-forever-topics.md).
+export const GUIDE_FILES = ['wow-forever.md', 'wow-forever-topics.md'];
+export function foreverGuide(file = 'wow-forever.md') {
+  try {
+    return fs.readFileSync(path.join(ROOT, 'knowledge-builtin', file), 'utf8');
+  } catch {
+    return '';
+  }
 }

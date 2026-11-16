@@ -89,20 +89,23 @@ export async function handleRequest(req, {
     }
     // Channel probe: answered by the app itself, not by the AI. The addon
     // first asks the app to start watching the game's files (probeStart).
-    const { text, model } = req.probeStart && probeMonitor
-      ? (probeMonitor.activate(), { text: t('probeRecording'), model: 'prueba de canales' })
+    const { text, model, usage } = req.probeStart && probeMonitor
+      ? (probeMonitor.activate(), { text: runInLang(lang, () => t('probeRecording')), model: 'prueba de canales' })
       : req.probe && probeMonitor
       ? { ...(await probeReport(req.probe, probeMonitor)), model: 'prueba de canales' }
       : await runInLang(lang, () => ask(cfg, typeof system === 'function' ? system(req) : system, buildMessages(req), req));
     answer = { id: req.id, ok: true, answer: cleanAnswer(text) || t('emptyAnswer'), model };
-    log(`Respuesta (${model}, ${((Date.now() - started) / 1000).toFixed(1)} s):\n${answer.answer}`);
+    // Tokens the answer used, shown in the game under the answer.
+    if (usage) answer.tokens = { i: usage.input, c: usage.cached, o: usage.output };
+    const spent = usage ? `, ${usage.input + usage.output} tokens (${usage.input} read, ${usage.cached} cached, ${usage.output} written)` : '';
+    log(`Respuesta (${model}, ${((Date.now() - started) / 1000).toFixed(1)} s${spent}):\n${answer.answer}`);
   } catch (e) {
     answer = { id: req.id, ok: false, answer: `Error: ${e.message}` };
     log(`Error: ${e.message}`);
   }
   // The addon shows what was heard as the question.
   if (req.listen && req.question) answer.question = req.question;
-  onEvent({ type: 'answer', id: req.id, who, question: req.question, ok: answer.ok, answer: plainAnswer(answer.answer) });
+  onEvent({ type: 'answer', id: req.id, who, question: req.question, ok: answer.ok, answer: plainAnswer(answer.answer), tokens: answer.tokens || null });
 
   state.answers.push(answer);
   publishInbox(paths, cfg, state.answers, extra);
@@ -129,7 +132,11 @@ export function startWatcher({ cfg, wowDir, log = () => {}, onEvent = () => {}, 
     // The game was patched after the guide: fetch a newer guide for next time
     // (this answer already tells the AI to double-check).
     if (guide && guideFreshness(guide, { client }).gameNewer) guides.onPatch();
-    return buildSystem(knowledge, req.assistant, { canSearch: canSearch(cfg), client, lang: req.lang, ...(guide ? { guide } : {}) });
+    const topics = guides?.topics?.();
+    return buildSystem(knowledge, req.assistant, {
+      canSearch: canSearch(cfg), client, lang: req.lang,
+      question: req.question, context: req.context, ...(guide ? { guide } : {}), ...(topics ? { topics } : {}),
+    });
   };
   const contextCache = loadContextCache();
   // Idle until the addon starts a channel test (see probe.js).

@@ -303,6 +303,46 @@ local function stamp(t)
   return date("%H:%M", t)
 end
 
+-- Tokens ---------------------------------------------------------------------
+-- What each answer cost (sent by the app: i = read, c = of which from the
+-- cache, o = written), as Claude Code and Codex show it.
+
+-- 950 -> "950", 18234 -> "18.2k" ("18,2k" in Spanish), 250000 -> "250k".
+local function shortNumber(n)
+  n = tonumber(n) or 0
+  if n < 1000 then return tostring(floor(n)) end
+  local s
+  if n < 100000 then s = string.format("%.1fk", n / 1000)
+  elseif n < 1000000 then s = string.format("%dk", floor(n / 1000 + 0.5))
+  else s = string.format("%.1fM", n / 1000000) end
+  s = s:gsub("%.0([kM])", "%1")
+  return (s:gsub("%.", L.DECIMAL))
+end
+UI.ShortNumber = shortNumber
+
+-- 18234 -> "18,234" ("18.234" in Spanish).
+local function longNumber(n)
+  local s = tostring(floor(tonumber(n) or 0))
+  local sep = L.DECIMAL == "," and "." or ","
+  local k
+  repeat s, k = s:gsub("^(%d+)(%d%d%d)", "%1" .. sep .. "%2") until k == 0
+  return s
+end
+
+local function tokenTotal(t)
+  return t and ((t.i or 0) + (t.o or 0)) or 0
+end
+
+function UI:ShowTokensTip(owner, t, title)
+  if not GameTooltip or not t then return end
+  GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+  GameTooltip:AddLine(title)
+  GameTooltip:AddLine(string.format(L.TOKENS_READ, longNumber(t.i), longNumber(t.c)), 1, 1, 1)
+  GameTooltip:AddLine(string.format(L.TOKENS_WRITTEN, longNumber(t.o)), 1, 1, 1)
+  GameTooltip:AddLine(L.TOKENS_TIP, 0.8, 0.8, 0.8, true)
+  GameTooltip:Show()
+end
+
 local function dayGroup(t)
   t = t or 0
   local today = date("%Y-%m-%d")
@@ -593,9 +633,22 @@ function UI:Build()
   composer:EnableMouse(true)
   composer:SetScript("OnMouseDown", function() input:SetFocus() end)
 
+  -- Under the text box and Send, on the right: the tokens this chat has used
+  -- (as Claude shows it). Hover for what was read, cached and written.
+  local usage = main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  usage:SetPoint("BOTTOMRIGHT", -26, 10)
+  usage:SetJustifyH("RIGHT")
+  if usage.SetWordWrap then usage:SetWordWrap(false) end
+  local usageHover = CreateFrame("Frame", nil, main)
+  usageHover:SetAllPoints(usage)
+  usageHover:EnableMouse(false)
+  usageHover:SetScript("OnEnter", function(self) UI:ShowTokensTip(self, self.tokens, L.TOKENS_CHAT_TIP_TITLE) end)
+  usageHover:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  self.usage, self.usageHover = usage, usageHover
+
   local status = main:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   status:SetPoint("BOTTOMLEFT", 14, 10)
-  status:SetPoint("BOTTOMRIGHT", -24, 10)
+  status:SetPoint("RIGHT", usage, "LEFT", -12, 0)
   status:SetJustifyH("LEFT")
 
   -- Resize grip.
@@ -856,6 +909,13 @@ function UI:Bubble(i)
   b.who = who
   local meta = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   b.meta = meta
+  -- Hovering "time · N tokens" of an answer shows what it read and wrote.
+  local metaHover = CreateFrame("Frame", nil, b)
+  metaHover:SetAllPoints(meta)
+  metaHover:EnableMouse(false)
+  metaHover:SetScript("OnEnter", function(self) UI:ShowTokensTip(self, self.tokens, L.TOKENS_TIP_TITLE) end)
+  metaHover:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  b.metaHover = metaHover
   local box = newFrame("Frame", nil, b)
   b.box = box
   -- Links in the player's questions work as in the chat: hover shows the
@@ -885,7 +945,7 @@ function UI:Bubble(i)
 end
 
 -- Lays out one message at height y. kind: "user", "ai", "pending", "error".
-function UI:PlaceBubble(i, y, kind, textValue, metaValue, onAction, actionLabel)
+function UI:PlaceBubble(i, y, kind, textValue, metaValue, onAction, actionLabel, tokens)
   local b = self:Bubble(i)
   local p = persona()
   local width = self.content:GetWidth()
@@ -954,6 +1014,8 @@ function UI:PlaceBubble(i, y, kind, textValue, metaValue, onAction, actionLabel)
   if kind == "pending" then b.text:SetTextColor(0.75, 0.75, 0.75) end
   b.pending = kind == "pending"
   b.meta:SetText(metaValue or "")
+  b.metaHover.tokens = tokens
+  b.metaHover:EnableMouse(tokens ~= nil)
   b.action:SetShown(onAction ~= nil)
   if onAction then
     b.action.label:SetText(actionLabel)
@@ -966,6 +1028,44 @@ function UI:PlaceBubble(i, y, kind, textValue, metaValue, onAction, actionLabel)
   b:SetPoint("TOPLEFT", self.content, "TOPLEFT", 2, -y)
   b:Show()
   return h
+end
+
+-- A suggested question, like a quest dialog option.
+local function makeChip(w)
+  local chip = newFrame("Button", nil, w)
+  panel(chip, EDGE_DIM, { 0, 0, 0, 0.55 }, 12)
+  local icon = chip:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(14, 14)
+  icon:SetPoint("LEFT", 10, 0)
+  icon:SetTexture("Interface\\GossipFrame\\GossipGossipIcon")
+  local fs = chip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  fs:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+  fs:SetPoint("RIGHT", -10, 0)
+  fs:SetJustifyH("LEFT")
+  if fs.SetWordWrap then fs:SetWordWrap(true) end
+  chip.label = fs
+  local hl = chip:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetPoint("TOPLEFT", 3, -3)
+  hl:SetPoint("BOTTOMRIGHT", -3, 3)
+  hl:SetTexture(ART.rowLight)
+  if hl.SetBlendMode then hl:SetBlendMode("ADD") end
+  hl:SetVertexColor(1, 0.82, 0.3, 0.4)
+  chip:SetScript("OnClick", function(self) if self.question then ns.Core:Ask(self.question) end end)
+  return chip
+end
+
+-- The suggested questions for a new chat, and a title when they are about a
+-- game window the player has open (vendor, auction house, trainer...): those
+-- go first, then a couple of the usual ones.
+local GENERAL_AFTER_CONTEXT = 2
+function UI.Suggestions()
+  local ok, window = pcall(function() return ns.Collect and ns.Collect:OpenWindow() end)
+  local list = ok and window and L.CONTEXT_SUGGESTIONS and L.CONTEXT_SUGGESTIONS[window]
+  if not list then return SUGGESTIONS, nil end
+  local out = {}
+  for _, q in ipairs(list) do out[#out + 1] = q end
+  for i = 1, min(GENERAL_AFTER_CONTEXT, #SUGGESTIONS) do out[#out + 1] = SUGGESTIONS[i] end
+  return out, list.title
 end
 
 function UI:ShowWelcome()
@@ -985,30 +1085,15 @@ function UI:ShowWelcome()
     sub:SetPoint("TOP", hello, "BOTTOM", 0, -10)
     sub:SetJustifyH("CENTER")
     w.sub = sub
-    -- Suggestions look like quest dialog options.
+    -- Suggestions look like quest dialog options. Chips are made as needed
+    -- (the list changes with the window the player has open).
     w.chips = {}
-    for i, text in ipairs(SUGGESTIONS) do
-      local chip = newFrame("Button", nil, w)
-      panel(chip, EDGE_DIM, { 0, 0, 0, 0.55 }, 12)
-      local icon = chip:CreateTexture(nil, "ARTWORK")
-      icon:SetSize(14, 14)
-      icon:SetPoint("LEFT", 10, 0)
-      icon:SetTexture("Interface\\GossipFrame\\GossipGossipIcon")
-      local fs = chip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-      fs:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-      fs:SetPoint("RIGHT", -10, 0)
-      fs:SetJustifyH("LEFT")
-      if fs.SetWordWrap then fs:SetWordWrap(true) end
-      fs:SetText(text)
-      local hl = chip:CreateTexture(nil, "HIGHLIGHT")
-      hl:SetPoint("TOPLEFT", 3, -3)
-      hl:SetPoint("BOTTOMRIGHT", -3, 3)
-      hl:SetTexture(ART.rowLight)
-      if hl.SetBlendMode then hl:SetBlendMode("ADD") end
-      hl:SetVertexColor(1, 0.82, 0.3, 0.4)
-      chip:SetScript("OnClick", function() ns.Core:Ask(text) end)
-      w.chips[i] = chip
-    end
+    -- "You have a vendor open...": shown above the suggestions about it.
+    local context = w:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    context:SetJustifyH("CENTER")
+    if context.SetWordWrap then context:SetWordWrap(true) end
+    context:SetTextColor(1, 0.82, 0.3)
+    w.context = context
     local hint = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetText(L.WELCOME_HINT)
     w.hint = hint
@@ -1024,13 +1109,28 @@ function UI:ShowWelcome()
   local chipW = floor((min(width, 640) - (cols - 1) * 10) / cols)
   local left = floor((width - (chipW * cols + (cols - 1) * 10)) / 2)
   local top = 186
-  for i, chip in ipairs(w.chips) do
+  local questions, title = UI.Suggestions()
+  w.context:SetShown(title ~= nil)
+  if title then
+    w.context:SetText(title)
+    w.context:SetWidth(min(width, 640) - 20)
+    w.context:ClearAllPoints()
+    w.context:SetPoint("TOP", w, "TOP", 0, -top)
+    top = top + max(18, floor(w.context:GetStringHeight() or 18)) + 10
+  end
+  for i, text in ipairs(questions) do
+    local chip = w.chips[i] or makeChip(w)
+    w.chips[i] = chip
+    chip.label:SetText(text)
+    chip.question = text
     local col, rowN = (i - 1) % cols, floor((i - 1) / cols)
     chip:SetSize(chipW, 40)
     chip:ClearAllPoints()
     chip:SetPoint("TOPLEFT", w, "TOPLEFT", left + col * (chipW + 10), -(top + rowN * 46))
+    chip:Show()
   end
-  local rows = math.ceil(#w.chips / cols)
+  for i = #questions + 1, #w.chips do w.chips[i]:Hide() end
+  local rows = math.ceil(#questions / cols)
   w.hint:ClearAllPoints()
   w.hint:SetPoint("TOP", w, "TOP", 0, -(top + 8 + rows * 46))
   w:ClearAllPoints()
@@ -1175,6 +1275,7 @@ function UI:RefreshConversation()
   local messages = current and current.messages or {}
   local p = persona()
   local y, n = 8, 0
+  local spent = { i = 0, c = 0, o = 0 }
   if #messages == 0 then
     y = y + self:ShowWelcome()
   elseif self.welcome then
@@ -1192,8 +1293,13 @@ function UI:RefreshConversation()
       y = y + self:PlaceBubble(n, y, "pending", ns.Personas:ThinkingText(0), nil) + 12
     elseif e.status == "done" then
       local answer = e.answer
-      y = y + self:PlaceBubble(n, y, "ai", renderAnswer(answer), stamp(e.t),
-        function() UI:ShowCopy(UI.PlainAnswer(answer)) end, L.COPY) + 12
+      local meta = stamp(e.t)
+      if e.tokens then
+        meta = meta .. "  ·  " .. string.format(L.TOKENS, shortNumber(tokenTotal(e.tokens)))
+        spent.i, spent.c, spent.o = spent.i + (e.tokens.i or 0), spent.c + (e.tokens.c or 0), spent.o + (e.tokens.o or 0)
+      end
+      y = y + self:PlaceBubble(n, y, "ai", renderAnswer(answer), meta,
+        function() UI:ShowCopy(UI.PlainAnswer(answer)) end, L.COPY, e.tokens) + 12
     else
       y = y + self:PlaceBubble(n, y, "error",
         p.errorIntro .. "\n|cffffb0b0" .. escape(e.answer or L.SOMETHING_WRONG) .. "|r", stamp(e.t),
@@ -1201,6 +1307,13 @@ function UI:RefreshConversation()
     end
   end
   for i = n + 1, #self.bubbles do self.bubbles[i]:Hide() end
+  -- The whole chat's tokens, on the right of the line under the title.
+  if self.usage then
+    local total = tokenTotal(spent)
+    self.usage:SetText(total > 0 and string.format(L.TOKENS_CHAT, shortNumber(total)) or "")
+    self.usageHover.tokens = total > 0 and spent or nil
+    self.usageHover:EnableMouse(total > 0)
+  end
   self.content:SetHeight(max(10, y))
   C_Timer.After(0, function()
     UI.scroll:SetVerticalScroll(UI.scroll:GetVerticalScrollRange())
@@ -1373,4 +1486,27 @@ function UI:ShowContext()
   local ok, snap = pcall(ns.Collect.Snapshot, ns.Collect)
   local json = ok and ns.Json.Encode(snap) or (L.ERROR .. ": " .. tostring(snap))
   self:ShowCopy(json, string.format(L.CONTEXT_TITLE, persona().name))
+end
+
+-- A game window opened or closed (vendor, auction house, trainer...): a new
+-- chat's suggestions change to questions about it.
+local WINDOW_EVENTS = {
+  "MERCHANT_SHOW", "MERCHANT_CLOSED", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
+  "TRAINER_SHOW", "TRAINER_CLOSED", "QUEST_DETAIL", "QUEST_COMPLETE", "QUEST_FINISHED",
+  "TAXIMAP_OPENED", "TAXIMAP_CLOSED", "LOOT_OPENED", "LOOT_CLOSED",
+}
+function UI:OnGameWindow()
+  if not (self.frame and self.frame:IsShown() and ns.db) then return end
+  local current = ns.Chats:Get(ns.db.currentChat)
+  if current and #current.messages > 0 then return end -- only a new chat shows suggestions
+  self:RefreshConversation()
+end
+
+local windowWatcher = CreateFrame and CreateFrame("Frame")
+if windowWatcher then
+  for _, e in ipairs(WINDOW_EVENTS) do pcall(windowWatcher.RegisterEvent, windowWatcher, e) end
+  -- Next frame: after Collect has noted which window is open.
+  windowWatcher:SetScript("OnEvent", function()
+    C_Timer.After(0, function() pcall(UI.OnGameWindow, UI) end)
+  end)
 end

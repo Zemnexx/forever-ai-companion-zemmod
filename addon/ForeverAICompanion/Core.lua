@@ -130,7 +130,7 @@ local function slimScreen(screen)
   if type(screen.merchant) == "table" then
     local m = {}
     for k, v in pairs(screen.merchant) do m[k] = v end
-    m.items = first(without(screen.merchant.items, { "stats" }), 25)
+    m.items = first(without(screen.merchant.items, { "stats", "effects" }), 25)
     out.merchant = m
   end
   if type(screen.trainer) == "table" then
@@ -139,7 +139,17 @@ local function slimScreen(screen)
     t.services = first(screen.trainer.services, 30)
     out.trainer = t
   end
-  out.loot = without(screen.loot, { "stats" })
+  out.loot = without(screen.loot, { "stats", "effects" })
+  if type(screen.auction) == "table" then
+    local a = {}
+    for k, v in pairs(screen.auction) do a[k] = v end
+    a.results = first(screen.auction.results, 15)
+    a.myAuctions = first(screen.auction.myAuctions, 15)
+    out.auction = a
+  end
+  if type(screen.flightMap) == "table" then
+    out.flightMap = { from = screen.flightMap.from, destinations = without(screen.flightMap.destinations, { "stops" }) }
+  end
   return out
 end
 
@@ -150,12 +160,15 @@ local TRIMS = {
   function(ctx, req) req.history = nil end,
   function(ctx) ctx.quests = without(ctx.quests, { "rewardItems", "rewardChoices" }) end,
   function(ctx)
-    ctx.inventory = without(ctx.inventory, { "stats" }, function(it) return it.quality ~= "poor" end)
+    ctx.inventory = without(ctx.inventory, { "stats", "effects" }, function(it) return it.quality ~= "poor" end)
   end,
-  function(ctx) ctx.spells, ctx.currencies, ctx.reputations = nil, nil, nil end,
+  function(ctx)
+    ctx.spells, ctx.currencies, ctx.reputations = nil, nil, nil
+    ctx.actionBars, ctx.spellsNotOnBars, ctx.stable, ctx.auctionPrices = nil, nil, nil, nil
+  end,
   function(ctx) ctx.quests = without(ctx.quests, { "goal", "nextStep" }) end,
   function(ctx)
-    ctx.gear = without(ctx.gear, { "stats" })
+    ctx.gear = without(ctx.gear, { "stats", "effects" })
     ctx.quests = without(ctx.quests, { "objectives" })
   end,
   function(ctx) ctx.knownRecipes = nil end,
@@ -272,6 +285,50 @@ function Core:RememberRecipes(kind)
   local data = self:CharData()
   data.recipes = data.recipes or {}
   data.recipes[p.profession] = p
+end
+
+-- What Beast Training teaches and the pet already knows, remembered (the
+-- game only lists it while the window is open).
+function Core:RememberBeastTraining(kind)
+  local b = ns.Collect:BeastTraining(kind)
+  if not b then return false end
+  b.seenAt = date("%Y-%m-%d %H:%M")
+  self:CharData().beastTraining = b
+  return true
+end
+
+-- Auction prices seen, per realm and faction (each has its own auction house):
+-- itemId -> { name, unit = cheapest buyout per item in copper, seenAt }.
+local MAX_PRICES = 1000
+function Core:Prices()
+  if not ns.db then return nil end
+  local key = (GetRealmName and GetRealmName() or "?") .. "-" .. (UnitFactionGroup and UnitFactionGroup("player") or "?")
+  ns.db.prices = ns.db.prices or {}
+  ns.db.prices[key] = ns.db.prices[key] or {}
+  return ns.db.prices[key]
+end
+
+function Core:RememberPrices()
+  local prices = self:Prices()
+  if not prices then return end
+  local seenAt = date("%Y-%m-%d %H:%M")
+  for _, p in ipairs(ns.Collect:AuctionPrices() or {}) do
+    if p.itemId and p.unit and p.unit > 0 and p.name then
+      prices[p.itemId] = { name = p.name, unit = math.floor(p.unit), seenAt = seenAt }
+    end
+  end
+  -- Keep the most recent ones.
+  local ids = {}
+  for id in pairs(prices) do ids[#ids + 1] = id end
+  if #ids > MAX_PRICES then
+    table.sort(ids, function(a, b) return prices[a].seenAt > prices[b].seenAt end)
+    for i = MAX_PRICES + 1, #ids do prices[ids[i]] = nil end
+  end
+end
+
+function Core:RememberStable()
+  local pets = ns.Collect:StablePets()
+  if pets then self:CharData().stable = { seenAt = date("%Y-%m-%d %H:%M"), pets = pets } end
 end
 
 function Core:RememberTurnIn(questID)
@@ -426,6 +483,10 @@ function Core:ApplyInbox(inbox)
       -- Voice question: what the app heard becomes the question.
       if entry.listen and type(a.question) == "string" and a.question ~= "" then entry.question = a.question end
       if Core.listening and Core.listening.id == a.id then Core:EndListening() end
+      -- Tokens the answer used (read, of which cached, written), if the AI said.
+      if type(a.tokens) == "table" then
+        entry.tokens = { i = tonumber(a.tokens.i) or 0, c = tonumber(a.tokens.c) or 0, o = tonumber(a.tokens.o) or 0 }
+      end
       arrived = arrived + 1
       answered[#answered + 1] = { id = a.id, ok = a.ok and true or false }
       -- Chats with news the player is not looking at: mark and notify.
@@ -549,14 +610,23 @@ local events = CreateFrame("Frame")
 for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "BANKFRAME_OPENED", "BANKFRAME_CLOSED",
                      "PLAYERBANKSLOTS_CHANGED", "TAXIMAP_OPENED", "QUEST_TURNED_IN",
                      "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_LIST_UPDATE",
-                     "CRAFT_SHOW", "CRAFT_UPDATE" }) do
+                     "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
+                     "PET_STABLE_SHOW", "PET_STABLE_UPDATE",
+                     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
+                     "COMMODITY_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_UPDATED",
+                     "AUCTION_ITEM_LIST_UPDATE" }) do
   pcall(events.RegisterEvent, events, e)
 end
 
 -- Profession windows fire their update events in bursts: read once it settles.
+-- "trainer" is Beast Training (a trainer window in WoW Forever).
 local RECIPE_EVENTS = {
   TRADE_SKILL_SHOW = "trade", TRADE_SKILL_UPDATE = "trade", TRADE_SKILL_LIST_UPDATE = "trade",
-  CRAFT_SHOW = "craft", CRAFT_UPDATE = "craft",
+  CRAFT_SHOW = "craft", CRAFT_UPDATE = "craft", TRAINER_SHOW = "trainer", TRAINER_UPDATE = "trainer",
+  -- Auction results on screen: remember their prices.
+  AUCTION_HOUSE_BROWSE_RESULTS_UPDATED = "prices", AUCTION_HOUSE_BROWSE_RESULTS_ADDED = "prices",
+  COMMODITY_SEARCH_RESULTS_UPDATED = "prices", ITEM_SEARCH_RESULTS_UPDATED = "prices",
+  AUCTION_ITEM_LIST_UPDATE = "prices",
 }
 local recipesPending = {}
 local function rememberRecipesSoon(kind)
@@ -564,7 +634,17 @@ local function rememberRecipesSoon(kind)
   recipesPending[kind] = true
   C_Timer.After(0.5, function()
     recipesPending[kind] = nil
-    pcall(Core.RememberRecipes, Core, kind)
+    if kind == "prices" then
+      pcall(Core.RememberPrices, Core)
+    elseif kind == "trainer" then
+      pcall(Core.RememberBeastTraining, Core)
+    elseif kind == "craft" then
+      -- A classic craft window is either enchanting or Beast Training.
+      local ok, isBeast = pcall(Core.RememberBeastTraining, Core, "craft")
+      if not (ok and isBeast) then pcall(Core.RememberRecipes, Core, kind) end
+    else
+      pcall(Core.RememberRecipes, Core, kind)
+    end
   end)
 end
 
@@ -592,6 +672,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
     pcall(Core.RememberTurnIn, Core, arg1)
   elseif RECIPE_EVENTS[event] then
     rememberRecipesSoon(RECIPE_EVENTS[event])
+  elseif event == "PET_STABLE_SHOW" or event == "PET_STABLE_UPDATE" then
+    pcall(Core.RememberStable, Core)
   end
 end)
 

@@ -11,6 +11,33 @@ import {
   rejectedCodexFeatures, shellQuote,
 } from './codex.js';
 
+// Tokens an answer used, the same shape for every provider (shown in the game):
+// input = everything the AI read (including what came from the cache),
+// cached = the part of input read from the cache, output = what it wrote.
+export function tokenUsage(input = 0, cached = 0, output = 0) {
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  return { input: n(input), cached: n(cached), output: n(output) };
+}
+
+function addUsage(total, u) {
+  return total ? tokenUsage(total.input + u.input, total.cached + u.cached, total.output + u.output) : u;
+}
+
+// Claude Code's JSON result: modelUsage adds up every model call of the
+// question (web searches included).
+export function claudeCodeUsage(json) {
+  const models = Object.values(json?.modelUsage || {});
+  if (models.length) {
+    return models.reduce((t, m) => addUsage(t, tokenUsage(
+      (m.inputTokens || 0) + (m.cacheReadInputTokens || 0) + (m.cacheCreationInputTokens || 0),
+      m.cacheReadInputTokens, m.outputTokens,
+    )), null);
+  }
+  const u = json?.usage;
+  if (!u) return null;
+  return tokenUsage((u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), u.cache_read_input_tokens, u.output_tokens);
+}
+
 // Models that accept server-side refusal fallbacks (`fallbacks: "default"`).
 const FALLBACK_MODELS = new Set(['claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5']);
 
@@ -46,11 +73,20 @@ async function anthropic(cfg, system, messages) {
     ? client.beta.messages.create({ ...p, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: cfg.timeoutMs })
     : client.messages.create(p, { timeout: cfg.timeoutMs }));
   let response;
+  let usage = null;
+  const count = (r) => {
+    const u = r?.usage;
+    if (!u) return;
+    const cached = u.cache_read_input_tokens || 0;
+    usage = addUsage(usage, tokenUsage((u.input_tokens || 0) + cached + (u.cache_creation_input_tokens || 0), cached, u.output_tokens));
+  };
   try {
     response = await send(params);
+    count(response);
     // A long web search can pause the turn: send it back and the server resumes.
     for (let i = 0; i < 3 && response.stop_reason === 'pause_turn'; i++) {
       response = await send({ ...params, messages: [...messages, { role: 'assistant', content: response.content }] });
+      count(response);
     }
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
@@ -72,7 +108,7 @@ async function anthropic(cfg, system, messages) {
   // With web search the answer comes in several text blocks (one per citation).
   let text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   if (response.stop_reason === 'max_tokens') text += ' [...]';
-  return { text, model: response.model };
+  return { text, model: response.model, usage };
 }
 
 async function openaiCompatible(cfg, system, messages) {
@@ -92,7 +128,9 @@ async function openaiCompatible(cfg, system, messages) {
   const json = await res.json();
   const text = json.choices?.[0]?.message?.content;
   if (!text) throw err('noText');
-  return { text, model: json.model || c.model };
+  const u = json.usage;
+  const usage = u ? tokenUsage(u.prompt_tokens, u.prompt_tokens_details?.cached_tokens, u.completion_tokens) : null;
+  return { text, model: json.model || c.model, usage };
 }
 
 function run(bin, args, input, timeoutMs, cwd, shell = process.platform === 'win32') {
@@ -197,7 +235,11 @@ async function claudeCode(cfg, system, messages) {
     throw err('claudeError', { error: json.result || 'error' });
   }
   const used = Object.keys(json.modelUsage || {})[0];
-  return { text: json.result, model: used ? `${prettyModel(used)} · ${t('yourSubscription')}` : t('yourClaudeSubscription') };
+  return {
+    text: json.result,
+    model: used ? `${prettyModel(used)} · ${t('yourSubscription')}` : t('yourClaudeSubscription'),
+    usage: claudeCodeUsage(json),
+  };
 }
 
 // A newer Codex may no longer know a feature we turn off, and rejects the
@@ -271,7 +313,12 @@ async function codex(cfg, system, messages) {
   fs.rmSync(outFile, { force: true });
   if (!text.trim()) throw new Error(parsed.error ? friendlyCodexError(parsed.error) : t('codexNoAnswer'));
   const name = CODEX_MODELS[c.model];
-  return { text, model: `${name || 'ChatGPT'} · ${t('yourSubscription')}` };
+  const u = parsed.usage;
+  return {
+    text,
+    model: `${name || 'ChatGPT'} · ${t('yourSubscription')}`,
+    usage: u ? tokenUsage(u.input_tokens, u.cached_input_tokens, u.output_tokens) : null,
+  };
 }
 
 // No AI: echoes what arrived. Use it to test the in-game round trip for free.

@@ -228,7 +228,7 @@
   /* Toasts and dialogs --------------------------------------------------------- */
   #toasts { position: fixed; right: 20px; bottom: 84px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: min(380px, calc(100vw - 40px)); }
   .toast { background: var(--surface-3); border: 1px solid var(--line-2); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: rise .2s ease-out; font-size: 14px; }
-  .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+  .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); } .toast.warn { border-left-color: var(--warn); }
   @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
   .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 60; padding: 16px; }
   .modal { width: min(440px, 100%); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 14px; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
@@ -577,6 +577,9 @@ const I18N = {
     'dash.voiceOn': 'On: your questions travel without anything being seen or heard',
     'dash.voiceOff': 'Off: when you ask, a line briefly appears at the top of the screen',
     'dash.voiceUpdate': 'Update',
+    'dash.voiceUpdateNow': 'Update invisible sending',
+    'dash.voiceUpdating': 'Updating… accept the Windows prompt',
+    'dash.voiceUpdateFail': 'If you didn\'t accept the Windows permission, try again. Meanwhile your invisible sending keeps working.',
     'dash.voiceActivate': 'Turn on',
     'dash.talk': 'Voice questions',
     'dash.talkOn': 'On: hold your talk key in WoW and speak',
@@ -623,6 +626,8 @@ const I18N = {
     'dash.autostartText': 'That way the app is always ready when you play.',
     'dash.recent': 'Recent questions',
     'dash.thinking': 'Thinking…',
+    'dash.tokens': '{n} tokens',
+    'dash.tokensTip': 'Read: {i} (from cache: {c}) · Written: {o}',
     'dash.empty': 'No questions yet. In the game, click the floating button and ask something: you\'ll see it here.',
     'dash.more': 'More options',
     'dash.knowledge': 'Server knowledge…',
@@ -930,6 +935,9 @@ const I18N = {
     'dash.voiceOn': 'Activado: tus preguntas viajan sin que se vea ni se oiga nada',
     'dash.voiceOff': 'Desactivado: al preguntar aparece un instante una línea arriba de la pantalla',
     'dash.voiceUpdate': 'Actualizar',
+    'dash.voiceUpdateNow': 'Actualizar envío invisible',
+    'dash.voiceUpdating': 'Actualizando… acepta el permiso de Windows',
+    'dash.voiceUpdateFail': 'Si no aceptaste el permiso de Windows, vuelve a intentarlo. Mientras tanto tu envío invisible sigue funcionando.',
     'dash.voiceActivate': 'Activar',
     'dash.talk': 'Preguntas por voz',
     'dash.talkOn': 'Activadas: mantén pulsada tu tecla para hablar en WoW y habla',
@@ -976,6 +984,8 @@ const I18N = {
     'dash.autostartText': 'Así la app siempre está lista cuando juegas.',
     'dash.recent': 'Últimas preguntas',
     'dash.thinking': 'Pensando…',
+    'dash.tokens': '{n} tokens',
+    'dash.tokensTip': 'Leídos: {i} (de caché: {c}) · Escritos: {o}',
     'dash.empty': 'Todavía no hay preguntas. En el juego pulsa el botón flotante y pregunta algo: la verás aquí.',
     'dash.more': 'Más opciones',
     'dash.knowledge': 'Conocimiento del servidor…',
@@ -1558,6 +1568,16 @@ function render() {
 }
 
 // Dashboard ------------------------------------------------------------------
+// 18234 -> "18.2k" ("18,2k" in Spanish); 1234567 -> "1.2M".
+function fmtTokens(n) {
+  const v = Number(n) || 0;
+  const loc = lang === 'es' ? 'es-ES' : 'en-US';
+  if (v < 1000) return String(v);
+  if (v < 1e6) return `${(v / 1000).toLocaleString(loc, { maximumFractionDigits: v < 1e5 ? 1 : 0 })}k`;
+  return `${(v / 1e6).toLocaleString(loc, { maximumFractionDigits: 1 })}M`;
+}
+const fmtNum = (n) => (Number(n) || 0).toLocaleString(lang === 'es' ? 'es-ES' : 'en-US');
+
 function ago(iso) {
   const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
   if (s < 60) return t('ago.now');
@@ -1590,6 +1610,9 @@ function renderDash() {
     ${updating ? `<div class="callout info"><span class="ic">${ICON.info}</span><div><b>${t('upd.title', { v: esc(u.latest) })}</b><p>${t('upd.text')}</p>
       <div class="links" style="margin-top:10px"><button class="btn primary small" data-act="update" ${busyAction || u.status === 'downloading' ? 'disabled' : ''}>${u.status === 'downloading' || busyAction === 'update' ? `<span class="spin"></span>${t('upd.downloading', { n: u.progress || 0 })}` : t('upd.now')}</button>
       <a class="btn small" href="${esc(u.notesUrl)}" target="_blank" rel="noopener">${t('upd.notes')}</a></div></div></div>` : ''}
+    ${voice?.legacy ? `<div class="callout warn"><span class="ic">${ICON.alert}</span><div><b>${t('voice.legacyTitle')}</b>
+      <p>${voice.legacyReason === 'protect' ? t('voice.protectText') : t('voice.legacyText')}</p>
+      <div class="links" style="margin-top:10px"><button class="btn primary small" data-act="voiceUpdate" ${busyAction ? 'disabled' : ''}>${spinner('voiceUpdate', t('dash.voiceUpdateNow'), t('dash.voiceUpdating'))}</button></div></div></div>` : ''}
     ${ok
       ? callout('ok', t('dash.ok'), `${t('dash.okText')}${s.ai.preset === 'echo' ? ` ${t('dash.testMode')}` : ''}`)
       : callout('warn', t('dash.missing'), esc(s.problem || t('dash.missingText')))}
@@ -1617,7 +1640,7 @@ function renderDash() {
     </div>
     <div class="section-title">${t('dash.recent')}</div>
     <div class="rows"><ul class="feed">${s.events.length ? s.events.map((e) => `<li>
-        <div class="meta">${ago(e.time)} · ${esc(e.who)}</div><div class="q">${esc(e.question)}</div>
+        <div class="meta">${ago(e.time)} · ${esc(e.who)}${e.tokens ? ` · <span title="${esc(t('dash.tokensTip', { i: fmtNum(e.tokens.i), c: fmtNum(e.tokens.c), o: fmtNum(e.tokens.o) }))}">${t('dash.tokens', { n: fmtTokens(e.tokens.i + e.tokens.o) })}</span>` : ''}</div><div class="q">${esc(e.question)}</div>
         ${e.pending ? `<div class="a wait"><span class="spin"></span>${t('dash.thinking')}</div>` : `<div class="a ${e.ok === false ? 'bad' : ''}">${esc(e.answer)}</div>`}</li>`).join('')
       : `<li class="empty">${t('dash.empty')}</li>`}</ul></div>
     <div class="section-title">${t('dash.more')}</div>
@@ -1802,6 +1825,16 @@ const ACTIONS = {
       setTimeout(poll, 1500);
     };
     setTimeout(poll, 3000);
+  }),
+  // The dashboard's "Update invisible sending" notice: one Windows prompt.
+  voiceUpdate: () => run('voiceUpdate', async () => {
+    try {
+      const r = await api('voice-install');
+      toast(r.wowRunning ? 'warn' : 'ok', `<b>${t(r.wowRunning ? 'voice.onRestart' : 'voice.onOk')}</b><br>${t(r.wowRunning ? 'voice.onRestartText' : 'voice.onOkText')}`, 10000);
+    } catch (e) {
+      toast('bad', `<b>${t('voice.onFail')}</b><br>${esc(e.message)}. ${t('dash.voiceUpdateFail')}`, 10000);
+    }
+    await checkVoice();
   }),
   guide: () => run('guide', async () => {
     const r = await api('guide-check');

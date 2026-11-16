@@ -123,6 +123,8 @@ const MESSAGES = {
     updateUnsupported: 'Updates are only available in the installed app.',
     updateNoticeTitle: 'Forever AI Companion {version} is available',
     updateNoticeText: 'Click here to update it in one click.',
+    voiceUpdateNoticeTitle: 'Update invisible sending',
+    voiceUpdateNoticeText: 'It keeps working, but this version moves it to a protected folder. Click here and press "Update invisible sending".',
     startFailed: 'Forever AI Companion could not start:',
 
     trayRunning: `${APP}: running`,
@@ -218,6 +220,8 @@ const MESSAGES = {
     updateUnsupported: 'Las actualizaciones solo están disponibles en la app instalada.',
     updateNoticeTitle: 'Hay una versión nueva: Forever AI Companion {version}',
     updateNoticeText: 'Haz clic aquí para actualizarla con un clic.',
+    voiceUpdateNoticeTitle: 'Actualiza el envío invisible',
+    voiceUpdateNoticeText: 'Sigue funcionando, pero esta versión lo mueve a una carpeta protegida. Haz clic aquí y pulsa «Actualizar envío invisible».',
     startFailed: 'Forever AI Companion no pudo iniciarse:',
 
     trayRunning: `${APP}: funcionando`,

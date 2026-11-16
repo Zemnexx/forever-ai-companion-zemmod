@@ -108,6 +108,50 @@ local function itemStats(link)
   return any and out or nil
 end
 
+-- What GetItemStats leaves out, read from the item's tooltip: its "Equip:",
+-- "Use:", "Chance on hit:" and set bonus lines, and a weapon's damage and speed.
+local TRIGGERS
+local function triggers()
+  if not TRIGGERS then
+    TRIGGERS = {}
+    for _, k in ipairs({ "ITEM_SPELL_TRIGGER_ONEQUIP", "ITEM_SPELL_TRIGGER_ONUSE", "ITEM_SPELL_TRIGGER_ONPROC" }) do
+      if type(_G[k]) == "string" and _G[k] ~= "" then TRIGGERS[#TRIGGERS + 1] = _G[k] end
+    end
+    local set = type(ITEM_SET_BONUS) == "string" and ITEM_SET_BONUS:match("^(.-)%%s")
+    if set and set ~= "" then TRIGGERS[#TRIGGERS + 1] = set end
+  end
+  return TRIGGERS
+end
+
+local MAX_EFFECTS = 4
+local function tooltipDetails(link, item)
+  if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then return end
+  local data = C_TooltipInfo.GetHyperlink(link)
+  if type(data) ~= "table" or type(data.lines) ~= "table" then return end
+  local effects = {}
+  for _, line in ipairs(data.lines) do
+    local left, right = line.leftText, line.rightText
+    if type(left) == "string" and not secret(left) then
+      left = clean(left)
+      for _, prefix in ipairs(triggers()) do
+        if #effects < MAX_EFFECTS and left:sub(1, #prefix) == prefix then
+          effects[#effects + 1] = left:sub(1, 200)
+          break
+        end
+      end
+      if not item.weaponDamage and type(right) == "string" and not secret(right) then
+        local damage = left:match("^(%d+ %- %d+)")
+        local speed = right:match("(%d+[%.,]%d+)")
+        if damage and speed then
+          item.weaponDamage = damage
+          item.weaponSpeed = tonumber((speed:gsub(",", ".")))
+        end
+      end
+    end
+  end
+  if #effects > 0 then item.effects = effects end
+end
+
 -- Common description of an item link. `full` adds stats and requirements.
 local function describeItem(link, full)
   local name, _, quality, itemLevel, reqLevel, itemType, itemSubType, _, equipLoc = GetItemInfo(link)
@@ -123,7 +167,10 @@ local function describeItem(link, full)
     item.itemLevel = (GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(link)) or itemLevel
   end
   if reqLevel and reqLevel > 1 then item.reqLevel = reqLevel end
-  if full and equippable then item.stats = itemStats(link) end
+  if full and equippable then
+    item.stats = itemStats(link)
+    pcall(tooltipDetails, link, item)
+  end
   return item
 end
 Collect.DescribeItem = describeItem
@@ -146,6 +193,8 @@ local SLOTS_FOR = {
 local function fullItem(link)
   local item = describeItem(link, true)
   item.slots = item.equipSlot and SLOTS_FOR[item.equipSlot]
+  -- Not gear (a potion, a quest item...): what using it does.
+  if not item.slots then pcall(tooltipDetails, link, item) end
   return item
 end
 
@@ -167,7 +216,13 @@ function Collect:Links(text)
         item.name = item.name or name
         out[#out + 1] = item
       else
-        out[#out + 1] = { kind = kind, name = name, id = tonumber(data:match("^%a+:(%d+)")) }
+        local link = { kind = kind, name = name, id = tonumber(data:match("^%a+:(%d+)")) }
+        -- A spell: what it does, as the game describes it.
+        if kind == "spell" and link.id and C_Spell and C_Spell.GetSpellDescription then
+          local desc = safe(C_Spell.GetSpellDescription, link.id)
+          if type(desc) == "string" and not secret(desc) and desc ~= "" then link.description = clean(desc):sub(1, 400) end
+        end
+        out[#out + 1] = link
       end
     end
   end
@@ -193,7 +248,13 @@ local function character()
   put(c, "xp", function() return num(UnitXP("player")) end)
   put(c, "xpMax", function() return num(UnitXPMax("player")) end)
   put(c, "xpPct", function() return pct(c.xp, c.xpMax) end)
+  -- Rested XP comes in experience points, not percent: also send what share
+  -- of this level it is, so nobody reads "76" as 76%.
   put(c, "restedXp", function() return num(GetXPExhaustion()) or 0 end)
+  put(c, "restedPctOfLevel", function()
+    local rested, max = c.restedXp, c.xpMax
+    if rested and max and max > 0 then return round(rested / max * 100, 1) end
+  end)
   put(c, "healthPct", function() return pct(UnitHealth("player"), UnitHealthMax("player")) end)
   put(c, "maxHealth", function() return num(UnitHealthMax("player")) end)
   put(c, "powerType", function() return select(2, UnitPowerType("player")) end)
@@ -209,6 +270,9 @@ local function character()
   end)
   put(c, "pvpFlagged", function() return UnitIsPVP("player") or nil end)
   put(c, "dead", function() return UnitIsDeadOrGhost("player") or nil end)
+  put(c, "inCombat", function() return UnitAffectingCombat("player") or nil end)
+  put(c, "newMail", function() return HasNewMail() or nil end)
+  put(c, "hardcore", function() return C_GameRules.IsHardcoreActive() or nil end)
   return c
 end
 
@@ -268,7 +332,19 @@ local function modernTalents()
       end
     end
   end
-  return #chosen > 0 and { chosen = chosen } or nil
+  if #chosen == 0 then return nil end
+  local out = { chosen = chosen }
+  -- Talent points not spent yet.
+  pcall(function()
+    local unspent = 0
+    for _, treeID in ipairs(config.treeIDs) do
+      for _, c in ipairs(C_Traits.GetTreeCurrencyInfo(configID, treeID, false) or {}) do
+        unspent = unspent + (num(c.quantity) or 0)
+      end
+    end
+    if unspent > 0 then out.unspentPoints = unspent end
+  end)
+  return out
 end
 
 local function specialization()
@@ -297,7 +373,31 @@ end
 
 local function range(lo, hi)
   lo, hi = num(lo), num(hi)
-  if lo and hi then return string.format("%d-%d", lo, hi) end
+  if lo and hi then return string.format("%d-%d", floor(lo), floor(hi)) end
+end
+
+local function resistances(unit)
+  local res = {}
+  for i, key in pairs(RESISTANCES) do
+    local total = num(select(2, UnitResistance(unit, i)))
+    if total and total > 0 then res[key] = total end
+  end
+  return next(res) and res or nil
+end
+
+-- A pet's combat stats.
+local function petStats()
+  local s = {}
+  for i, key in ipairs(STAT_KEYS) do
+    put(s, key, function() return num(select(2, UnitStat("pet", i))) end)
+  end
+  put(s, "armor", function() local base, eff = UnitArmor("pet"); return num(eff) or num(base) end)
+  put(s, "attackPower", function() return sum3(UnitAttackPower("pet")) end)
+  put(s, "damage", function() return range(UnitDamage("pet")) end)
+  put(s, "attackSpeed", function() return round(UnitAttackSpeed("pet"), 2) end)
+  put(s, "hitPct", function() return round(GetPetHitChanceModifier(), 2) end)
+  put(s, "resistances", function() return resistances("pet") end)
+  return next(s) and s or nil
 end
 
 local function stats()
@@ -325,14 +425,7 @@ local function stats()
   put(s, "blockPct", function() return round(GetBlockChance(), 2) end)
   put(s, "manaRegenPerSec", function() return round(GetManaRegen(), 1) end)
   put(s, "manaRegenCasting", function() return round(select(2, GetManaRegen()), 1) end)
-  put(s, "resistances", function()
-    local res = {}
-    for i, key in pairs(RESISTANCES) do
-      local total = num(select(2, UnitResistance("player", i)))
-      if total and total > 0 then res[key] = total end
-    end
-    return next(res) and res or nil
-  end)
+  put(s, "resistances", function() return resistances("player") end)
   put(s, "itemLevel", function()
     local overall, equipped = GetAverageItemLevel()
     return round(num(equipped) or overall, 1)
@@ -410,7 +503,18 @@ local function bagSpace()
     free = free + (getFree(bag) or 0)
     total = total + (getSlots(bag) or 0)
   end
-  return { freeSlots = free, totalSlots = total }
+  local out = { freeSlots = free, totalSlots = total }
+  -- Which bags (a hunter's quiver or ammo pouch matters).
+  put(out, "containers", function()
+    local getName = (C_Container and C_Container.GetBagName) or GetBagName
+    local names = {}
+    for bag = 1, lastBag() do
+      local name = getName(bag)
+      if type(name) == "string" and name ~= "" then names[#names + 1] = name end
+    end
+    return #names > 0 and names or nil
+  end)
+  return out
 end
 
 -- Contents of the given containers, grouped by item with total counts.
@@ -456,18 +560,28 @@ local function spells()
   local tabs = {}
   if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+    local FUTURE = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.FutureSpell
     for i = 1, C_SpellBook.GetNumSpellBookSkillLines() do
       local line = C_SpellBook.GetSpellBookSkillLineInfo(i)
       if line and not line.offSpecID and not line.shouldHide then
-        local names, seen = {}, {}
+        local names, future, seen = {}, {}, {}
         for j = line.itemIndexOffset + 1, line.itemIndexOffset + line.numSpellBookItems do
           local info = C_SpellBook.GetSpellBookItemInfo(j, bank)
           if info and info.name and not info.isPassive and not seen[info.name] then
             seen[info.name] = true
-            names[#names + 1] = (info.subName and info.subName ~= "") and (info.name .. " (" .. info.subName .. ")") or info.name
+            local name = (info.subName and info.subName ~= "") and (info.name .. " (" .. info.subName .. ")") or info.name
+            if FUTURE and info.itemType == FUTURE then
+              -- Shown in the book but not learned yet.
+              local level = C_SpellBook.GetSpellBookItemLevelLearned and num(safe(C_SpellBook.GetSpellBookItemLevelLearned, j, bank))
+              future[#future + 1] = level and level > 0 and string.format("%s (level %d)", name, level) or name
+            else
+              names[#names + 1] = name
+            end
           end
         end
-        if #names > 0 then tabs[#tabs + 1] = { tab = line.name, spells = names } end
+        if #names > 0 or #future > 0 then
+          tabs[#tabs + 1] = { tab = line.name, spells = names, notLearned = #future > 0 and future or nil }
+        end
       end
     end
   elseif GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
@@ -562,6 +676,37 @@ local function currencies()
   return #list > 0 and list or nil
 end
 
+-- The skill lines (weapons, armor, riding, languages, professions) as
+-- { name, rank, max, group }. WoW Forever moved them to C_SkillInfo, which
+-- may return a table per line; older clients have the global functions.
+local MAX_SKILLS = 40
+local function skillLines()
+  local count = (C_SkillInfo and C_SkillInfo.GetNumSkillLines) or GetNumSkillLines
+  local info = (C_SkillInfo and C_SkillInfo.GetSkillLineInfo) or GetSkillLineInfo
+  if not (count and info) then return nil end
+  local list, header = {}, nil
+  for i = 1, num(count()) or 0 do
+    local r = { info(i) }
+    local name, isHeader, rank, maxRank
+    if type(r[1]) == "table" then
+      local t = r[1]
+      name = t.skillName or t.name or t.skillLineName
+      isHeader = t.isHeader
+      rank = t.skillRank or t.rank or t.skillLineRank
+      maxRank = t.skillMaxRank or t.maxRank or t.skillLineMaxRank
+    else
+      name, isHeader, rank, maxRank = r[1], r[2], r[4], r[7]
+    end
+    if isHeader then
+      header = name
+    elseif type(name) == "string" and name ~= "" then
+      list[#list + 1] = { name = name, rank = num(rank), max = num(maxRank), group = header }
+    end
+    if #list >= MAX_SKILLS then break end
+  end
+  return #list > 0 and list or nil
+end
+
 local function professions()
   local list = {}
   if GetProfessions and GetProfessionInfo then
@@ -573,18 +718,9 @@ local function professions()
         list[#list + 1] = { name = name, rank = rank, max = maxRank }
       end
     end
-  elseif GetNumSkillLines and GetSkillLineInfo then
+  else
     -- Classic: professions, secondary skills and weapon skills.
-    local header
-    for i = 1, GetNumSkillLines() do
-      local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-      if isHeader then
-        header = name
-      elseif name then
-        list[#list + 1] = { name = name, rank = rank, max = maxRank, group = header }
-      end
-      if #list >= 40 then break end
-    end
+    return skillLines()
   end
   return #list > 0 and list or nil
 end
@@ -818,23 +954,82 @@ end
 -- Weapon, armor, riding and language skills (when the client lists them;
 -- professions have their own section).
 local function skills()
-  if not (GetProfessions and GetNumSkillLines and GetSkillLineInfo) then return nil end
-  local list, header = {}, nil
-  for i = 1, GetNumSkillLines() do
-    local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-    if isHeader then
-      header = name
-    elseif name then
-      list[#list + 1] = { name = name, rank = rank, max = maxRank, group = header }
-    end
-    if #list >= 40 then break end
-  end
-  return #list > 0 and list or nil
+  if not GetProfessions then return nil end -- otherwise "professions" already lists them
+  return skillLines()
 end
 
 -- Others ----------------------------------------------------------------------
 
 local HAPPINESS = { "unhappy", "content", "happy" }
+
+-- WoW Forever moved the hunter pet functions to C_PetInfo; older clients
+-- have them as globals.
+local function petApi(name)
+  return (C_PetInfo and C_PetInfo[name]) or _G[name]
+end
+
+-- The pet's action bar: its stance (aggressive / defensive / passive...) and
+-- which abilities cast themselves.
+local function petBar()
+  local mode, autocast = nil, {}
+  if not GetPetActionInfo then return mode, autocast end
+  for i = 1, NUM_PET_ACTION_SLOTS or 10 do
+    local name, _, isToken, isActive, autoAllowed, autoEnabled = GetPetActionInfo(i)
+    if type(name) == "string" and not secret(name) then
+      if isToken and name:find("^PET_MODE_") then
+        if isActive then mode = _G[name] or name:gsub("^PET_MODE_", ""):lower() end
+      elseif not isToken and autoAllowed then
+        autocast[name] = autoEnabled and true or false
+      end
+    end
+  end
+  return mode, autocast
+end
+
+-- The abilities the pet knows (its spellbook), with rank and autocast.
+local function petAbilities(autocast)
+  local list = {}
+  local function add(name, sub, auto, passive)
+    if type(name) ~= "string" or name == "" then return end
+    local s = (type(sub) == "string" and sub ~= "") and (name .. " (" .. sub .. ")") or name
+    if passive then
+      s = s .. " [passive]"
+    else
+      if auto == nil then auto = autocast[name] end
+      if auto ~= nil then s = s .. (auto and " [autocast on]" or " [autocast off]") end
+    end
+    list[#list + 1] = s
+  end
+  local SB = C_SpellBook
+  local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
+  if SB and SB.HasPetSpells and SB.GetSpellBookItemInfo and bank then
+    local SPELL = Enum.SpellBookItemType and Enum.SpellBookItemType.Spell
+    for i = 1, num(SB.HasPetSpells()) or 0 do
+      local info = SB.GetSpellBookItemInfo(i, bank)
+      -- Skip the pet's commands (Attack, Follow, stances): only abilities.
+      if info and info.name and (not SPELL or info.itemType == SPELL) then
+        local auto
+        if SB.GetSpellBookItemAutoCast then
+          local allowed, enabled = SB.GetSpellBookItemAutoCast(i, bank)
+          if allowed then auto = enabled and true or false end
+        end
+        add(info.name, info.subName, auto, info.isPassive)
+      end
+    end
+  elseif HasPetSpells and GetSpellBookItemName then
+    local book = BOOKTYPE_PET or "pet"
+    for i = 1, num(HasPetSpells()) or 0 do
+      local name, sub = GetSpellBookItemName(i, book)
+      local auto
+      if GetSpellAutocast then
+        local allowed, enabled = GetSpellAutocast(i, book)
+        if allowed then auto = enabled and true or false end
+      end
+      add(name, sub, auto, IsPassiveSpell and IsPassiveSpell(i, book))
+    end
+  end
+  return #list > 0 and list or nil
+end
 
 local function pet()
   if not UnitExists("pet") then return nil end
@@ -843,10 +1038,32 @@ local function pet()
   put(p, "level", function() return UnitLevel("pet") end)
   put(p, "family", function() return UnitCreatureFamily("pet") end)
   put(p, "healthPct", function() return pct(UnitHealth("pet"), UnitHealthMax("pet")) end)
-  put(p, "happiness", function() local h = GetPetHappiness(); return h and (HAPPINESS[h] or h) end)
-  put(p, "damagePct", function() return num(select(2, GetPetHappiness())) end)
-  put(p, "loyaltyRate", function() return num(select(3, GetPetHappiness())) end)
   put(p, "xpPct", function() local cur, max = GetPetExperience(); return pct(cur, max) end)
+  local happiness = petApi("GetPetHappiness")
+  put(p, "happiness", function() local h = happiness(); return h and (HAPPINESS[h] or h) end)
+  put(p, "damagePct", function() return num(select(2, happiness())) end)
+  put(p, "loyaltyRate", function() return num(select(3, happiness())) end)
+  put(p, "loyalty", function()
+    local l = petApi("GetPetLoyalty")()
+    return type(l) == "string" and clean(l) or num(l)
+  end)
+  put(p, "trainingPoints", function()
+    local total, spent = petApi("GetPetTrainingPoints")()
+    total, spent = num(total), num(spent) or 0
+    if total then return { available = total - spent, spent = spent } end
+  end)
+  put(p, "diet", function()
+    local r = { petApi("GetPetFoodTypes")() }
+    local foods = type(r[1]) == "table" and r[1] or r
+    local list = {}
+    for _, f in ipairs(foods) do if type(f) == "string" then list[#list + 1] = f end end
+    return #list > 0 and list or nil
+  end)
+  local ok, mode, autocast = pcall(petBar)
+  if not ok then mode, autocast = nil, {} end
+  p.mode = mode
+  put(p, "abilities", function() return petAbilities(autocast) end)
+  put(p, "stats", petStats)
   return p
 end
 
@@ -885,7 +1102,33 @@ local function target()
   if t.isPlayer then
     put(t, "class", function() return (UnitClass("target")) end)
     put(t, "race", function() return (UnitRace("target")) end)
+  else
+    -- NPC id, to look the creature up; family: a beast a hunter could tame.
+    put(t, "npcId", function()
+      local kind, id = UnitGUID("target"):match("^(%a+)%-[^-]+%-[^-]+%-[^-]+%-[^-]+%-(%d+)%-")
+      return (kind == "Creature" or kind == "Vehicle") and tonumber(id) or nil
+    end)
+    put(t, "family", function() return UnitCreatureFamily("target") end)
+    put(t, "questRelated", function() return C_QuestLog.UnitIsRelatedToActiveQuest("target") or nil end)
   end
+  put(t, "reaction", function()
+    local r = num(UnitReaction("target", "player"))
+    return r and ((r <= 3 and "hostile") or (r == 4 and "neutral") or "friendly") or nil
+  end)
+  -- The lines of its tooltip under the name (title, quest progress, "Skinnable"...).
+  put(t, "tooltip", function()
+    local data = C_TooltipInfo.GetUnit("target")
+    local lines = {}
+    for i, line in ipairs(data and data.lines or {}) do
+      local s = line.leftText
+      if i > 1 and type(s) == "string" and not secret(s) then
+        s = clean(s)
+        if s ~= "" then lines[#lines + 1] = s:sub(1, 120) end
+      end
+      if #lines >= 6 then break end
+    end
+    return #lines > 0 and lines or nil
+  end)
   return t
 end
 
@@ -909,6 +1152,8 @@ local OPEN_EVENTS = {
   QUEST_GREETING = { "quest", "greeting" }, QUEST_DETAIL = { "quest", "detail" },
   QUEST_PROGRESS = { "quest", "progress" }, QUEST_COMPLETE = { "quest", "complete" },
   QUEST_FINISHED = { "quest", false },
+  TAXIMAP_OPENED = { "taxi", true }, TAXIMAP_CLOSED = { "taxi", false },
+  AUCTION_HOUSE_SHOW = { "auction", true }, AUCTION_HOUSE_CLOSED = { "auction", false },
 }
 Collect.open = open
 local openWatcher = CreateFrame and CreateFrame("Frame")
@@ -1051,25 +1296,6 @@ local function merchantWindow()
 end
 
 local MAX_TRAINER = 80
-local function trainerWindow()
-  if not open.trainer or not GetNumTrainerServices then return nil end
-  local t = { npc = safe(UnitName, "npc"), services = {} }
-  for i = 1, num(GetNumTrainerServices()) or 0 do
-    local name, sub, status = GetTrainerServiceInfo(i)
-    if name and (status == "available" or status == "unavailable") then
-      local s = { name = name, rank = (sub ~= "" and sub) or nil, status = status }
-      put(s, "cost", function() return money(num(GetTrainerServiceCost(i))) end)
-      put(s, "level", function() local l = num(GetTrainerServiceLevelReq(i)); return l and l > 1 and l or nil end)
-      put(s, "needsSkill", function()
-        local skill, rank, has = GetTrainerServiceSkillReq(i)
-        return (skill and not has) and (skill .. " " .. tostring(rank)) or nil
-      end)
-      t.services[#t.services + 1] = s
-      if #t.services >= MAX_TRAINER then break end
-    end
-  end
-  return t
-end
 
 local function lootWindow()
   if not open.loot or not GetNumLootItems then return nil end
@@ -1084,6 +1310,317 @@ local function lootWindow()
   return #list > 0 and list or nil
 end
 
+-- The flight master's map: where the player can fly from here and for how much.
+local MAX_FLIGHTS = 60
+local function flightMapWindow()
+  if not open.taxi then return nil end
+  local f = { destinations = {} }
+  local function add(name, slot)
+    if #f.destinations >= MAX_FLIGHTS or type(name) ~= "string" then return end
+    local d = { name = name }
+    put(d, "cost", function() local c = num(TaxiNodeCost(slot)); return c and c > 0 and money(c) or nil end)
+    put(d, "stops", function() local n = num(GetNumRoutes(slot)); return n and n > 1 and n or nil end)
+    f.destinations[#f.destinations + 1] = d
+  end
+  if C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
+    local S = Enum and Enum.FlightPathState
+    local mapID = (GetTaxiMapID and GetTaxiMapID()) or (C_Map and C_Map.GetBestMapForUnit("player"))
+    for _, node in ipairs(C_TaxiMap.GetAllTaxiNodes(mapID) or {}) do
+      if S and node.state == S.Current then
+        f.from = node.name
+      elseif not S or node.state == S.Reachable then
+        add(node.name, node.slotIndex)
+      end
+    end
+  elseif NumTaxiNodes and TaxiNodeName then
+    for i = 1, num(NumTaxiNodes()) or 0 do
+      local kind = TaxiNodeGetType(i)
+      if kind == "CURRENT" then f.from = TaxiNodeName(i)
+      elseif kind == "REACHABLE" then add(TaxiNodeName(i), i) end
+    end
+  end
+  if #f.destinations == 0 then f.destinations = nil end
+  return (f.from or f.destinations) and f or nil
+end
+
+-- Auction house ---------------------------------------------------------------------
+-- Only readable while it is open: what the player is browsing or searched, and
+-- their own auctions. Prices seen are also remembered (Core:RememberPrices).
+-- Both the modern (C_AuctionHouse) and the classic window are supported.
+
+local MAX_AUCTIONS = 30
+local AH = C_AuctionHouse
+
+-- The item searched last (modern window), from the game's events.
+local lastSearch
+local searchWatcher = CreateFrame and CreateFrame("Frame")
+if searchWatcher then
+  pcall(searchWatcher.RegisterEvent, searchWatcher, "COMMODITY_SEARCH_RESULTS_UPDATED")
+  pcall(searchWatcher.RegisterEvent, searchWatcher, "ITEM_SEARCH_RESULTS_UPDATED")
+  searchWatcher:SetScript("OnEvent", function(_, event, arg)
+    if event == "COMMODITY_SEARCH_RESULTS_UPDATED" then lastSearch = { itemID = arg }
+    elseif type(arg) == "table" then lastSearch = { itemKey = arg } end
+  end)
+end
+
+local function keyName(itemKey)
+  local info = AH.GetItemKeyInfo and safe(AH.GetItemKeyInfo, itemKey)
+  return (info and info.itemName) or (itemKey.itemID and GetItemInfo(itemKey.itemID))
+end
+
+-- Prices on screen as { itemId, name, unit (copper per item), quantity }.
+local function modernBrowse()
+  local list = {}
+  for _, r in ipairs(AH.GetBrowseResults() or {}) do
+    local key = r.itemKey
+    local name = key and keyName(key)
+    if name and num(r.minPrice) then
+      list[#list + 1] = { itemId = key.itemID, name = name, unit = r.minPrice, quantity = num(r.totalQuantity) }
+      if #list >= MAX_AUCTIONS then break end
+    end
+  end
+  return list
+end
+
+-- The cheapest offers for the item searched last (modern window).
+local function modernSearch()
+  if not lastSearch then return nil end
+  local offers, itemID, name = {}, nil, nil
+  if lastSearch.itemID and AH.GetNumCommoditySearchResults then
+    itemID = lastSearch.itemID
+    name = GetItemInfo(itemID) or ("item " .. tostring(itemID))
+    for i = 1, math.min(num(AH.GetNumCommoditySearchResults(itemID)) or 0, 5) do
+      local r = AH.GetCommoditySearchResultInfo(itemID, i)
+      if r and num(r.unitPrice) then offers[#offers + 1] = { unit = r.unitPrice, quantity = num(r.quantity) } end
+    end
+  elseif lastSearch.itemKey and AH.GetNumItemSearchResults then
+    local key = lastSearch.itemKey
+    itemID, name = key.itemID, keyName(key)
+    for i = 1, math.min(num(AH.GetNumItemSearchResults(key)) or 0, 5) do
+      local r = AH.GetItemSearchResultInfo(key, i)
+      local qty = r and (num(r.quantity) or 1)
+      if r and num(r.buyoutAmount) then offers[#offers + 1] = { unit = floor(r.buyoutAmount / qty), quantity = qty } end
+    end
+  end
+  if not name or #offers == 0 then return nil end
+  return { itemId = itemID, name = name, offers = offers }
+end
+
+-- Classic window: the page of results on screen.
+local function classicList(kind)
+  local list = {}
+  for i = 1, math.min(num(GetNumAuctionItems(kind)) or 0, kind == "list" and 50 or MAX_AUCTIONS) do
+    local r = { GetAuctionItemInfo(kind, i) }
+    -- name, texture, count, quality, canUse, level, levelColHeader, minBid,
+    -- minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName,
+    -- owner, ownerFullName, saleStatus, itemId
+    local name, count, minBid, buyout, saleStatus, itemId = r[1], num(r[3]) or 1, num(r[8]), num(r[10]), r[16], num(r[17])
+    if name then
+      list[#list + 1] = { itemId = itemId, name = name, quantity = count,
+        unit = buyout and buyout > 0 and floor(buyout / math.max(count, 1)) or nil,
+        bid = minBid and minBid > 0 and minBid or nil, sold = saleStatus == 1 or nil }
+    end
+  end
+  return list
+end
+
+-- Every price on screen, for the price memory: { itemId, name, unit }.
+function Collect:AuctionPrices()
+  local list = {}
+  if AH and AH.GetBrowseResults then
+    for _, r in ipairs(safe(modernBrowse) or {}) do list[#list + 1] = r end
+    local search = safe(modernSearch)
+    if search then list[#list + 1] = { itemId = search.itemId, name = search.name, unit = search.offers[1].unit } end
+  elseif GetNumAuctionItems then
+    -- Keep the cheapest of each item on the page.
+    local best = {}
+    for _, r in ipairs(safe(classicList, "list") or {}) do
+      if r.unit and r.itemId and (not best[r.itemId] or r.unit < best[r.itemId].unit) then best[r.itemId] = r end
+    end
+    for _, r in pairs(best) do list[#list + 1] = r end
+  end
+  return list
+end
+
+local function priced(entries)
+  local out = {}
+  for _, e in ipairs(entries or {}) do
+    local c = { name = e.name, itemId = e.itemId, quantity = e.quantity, sold = e.sold }
+    if e.unit then c.price = money(floor(e.unit)) end
+    if e.bid then c.bid = money(e.bid) end
+    out[#out + 1] = c
+    if #out >= MAX_AUCTIONS then break end
+  end
+  return #out > 0 and out or nil
+end
+
+local function auctionWindow()
+  if not open.auction then return nil end
+  local a = {}
+  if AH and AH.GetBrowseResults then
+    put(a, "results", function() return priced(modernBrowse()) end)
+    put(a, "search", function()
+      local s = modernSearch()
+      if not s then return nil end
+      local offers = {}
+      for _, o in ipairs(s.offers) do offers[#offers + 1] = money(floor(o.unit)) .. " x" .. tostring(o.quantity or 1) end
+      return { name = s.name, itemId = s.itemId, cheapest = offers }
+    end)
+    put(a, "myAuctions", function()
+      local list = {}
+      for i = 1, math.min(num(AH.GetNumOwnedAuctions()) or 0, MAX_AUCTIONS) do
+        local o = AH.GetOwnedAuctionInfo(i)
+        if o and o.itemKey then
+          local qty = num(o.quantity) or 1
+          list[#list + 1] = { name = keyName(o.itemKey), itemId = o.itemKey.itemID, quantity = qty,
+            unit = num(o.buyoutAmount) and floor(o.buyoutAmount / qty) or nil, sold = o.status == 1 or nil }
+        end
+      end
+      return priced(list)
+    end)
+  elseif GetNumAuctionItems then
+    put(a, "results", function() return priced(classicList("list")) end)
+    put(a, "myAuctions", function() return priced(classicList("owner")) end)
+  end
+  return a
+end
+
+-- What Beast Training teaches, read while its window is open (the game lists
+-- it nowhere else) and remembered (Core:RememberBeastTraining).
+-- WoW Forever shows it as a trainer window with no NPC; older clients as a
+-- "craft" window.
+local BEAST_STATUS = { used = "known", available = "available", unavailable = "unavailable" }
+local MAX_BEAST = 80
+
+local function isBeastTrainer()
+  if not open.trainer then return false end
+  if UnitExists and UnitExists("npc") then return false end
+  return select(2, UnitClass("player")) == "HUNTER"
+end
+
+-- Lists the trainer's services. `pet`: also the ones already known.
+-- Categories the window shows collapsed are expanded first, or their
+-- services would not be listed.
+local function trainerServices(pet)
+  local services, lines = {}, {}
+  local function read()
+    services, lines = {}, {}
+    for i = 1, num(GetNumTrainerServices()) or 0 do
+      local name, sub, status, expanded = GetTrainerServiceInfo(i)
+      lines[#lines + 1] = tostring(status)
+      if status == "header" then
+        if expanded == false then lines.collapsed = true end
+      elseif name and (status == "available" or status == "unavailable" or (pet and status == "used")) then
+        local s = { name = name, rank = (type(sub) == "string" and sub ~= "" and sub) or nil,
+          status = pet and BEAST_STATUS[status] or status }
+        put(s, "cost", function()
+          local copper, points = GetTrainerServiceCost(i)
+          copper = num(copper)
+          -- Beast Training costs training points, not money.
+          if pet and num(points) and points > 0 then s.trainingPoints = points end
+          return copper and copper > 0 and money(copper) or nil
+        end)
+        put(s, "level", function() local l = num(GetTrainerServiceLevelReq(i)); return l and l > 1 and l or nil end)
+        put(s, "needsSkill", function()
+          local skill, rank, has = GetTrainerServiceSkillReq(i)
+          return (skill and not has) and (skill .. " " .. tostring(rank)) or nil
+        end)
+        services[#services + 1] = s
+        if #services >= (pet and MAX_BEAST or MAX_TRAINER) then break end
+      end
+    end
+  end
+  read()
+  if #services == 0 and lines.collapsed and ExpandTrainerSkillLine then
+    pcall(ExpandTrainerSkillLine, 0)
+    read()
+  end
+  -- Nothing readable: say why in the log (diagnostics), not to the AI.
+  if #services == 0 and errors then
+    errors.trainer = string.format("%d lines: %s", #lines, table.concat(lines, ","):sub(1, 100))
+  end
+  return services
+end
+
+-- Classic "craft" style Beast Training window.
+local function beastCraft()
+  if not (GetCraftName and GetNumCrafts and GetCraftInfo) then return nil end
+  if GetCraftDisplaySkillLine and GetCraftDisplaySkillLine() then return nil end -- enchanting
+  local list = {}
+  for i = 1, num(GetNumCrafts()) or 0 do
+    local name, rank, kind, _, _, points, level = GetCraftInfo(i)
+    if name and kind ~= "header" then
+      list[#list + 1] = { name = name, rank = (type(rank) == "string" and rank ~= "" and rank) or nil,
+        status = BEAST_STATUS[kind] or kind, trainingPoints = num(points), level = num(level) }
+      if #list >= MAX_BEAST then break end
+    end
+  end
+  return #list > 0 and list or nil
+end
+
+-- { abilities, trainingPoints, pet } for the open Beast Training window, or nil.
+function Collect:BeastTraining(kind)
+  local abilities
+  if kind == "craft" then
+    abilities = safe(beastCraft)
+  elseif safe(isBeastTrainer) then
+    abilities = safe(trainerServices, true)
+  end
+  if not abilities or #abilities == 0 then return nil end
+  local out = { abilities = abilities, pet = safe(UnitName, "pet") }
+  put(out, "petTrainingPoints", function()
+    local total, spent = petApi("GetPetTrainingPoints")()
+    total, spent = num(total), num(spent) or 0
+    if total then return total - spent end
+  end)
+  return out
+end
+
+-- The hunter's pets in the stable, read while the stable is open.
+function Collect:StablePets()
+  local list = {}
+  local last = num(C_StableInfo and C_StableInfo.GetNumStableSlots and safe(C_StableInfo.GetNumStableSlots)) or 4
+  for i = 0, math.min(last, 10) do
+    local name, level, family, loyalty
+    if C_StableInfo and C_StableInfo.GetStablePetInfo then
+      local info = safe(C_StableInfo.GetStablePetInfo, i)
+      if type(info) == "table" then name, level, family = info.name, info.level, info.familyName or info.type end
+    end
+    if not name and GetStablePetInfo then
+      local r = { pcall(GetStablePetInfo, i) } -- ok, icon, name, level, family, loyalty
+      if r[1] then name, level, family, loyalty = r[3], r[4], r[5], r[6] end
+    end
+    if type(name) == "string" and name ~= "" then
+      list[#list + 1] = { name = name, level = num(level), family = family,
+        loyalty = type(loyalty) == "string" and clean(loyalty) or nil, active = (i == 0) or nil }
+    end
+  end
+  return #list > 0 and list or nil
+end
+
+-- The game window the player has open that questions can be about, for the
+-- chat's suggestions: "auction", "merchant", "beastTraining", "trainer",
+-- "questReward", "questOffer", "taxi", "loot" or nil.
+function Collect:OpenWindow()
+  if open.auction then return "auction" end
+  if open.merchant and shown("MerchantFrame") then return "merchant" end
+  if open.trainer then return safe(isBeastTrainer) and "beastTraining" or "trainer" end
+  if open.quest == "complete" and shown("QuestFrame") then return "questReward" end
+  if open.quest == "detail" and shown("QuestFrame") then return "questOffer" end
+  if open.taxi then return "taxi" end
+  if open.loot then return "loot" end
+  return nil
+end
+
+-- The open trainer: a class or profession trainer, or Beast Training.
+local function trainerWindow()
+  if not open.trainer or not GetNumTrainerServices then return nil end
+  local pet = safe(isBeastTrainer)
+  local t = { npc = safe(UnitName, "npc"), services = trainerServices(pet) }
+  if pet then t.beastTraining = true end
+  return t
+end
+
 local function screen()
   local s = {}
   local quest = safe(questWindow)
@@ -1092,6 +1629,8 @@ local function screen()
   s.merchant = safe(merchantWindow)
   s.trainer = safe(trainerWindow)
   s.loot = safe(lootWindow)
+  s.flightMap = safe(flightMapWindow)
+  s.auction = safe(auctionWindow)
   return next(s) and s or nil
 end
 
@@ -1200,6 +1739,149 @@ function Collect:Recipes(kind)
   if GetTradeSkillLine and GetNumTradeSkills then return safe(classicRecipes) end
 end
 
+-- Action bars ------------------------------------------------------------------
+-- What is on the bars (with its key) and the known abilities that are not:
+-- WoW Forever no longer places newly learned spells on the bars by itself.
+
+-- Action slot ranges and the binding of their buttons.
+local BAR_BINDINGS = {
+  { 1, 12, "ACTIONBUTTON" }, { 61, 72, "MULTIACTIONBAR1BUTTON" }, { 49, 60, "MULTIACTIONBAR2BUTTON" },
+  { 25, 36, "MULTIACTIONBAR3BUTTON" }, { 37, 48, "MULTIACTIONBAR4BUTTON" },
+}
+local function bindingFor(slot)
+  if not GetBindingKey then return nil end
+  for _, b in ipairs(BAR_BINDINGS) do
+    if slot >= b[1] and slot <= b[2] then
+      local key = GetBindingKey(b[3] .. (slot - b[1] + 1))
+      return type(key) == "string" and key or nil
+    end
+  end
+end
+
+local function spellName(id)
+  local getName = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
+  return getName and getName(id)
+end
+
+local MAX_ACTIONS = 72
+local function actionBars()
+  if not (GetActionInfo and HasAction) then return nil end
+  local list, onBars = {}, {}
+  for slot = 1, 120 do
+    if HasAction(slot) then
+      local kind, id = GetActionInfo(slot)
+      local name
+      if kind == "spell" then
+        name = spellName(id)
+      elseif kind == "item" then
+        name = GetItemInfo(id)
+      elseif kind == "macro" then
+        local macro = GetMacroInfo and GetMacroInfo(id)
+        name = macro and ("macro " .. macro)
+      elseif kind == "flyout" and GetFlyoutInfo then
+        local flyout, _, slots = GetFlyoutInfo(id)
+        name = flyout
+        -- The spells inside a flyout (e.g. "Aspect") count as on the bars.
+        for i = 1, num(slots) or 0 do
+          local _, _, known, inside = GetFlyoutSlotInfo(id, i)
+          if known and type(inside) == "string" then onBars[inside] = true end
+        end
+      end
+      if type(name) == "string" and not secret(name) and #list < MAX_ACTIONS then
+        onBars[name] = true
+        local key = bindingFor(slot)
+        list[#list + 1] = key and (name .. " [" .. key .. "]") or name
+      end
+    end
+  end
+  if #list == 0 then return nil end
+  local missing = {}
+  for _, tab in ipairs(safe(spells) or {}) do
+    for _, s in ipairs(tab.spells or {}) do
+      local base = s:gsub(" %(.-%)$", "")
+      if not onBars[base] and not onBars[s] then missing[#missing + 1] = base end
+    end
+  end
+  return { actionBars = list, spellsNotOnBars = #missing > 0 and missing or nil }
+end
+
+-- Recent errors and deaths ---------------------------------------------------------
+-- The game's red error messages ("Your pet is dead", "Out of range"...) and the
+-- player's deaths, kept for a while to answer "why can't I..." / "why do I die".
+local recent = { errors = {}, deaths = {} }
+Collect.recent = recent
+local ERRORS_KEPT, ERROR_MINUTES = 5, 10
+local DEATHS_KEPT, DEATH_MINUTES = 3, 120
+
+local recentWatcher = CreateFrame and CreateFrame("Frame")
+if recentWatcher then
+  pcall(recentWatcher.RegisterEvent, recentWatcher, "UI_ERROR_MESSAGE")
+  pcall(recentWatcher.RegisterEvent, recentWatcher, "PLAYER_DEAD")
+  recentWatcher:SetScript("OnEvent", function(_, event, _, message)
+    pcall(function()
+      if event == "UI_ERROR_MESSAGE" then
+        if type(message) ~= "string" or secret(message) or message == "" then return end
+        message = clean(message)
+        for i = #recent.errors, 1, -1 do
+          if recent.errors[i].text == message then table.remove(recent.errors, i) end
+        end
+        table.insert(recent.errors, 1, { text = message, at = GetTime() })
+        while #recent.errors > ERRORS_KEPT do table.remove(recent.errors) end
+      elseif event == "PLAYER_DEAD" then
+        local d = { at = GetTime() }
+        put(d, "zone", function() return GetRealZoneText() end)
+        put(d, "subzone", function() local s = GetSubZoneText(); return s ~= "" and s or nil end)
+        put(d, "level", function() return UnitLevel("player") end)
+        if UnitExists("target") and UnitCanAttack("player", "target") then
+          put(d, "target", function() return UnitName("target") end)
+          put(d, "targetLevel", function() return UnitLevel("target") end)
+        end
+        table.insert(recent.deaths, 1, d)
+        while #recent.deaths > DEATHS_KEPT do table.remove(recent.deaths) end
+      end
+    end)
+  end)
+end
+
+local function recentEvents()
+  local now = GetTime()
+  local function since(list, minutes)
+    local out = {}
+    for _, e in ipairs(list) do
+      local ago = (now - e.at) / 60
+      if ago <= minutes then
+        local copy = { minutesAgo = round(ago, 0) }
+        for k, v in pairs(e) do if k ~= "at" then copy[k] = v end end
+        out[#out + 1] = copy
+      end
+    end
+    return #out > 0 and out or nil
+  end
+  return { recentErrors = since(recent.errors, ERROR_MINUTES), recentDeaths = since(recent.deaths, DEATH_MINUTES) }
+end
+
+-- Auction prices the addon saw before (Core:RememberPrices), for the items the
+-- player has in the bags or the bank: what they are worth, what to sell.
+local MAX_PRICES_SENT = 40
+local function auctionPricesForMe(data)
+  local prices = ns.Core and ns.Core.Prices and ns.Core:Prices()
+  if not prices or not next(prices) then return nil end
+  local ids, order = {}, {}
+  local function want(item)
+    local id = item and item.itemId
+    if id and prices[id] and not ids[id] then ids[id] = true; order[#order + 1] = id end
+  end
+  local inv = Collect.cache.inventory and Collect.cache.inventory.keys.inventory
+  for _, item in ipairs(inv and inv.value or {}) do want(item) end
+  for _, item in ipairs(data.bank and data.bank.items or {}) do want(item) end
+  local out = {}
+  for i = 1, math.min(#order, MAX_PRICES_SENT) do
+    local p = prices[order[i]]
+    out[#out + 1] = { name = p.name, itemId = order[i], price = money(p.unit), seenAt = p.seenAt }
+  end
+  return #out > 0 and out or nil
+end
+
 -- Data the addon remembers between sessions (bank, flight paths, quests turned in).
 local function remembered()
   local out = {}
@@ -1221,6 +1903,9 @@ local function remembered()
     table.sort(list, function(a, b) return tostring(a.profession) < tostring(b.profession) end)
     out.knownRecipes = list
   end
+  if data.beastTraining then out.beastTraining = data.beastTraining end
+  if data.stable then out.stable = data.stable end
+  out.auctionPrices = safe(auctionPricesForMe, data)
   return out
 end
 
@@ -1256,6 +1941,8 @@ local SECTIONS = {
   { "skills", one("skills", skills), events = { "SKILL_LINES_CHANGED", "PLAYER_LEVEL_UP" } },
   { "lockouts", one("lockouts", lockouts), events = { "UPDATE_INSTANCE_INFO", "PLAYER_ENTERING_WORLD" } },
   { "spells", one("spells", spells), events = { "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB" } },
+  { "actionBars", actionBars, events = {
+    "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS", "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB" } },
   { "buffs", one("buffs", auras, "HELPFUL") },
   { "debuffs", one("debuffs", auras, "HARMFUL") },
   { "reputations", one("reputations", reputations), events = { "UPDATE_FACTION" } },
@@ -1264,6 +1951,7 @@ local SECTIONS = {
   { "group", one("group", group) },
   { "target", one("target", target) },
   { "screen", one("screen", screen) },
+  { "recent", recentEvents },
   { "remembered", remembered },
 }
 

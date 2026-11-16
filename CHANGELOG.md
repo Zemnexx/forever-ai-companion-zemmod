@@ -1,18 +1,35 @@
 # Changelog
 
-## 2.0.0 (addon 1.14.3)
+## 2.0.0 (addon 1.15.0)
 
-Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). This release:
+Based on upstream app 1.10.1 and addon 1.10.9 (commit `4acd431`). Upstream 1.10.1 merged this fork's security hardening (lucasmenares/forever-ai-companion pull request #1), all of it except signed updates and signed guides, and added changes of its own (see "Merged from upstream 1.10.1" below). On top of upstream, this release:
 
-- fixes the seven findings of the v1.9.0 security review;
+- keeps updates and guide downloads signed (findings 2 and 3 of the v1.9.0 security review), now including the detailed topics file;
 - adds voice questions: hold a key, ask out loud, and get the answer in the chat, transcribed by OpenAI;
 - adds compact answers: a small box that shows the answer instead of opening the window;
 - dims the chat window while moving and in combat;
 - adds a settings page in Options > AddOns.
 
-No npm dependencies were added. The exe grew by about 100 KB: about 37 KB of app code and 66 KB of addon, window and C# files embedded in it.
+No npm dependencies were added. Compared with upstream 1.10.1, the exe is about 100 KB larger: about 29 KB of app code and 68 KB of addon, window and C# files embedded in it.
 
 Updates and guide downloads stay off until a signing key is in `TRUSTED_KEYS` (see "Signing key" in the README).
+
+### Merged from upstream 1.10.1
+
+#### Added upstream (1.10.0 and 1.10.1)
+
+- **Detailed WoW Forever topics** (`knowledge-builtin/wow-forever-topics.md`): dungeons and raids, zones and leveling, travel, reputations, PvP, classes and races, professions and systems. Each question gets only the sections that match it.
+- **Tokens in the chat:** each answer shows the tokens it used, and the chat's total sits under the text box. Hovering shows what was read, cached and written.
+- **More game context for the AI:** pet abilities and Beast Training, weapon skills, item effects, action bars, rested XP, target details, recent errors and deaths, flight map, auction house and remembered prices.
+- **Suggested questions for the window that is open** (vendor, auction house, trainer...) in a new chat.
+- **Update invisible sending notice** next to the clock and at the top of the dashboard, with a one-click button.
+- Corrected base guide, and an MIT license.
+
+#### Changed in this fork
+
+- **The topics file is signed like the base guide.** A downloaded `wow-forever-topics.md` is used only with a valid `wow-forever-topics.md.sig`, checked when it is downloaded and every time it is read from disk. The file name is part of what is signed, so the base guide's signature can't pass for the topics file, or the other way round. `scripts/sign.js guide` signs either file.
+- **Addon 1.15.0**, above upstream's 1.10.9 and this fork's 1.14.3 test builds, so the app replaces the addon in the WoW folder.
+- Tests: 172 run, 168 pass, 4 skipped (Windows only), 0 fail.
 
 ### Compact answers
 
@@ -85,7 +102,7 @@ Microphone capture, OpenAI transcription with the answer from another AI, and th
 
 ### Security hardening
 
-This update addresses the seven findings of the v1.9.0 security review. No npm dependencies were added: everything uses Node's built-in `crypto` or tools that ship with Windows. The bundled code grew by about 15 KB.
+This update addresses the seven findings of the v1.9.0 security review. Upstream 1.10.1 includes all of it except signed updates and the guide signatures (the guide fencing is in). No npm dependencies were added: everything uses Node's built-in `crypto` or tools that ship with Windows. The bundled code grew by about 15 KB.
 
 #### Security
 
@@ -115,7 +132,7 @@ This update addresses the seven findings of the v1.9.0 security review. No npm d
 #### Compatibility and upgrade notes
 
 - **API keys:** the move to encrypted keys is one-way. An older version of the app can't read encrypted keys, so after a downgrade the keys must be pasted again.
-- **Guides from earlier versions:** a guide downloaded by an earlier version has no signature, so it is ignored and the built-in guide is used instead.
+- **Guides from earlier versions:** a guide or topics file downloaded by an earlier version, or by upstream 1.10.x, has no signature, so it is ignored and the built-in copy is used instead.
 - **Mixed app and addon versions:** the channel test works with mismatched versions. A new app with an old addon reports "run the test again" on the first run. An old app with the new addon answers the start request as an ordinary question, and the test continues.
 - **Update source:** updates and the guide now come from `RELEASE_REPO` in `companion/src/config.js`. It is currently set to `zemnexx/forever-ai-companion-zemmod`, which should be the repository whose maintainer holds the signing key.
 

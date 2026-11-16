@@ -187,6 +187,16 @@ async function main() {
         },
       });
       controller.setTrayReady(Boolean(tray));
+      // Invisible sending set up by an older version: it keeps working, but it
+      // should move to the protected folder (one Windows prompt). A notice next
+      // to the clock, so players who never open the window find out too.
+      if (tray) {
+        setTimeout(() => {
+          controller.voiceStatus()
+            .then((v) => { if (v?.legacy) tray.notify(t('voiceUpdateNoticeTitle'), t('voiceUpdateNoticeText')); })
+            .catch(() => {});
+        }, 8000);
+      }
     } catch (e) {
       log(`Tray icon: ${e.message}`);
     }
