@@ -526,7 +526,6 @@ function ForeverAICompanion_Talk(keystate)
   Core:TalkKey(keystate)
 end
 
-BINDING_HEADER_FOREVERAICOMPANION = "Forever AI Companion"
 BINDING_NAME_FOREVERAICOMPANION_TALK = L.BINDING_TALK
 
 -- Events ------------------------------------------------------------------

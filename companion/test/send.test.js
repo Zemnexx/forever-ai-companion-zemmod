@@ -3,6 +3,9 @@
 // addon created and checks the companion can decode them.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { ADDON_SRC } from '../src/config.js';
 import { runLua, encodePNG } from './helpers.js';
 import { decodeImage } from '../src/image.js';
 import { decodeGrid } from '../src/grid.js';
@@ -956,4 +959,19 @@ test('/ia talk without invisible sending explains it and sends nothing', () => {
   assert.match(status, /need invisible sending/);
   assert.equal(count, '0');
   assert.notEqual(strip, 'true', 'never through the on-screen line');
+});
+
+test('the talk key has its own section in Key Bindings, with a name the addon sets', () => {
+  const xml = fs.readFileSync(path.join(ADDON_SRC, 'Bindings.xml'), 'utf8');
+  const binding = /<Binding\s+([^>]*)>\s*([^<]*?)\s*<\/Binding>/.exec(xml);
+  assert.ok(binding, 'one binding');
+  const attrs = Object.fromEntries([...binding[1].matchAll(/(\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  assert.equal(attrs.name, 'FOREVERAICOMPANION_TALK');
+  assert.equal(attrs.category, 'Forever AI Companion', 'own section, like Questie');
+  assert.equal(attrs.header, undefined, 'a header shows as a dead, bindable row in this client');
+  assert.equal(attrs.runOnUp, 'true', 'key release stops the recording');
+  assert.equal(binding[2], 'ForeverAICompanion_Talk(keystate)');
+  const core = fs.readFileSync(path.join(ADDON_SRC, 'Core.lua'), 'utf8');
+  assert.match(core, /BINDING_NAME_FOREVERAICOMPANION_TALK = L\.BINDING_TALK/);
+  assert.match(core, /function ForeverAICompanion_Talk\(keystate\)/);
 });

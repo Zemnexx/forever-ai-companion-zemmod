@@ -1,7 +1,8 @@
-<!-- Forever AI Companion key bindings (Key Bindings > Forever AI Companion).
-     "Talk to your assistant": hold the key, say your question, let go. -->
+<!-- Forever AI Companion key bindings: their own section in Key Bindings
+     (the category, as Questie does; a "header" shows up as a dead row in this
+     client). "Talk to your assistant": hold the key, say your question, let go. -->
 <Bindings>
-  <Binding name="FOREVERAICOMPANION_TALK" header="FOREVERAICOMPANION" runOnUp="true">
+  <Binding name="FOREVERAICOMPANION_TALK" category="Forever AI Companion" runOnUp="true">
     ForeverAICompanion_Talk(keystate)
   </Binding>
 </Bindings>

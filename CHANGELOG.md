@@ -2,7 +2,7 @@
 
 ## Unreleased: voice questions
 
-Addon **1.11.0**. App `VERSION` unchanged (1.9.0). No npm dependencies added; the bundled code grew by about 20 KB.
+Addon **1.11.1**. App `VERSION` unchanged (1.9.0). No npm dependencies added; the bundled code grew by about 20 KB.
 
 ### Added
 
@@ -13,6 +13,10 @@ Addon **1.11.0**. App `VERSION` unchanged (1.9.0). No npm dependencies added; th
   - Follow-up questions by voice continue the open chat.
 - **Settings in the app window** ("Voice questions"): on/off (off by default), the OpenAI key (the ChatGPT key is reused when there is one, and a separate key is encrypted with DPAPI), the model, and a microphone test.
 - **Microphone helper** (`mic/Mic.cs`), compiled on the PC like the tray icon. It keeps the microphone closed except while recording, plays a start and an end beep, and exits if the app goes away.
+
+### Fixed
+
+- **Key Bindings showed a dead "HEADER_FOREVERAICOMPANION" row** under "Other". The talk key now has its own "Forever AI Companion" section (a `category`, as Questie does, instead of a `header`). An existing binding is kept.
 
 ### Security
 
