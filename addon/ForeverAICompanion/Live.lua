@@ -227,5 +227,6 @@ function Live:Status()
     s = s .. string.format(L.STATUS_LAST,
       last.bytes, last.cols, last.rows, tostring(last.shownFrames))
   end
+  if ns.Fade and ns.Fade.lastError then s = s .. string.format(L.STATUS_FADE_ERROR, ns.Fade.lastError) end
   return s
 end

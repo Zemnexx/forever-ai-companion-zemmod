@@ -77,15 +77,53 @@ function Fade:Set(key, value)
   self.next = 0 -- look again right away
 end
 
+-- Newer game clients hand some values to addons as "secrets" during combat
+-- (the character's speed, for one): they can be passed around, but comparing
+-- them or doing math with them is an error. Read them through these: nil
+-- means "can't tell right now".
+local function plain(fn, ...)
+  if type(fn) ~= "function" then return nil end
+  local ok, v = pcall(fn, ...)
+  if not ok then return nil end
+  if issecretvalue and issecretvalue(v) then return nil end
+  return v
+end
+
+-- Same answer as `test(v)`, or nil if v can't be used (an older client
+-- without issecretvalue: the test itself is protected).
+local function check(v, test)
+  if v == nil then return nil end
+  local ok, result = pcall(test, v)
+  if ok then return result end
+  return nil
+end
+
+-- PLAYER_STARTED_MOVING / PLAYER_STOPPED_MOVING: how movement is known when
+-- the speed is a secret (in combat).
+Fade.movingByEvent = false
+local events = CreateFrame and CreateFrame("Frame")
+if events then
+  pcall(events.RegisterEvent, events, "PLAYER_STARTED_MOVING")
+  pcall(events.RegisterEvent, events, "PLAYER_STOPPED_MOVING")
+  events:SetScript("OnEvent", function(_, event) Fade.movingByEvent = event == "PLAYER_STARTED_MOVING" end)
+end
+
+-- Moving: IsPlayerMoving first (what ForeverForge uses on this client, in
+-- combat too), then the speed (a secret in combat on newer clients), then
+-- the movement events.
 local function moving()
-  if UnitOnTaxi and UnitOnTaxi("player") then return false end
-  local speed = GetUnitSpeed and GetUnitSpeed("player")
-  return (tonumber(speed) or 0) > 0
+  if check(plain(UnitOnTaxi, "player"), function(v) return v and true or false end) then return false end
+  local m = check(plain(IsPlayerMoving), function(v) return v and true or false end)
+  if m ~= nil then return m end
+  m = check(plain(GetUnitSpeed, "player"), function(v) return v > 0 end)
+  if m ~= nil then return m end
+  return Fade.movingByEvent and true or false
 end
 
 local function fighting()
-  if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
-  return InCombatLockdown and InCombatLockdown() and true or false
+  -- InCombatLockdown is how addons know about combat, and is never a secret.
+  if InCombatLockdown and InCombatLockdown() then return true end
+  return check(plain(UnitAffectingCombat, "player"), function(v) return v and true or false end) or false
 end
 
 -- The mouse is really on `frame`. Turning the camera with a mouse button held
@@ -148,7 +186,14 @@ function Fade:Update(elapsed)
   local now = GetTime()
   if now >= (self.next or 0) then
     self.next = now + CHECK
-    self.target = self:Target(now)
+    -- Something unexpected (another value the game made secret?): show the
+    -- window fully rather than freeze it, and keep the error for /ia status.
+    local ok, target = pcall(self.Target, self, now)
+    if ok then
+      self.target = target
+    else
+      self.target, self.lastError = 1, tostring(target)
+    end
   end
   local target = self.target or 1
   local cur = self.current or 1

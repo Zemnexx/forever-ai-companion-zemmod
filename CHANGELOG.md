@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (addon 1.14.2)
+## 2.0.0 (addon 1.14.3)
 
 Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). This release:
 
@@ -52,7 +52,11 @@ Updates and guide downloads stay off until a signing key is in `TRUSTED_KEYS` (s
 
 #### Fixed
 
-- **In combat, the window stayed fully visible after hovering it.** Holding a mouse button to turn the camera hides the cursor but leaves it where it was, often over the window, so the window kept counting as hovered. Hovering no longer counts while turning the camera. The compact answer box gets the same fix.
+- **In combat the dimming stopped, with Lua errors** ("attempt to compare a secret number value"), so after hovering the window it stayed fully visible until the fight ended.
+  - This client hands addons some values as "secrets" during combat, including the character's speed. Addons can pass them along but can't compare them, so the dimming check errored every time and the window froze at whatever opacity it had.
+  - Movement is now read from `IsPlayerMoving()` first (what ForeverForge uses), then the speed, then the game's started/stopped-moving events. Every value is checked for being a secret before it's compared, and combat comes from `InCombatLockdown()`.
+  - If anything unexpected still fails, the window shows fully instead of freezing, and `/ia status` says why.
+- Hovering no longer counts while turning the camera with a mouse button held (the hidden cursor stays where it was), for the window and the compact answer box.
 
 ### Voice questions
 

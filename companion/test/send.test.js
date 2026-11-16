@@ -1327,3 +1327,86 @@ test('turning the camera with the mouse over the window does not keep it from di
     fighting: '0.30', hovered: '1.00', turningCamera: '0.30', cursorBack: '1.00', mouseAway: '0.30', compactGone: 'true',
   });
 });
+
+// Newer clients make some values "secret" in combat: they can't be compared.
+// A table stands in for one (comparing it with a number is an error too).
+const SECRET_APIS = `
+  SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
+  COMBAT = false; MOVING = false; SECRETS = false; HAS_ISSECRET = true
+  InCombatLockdown = function() return COMBAT end
+  UnitAffectingCombat = function() if SECRETS then return SECRET end return COMBAT end
+  GetUnitSpeed = function() if SECRETS then return SECRET end return MOVING and 7 or 0 end
+  UnitOnTaxi = function() if SECRETS then return SECRET end return false end
+  issecretvalue = function(v) return HAS_ISSECRET and v == SECRET end
+  function COMBAT_ON() COMBAT = true; SECRETS = true end
+  function COMBAT_OFF() COMBAT = false; SECRETS = false end
+`;
+
+test('in combat the speed is a secret: dimming keeps working, with movement events, and never errors', () => {
+  for (const hasIsSecret of [true, false]) {
+    const out = runLua(`
+      START()
+      HAS_ISSECRET = ${hasIsSecret}
+      ns.UI:Show()
+      local r = {}
+      local function note(name) r[#r + 1] = name .. "=" .. A() end
+      MOVING = true; TICK(0.6); note("moving")
+      COMBAT_ON(); TICK(0.6); note("fight")
+      -- Your steps: hover in the fight, then move the mouse away.
+      ns.UI.frame.IsMouseOver = function() return true end; TICK(0.5); note("hovered")
+      ns.UI.frame.IsMouseOver = function() return false end; TICK(0.6); note("mouseAway")
+      -- Opening the window mid-fight (Reset read the speed: the error in the report).
+      ns.Fade:Reset(); TICK(0.6); note("openedInFight")
+      -- Movement in the fight comes from the events (combat dimming off to see it).
+      ns.Fade:Set("combat", false)
+      FIRE("PLAYER_STOPPED_MOVING"); TICK(1.6); note("fightStopped")
+      FIRE("PLAYER_STARTED_MOVING"); TICK(0.6); note("fightMoving")
+      ns.Fade:Set("combat", true)
+      COMBAT_OFF(); MOVING = false; FIRE("PLAYER_STOPPED_MOVING"); TICK(2.6); note("after")
+      r[#r + 1] = "error=" .. tostring(ns.Fade.lastError)
+      RESULT = table.concat(r, " ")
+    `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + SECRET_APIS);
+    const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
+    const want = {
+      moving: '0.50', fight: '0.30', hovered: '1.00', mouseAway: '0.30', openedInFight: '1.00',
+      fightStopped: '1.00', fightMoving: '0.50', after: '1.00', error: 'nil',
+    };
+    // Without issecretvalue, the speed check's own error is caught, but other
+    // values can't be told apart from real ones: only check the reported bug.
+    if (!hasIsSecret) { delete want.fightStopped; delete want.fightMoving; delete got.fightStopped; delete got.fightMoving; }
+    assert.deepEqual(got, want, `issecretvalue ${hasIsSecret ? 'available' : 'missing'}`);
+  }
+});
+
+test('IsPlayerMoving (readable in combat) is used before the secret speed', () => {
+  const out = runLua(`
+    IsPlayerMoving = function() return MOVING end
+    START()
+    ns.UI:Show()
+    local r = {}
+    local function note(name) r[#r + 1] = name .. "=" .. A() end
+    COMBAT_ON()
+    ns.Fade:Set("combat", false)
+    MOVING = true; TICK(0.6); note("fightMoving")
+    MOVING = false; TICK(1.6); note("fightStopped")
+    r[#r + 1] = "error=" .. tostring(ns.Fade.lastError)
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + SECRET_APIS);
+  assert.equal(out, 'fightMoving=0.50 fightStopped=1.00 error=nil', 'no movement events needed');
+});
+
+test('an unexpected error in the dimming shows the window fully instead of freezing it, and /ia status says why', () => {
+  const out = runLua(`
+    START()
+    ns.UI:Show()
+    MOVING = true; TICK(0.6)
+    local before = A()
+    local real = ns.Fade.InUse
+    ns.Fade.InUse = function() error("boom") end
+    TICK(0.6)
+    local during = A()
+    ns.Fade.InUse = real
+    RESULT = before .. " " .. during .. " " .. tostring(ns.Live:Status():find("Dimming paused by an error", 1, true) ~= nil)
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + SECRET_APIS);
+  assert.equal(out, '0.50 1.00 true');
+});
