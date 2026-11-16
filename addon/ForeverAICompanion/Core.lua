@@ -295,17 +295,24 @@ function Core:Ask(question, extra, chatId, listen)
   local shown = linked and strtrim(question) or nil -- with the links, for the chat bubble
   question = listen and "" or strtrim(ns.Collect.Clean(question or "") or "")
   if question == "" and not listen then return end
-  ns.UI:Show()
+  -- Compact answers (Compact.lua): asking with the window closed shows the
+  -- small box instead of opening the window.
+  local compact = ns.Compact and ns.Compact:Active()
+  local function say(msg, bad)
+    if compact then ns.Compact:Message(bad and ("|cffff6060" .. msg .. "|r") or msg)
+    else ns.UI:SetStatus(bad and ("|cffff6060" .. msg .. "|r") or msg) end
+  end
+  if not compact then ns.UI:Show() end
   if InCombatLockdown() or UnitAffectingCombat("player") then
-    ns.UI:SetStatus("|cffff6060" .. L.IN_COMBAT .. "|r")
+    say(L.IN_COMBAT, true)
     return
   end
   if self.working or ns.Uplink.busy then
-    ns.UI:SetStatus(L.WAIT_PREVIOUS)
+    say(L.WAIT_PREVIOUS)
     return
   end
   if listen and not ns.Voice:Available() then
-    ns.UI:SetStatus("|cffff6060" .. L.TALK_NEEDS_VOICE .. "|r")
+    say(L.TALK_NEEDS_VOICE, true)
     return
   end
 
@@ -335,6 +342,7 @@ function Core:Ask(question, extra, chatId, listen)
   local entry = { id = id, question = question, shown = shown, status = "pending", t = time(), listen = listen or nil }
   ns.Chats:AddMessage(chatData, entry)
   req.chat = { id = chatData.id, title = chatData.title }
+  if compact then ns.Compact:Show(entry, chatData) end
 
   local function fail(msg)
     Core.working = false
@@ -454,7 +462,12 @@ function Core:ApplyInbox(inbox)
     ns.UI:SetStatus("")
     ns.UI:Refresh()
     if ns.Button then ns.Button:Update() end
-    if #toNotify > 0 and ns.Notify then
+    if #toNotify > 0 and ns.Compact and ns.Compact:Active() then
+      -- Compact answers: the newest in the box, any others as cards.
+      local last = table.remove(toNotify)
+      ns.Compact:Show(last.entry, last.chat)
+      if ns.Notify then for _, n in ipairs(toNotify) do ns.Notify:Show(n.entry, n.chat) end end
+    elseif #toNotify > 0 and ns.Notify then
       for _, n in ipairs(toNotify) do ns.Notify:Show(n.entry, n.chat) end
     elseif ns.Button and ns.Button.Celebrate then
       ns.Button:Celebrate() -- answer in the open chat: no card, just the hop
@@ -481,6 +494,7 @@ function Core:Listen(chatId)
   local l = { id = id }
   self.listening = l
   ns.UI:RefreshTalkButton()
+  if ns.Compact then ns.Compact:Refresh() end
   C_Timer.After(LISTEN_TIMEOUT, function()
     if Core.listening == l then Core:EndListening() end
   end)
@@ -511,6 +525,7 @@ end
 function Core:EndListening()
   self.listening = nil
   ns.UI:RefreshTalkButton()
+  if ns.Compact then ns.Compact:Refresh() end
 end
 
 function Core:ToggleListen()
@@ -592,6 +607,7 @@ local COMMANDS = {
   ["test-voice"] = "voice", ["probar-voz"] = "voice",
   talk = "talk", hablar = "talk",
   options = "options", opciones = "options",
+  compact = "compact", compacto = "compact",
   button = "button", boton = "button", ["botón"] = "button",
   sound = "sound", sonido = "sound",
   assistant = "assistant", asistente = "assistant",
@@ -621,6 +637,8 @@ SlashCmdList.FOREVERAICOMPANION = function(msg)
     ns.Voice:Diagnose()
   elseif cmd == "talk" and rest == "" then
     Core:ToggleListen()
+  elseif cmd == "compact" and rest == "" then
+    chat(ns.Compact:Toggle() and L.COMPACT_ON or L.COMPACT_OFF)
   elseif cmd == "options" and rest == "" then
     if not (ns.Options and ns.Options:Open()) then chat(L.OPTIONS_UNAVAILABLE) end
   elseif cmd == "button" and rest == "" then

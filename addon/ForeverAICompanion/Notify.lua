@@ -173,10 +173,15 @@ function Notify:Show(entry, chatData)
   c:SetAlpha(1)
   c:Show()
   self:Layout()
+  self:Chime(ok)
+  if ns.Button and ns.Button.Celebrate then ns.Button:Celebrate() end
+end
+
+-- The answer sound (unless the player turned it off with /ia sound).
+function Notify:Chime(ok)
   if settings().sound and PlaySound and SOUNDKIT then
     PlaySound(ok and (SOUNDKIT.TELL_MESSAGE or 3081) or (SOUNDKIT.IG_PLAYER_INVITE_DECLINE or 3082))
   end
-  if ns.Button and ns.Button.Celebrate then ns.Button:Celebrate() end
 end
 
 function Notify:Dismiss(c)

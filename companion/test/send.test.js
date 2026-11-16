@@ -977,7 +977,7 @@ test('the talk key has its own section in Key Bindings, with a name the addon se
 });
 
 // The chat window dims while the character moves, with settings in Options > AddOns.
-const FADE_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Fade.lua', 'Options.lua', 'Button.lua', 'Notify.lua', 'Core.lua'];
+const FADE_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Fade.lua', 'Compact.lua', 'Options.lua', 'Button.lua', 'Notify.lua', 'Core.lua'];
 const FADE_APIS = `
   SPEED = 0; TAXI = false
   GetUnitSpeed = function(unit) assert(unit == "player"); return SPEED end
@@ -1019,9 +1019,9 @@ test('the chat window dims while moving and comes back after the delay, unless i
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
   assert.deepEqual(got, {
-    standing: '1.00', moving: '0.30', 'stopped0.5': '0.30', 'stopped1.3': '0.30', 'stopped2.2': '1.00',
-    openedMoving: '1.00', movingAgain: '0.30',
-    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.30', off: '1.00',
+    standing: '1.00', moving: '0.75', 'stopped0.5': '0.75', 'stopped1.3': '1.00', 'stopped2.2': '1.00',
+    openedMoving: '1.00', movingAgain: '0.75',
+    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.75', off: '1.00',
   });
 });
 
@@ -1053,7 +1053,7 @@ test('fade settings: kept in range, previewed when changed, and on a page in Opt
     REG.opened = nil; SlashCmdList.FOREVERAICOMPANION("opciones"); r[#r + 1] = "es=" .. tostring(REG.opened)
     RESULT = table.concat(r, " ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'on 30/2 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
+  assert.equal(out, 'on 75/1 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
 });
 
 test('without the Settings API the page goes into the older Interface Options', () => {
@@ -1131,7 +1131,7 @@ test('combat settings: their own section of the page, kept in range and previewe
     r[#r + 1] = "saved=" .. tostring(ns.db.fade.opacity) .. "/" .. tostring(ns.db.fade.delay)
     RESULT = table.concat(r, " | ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 30/2 | saved=nil/nil');
+  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 75/1 | saved=nil/nil');
 });
 
 test('settings saved before combat dimming existed keep working', () => {
@@ -1168,5 +1168,129 @@ test('only changed fade settings are saved, so new defaults reach everyone else'
     r[#r + 1] = string.format("newDefault %g", ns.Fade:Settings().combatDelay)
     RESULT = table.concat(r, " | ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'migrated 30/2 | left=v | kept 45 false | chosen 60 | newDefault 3');
+  assert.equal(out, 'migrated 75/1 | left=v | kept 45 false | chosen 60 | newDefault 3');
+});
+
+// Compact answers: a small box instead of the window, gone after a while.
+const COMPACT_APIS = `
+  SPOKEN = {}
+  C_VoiceChat = {
+    GetTtsVoices = function() return { { voiceID = 7, name = "ForeverAICompanion - English (United States)" } } end,
+    SpeakText = function(id, text) SPOKEN[#SPOKEN + 1] = text end,
+  }
+  GetItemInfo = function(id)
+    if tonumber(id) == 9999 then return "Leotardos", "|cff1eff00|Hitem:9999::::::::|h[Leotardos]|h|r" end
+  end
+  function SENT() for i = 1, 4000 do if not ns.Core.working then return end RUN_FRAMES(1) end end
+  function STEP(sec) for i = 1, math.floor(sec / 0.1 + 0.5) do NOW = NOW + 0.1; ns.Compact:Update(0.1) end end
+  function LAST() local m = ns.Chats:Current().messages; return m[#m] end
+`;
+
+test('compact answers: a voice question shows a small box, not the window, and it goes away by itself', () => {
+  const out = runLua(`
+    START()
+    ns.requestKey = "k"
+    ns.Compact:Set("enabled", true)
+    local r = {}
+    ns.Core:TalkKey("down")
+    SENT()
+    STEP(0.3)
+    r[#r + 1] = "window=" .. tostring(ns.UI:IsShown()) .. " box=" .. tostring(ns.Compact:IsShown()) .. " " .. ns.Compact.view.state
+    ns.Core:TalkKey("up")
+    STEP(0.3)
+    r[#r + 1] = ns.Compact.view.state
+    local e = LAST()
+    ns.Core:ApplyInbox({ answers = { { id = e.id, ok = true, answer = "Wear {{item:9999|Leotardos}} now.", question = "What should I wear?" } } })
+    local v = ns.Compact.view
+    r[#r + 1] = v.state .. "|" .. tostring(v.asked) .. "|" .. tostring(v.body:find("|Hitem:9999", 1, true) ~= nil)
+    r[#r + 1] = "unread=" .. tostring(ns.Chats:Current().unread) .. " inChat=" .. tostring(LAST().answer:find("Leotardos", 1, true) ~= nil)
+    -- 20 s by default; the mouse on it keeps it up, then 5 s more after it leaves.
+    STEP(15); r[#r + 1] = "15s=" .. tostring(ns.Compact:IsShown())
+    ns.Compact.frame.IsMouseOver = function() return true end
+    STEP(30); r[#r + 1] = "hovered45s=" .. tostring(ns.Compact:IsShown()) .. "@" .. string.format("%.2f", ns.Compact.frame:GetAlpha())
+    ns.Compact.frame.IsMouseOver = function() return false end
+    STEP(4); r[#r + 1] = "left4s=" .. tostring(ns.Compact:IsShown())
+    STEP(1.5); r[#r + 1] = "left5.5s=" .. tostring(ns.Compact:IsShown())
+    RESULT = table.concat(r, " ; ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
+  assert.equal(out, [
+    'window=false box=true listening',
+    'pending',
+    'done|What should I wear?|true',
+    'unread=true inChat=true',
+    '15s=true',
+    'hovered45s=true@1.00',
+    'left4s=true',
+    'left5.5s=false',
+  ].join(' ; '));
+});
+
+test('compact answers: an answer arriving with the window closed goes to the box; the window and "Open in chat" take over', () => {
+  const out = runLua(`
+    START()
+    local r = {}
+    -- Asked in the window, then closed it before the answer came.
+    ns.UI:Show()
+    ns.Core:Ask("Where is Westfall?")
+    SENT()
+    local e = LAST()
+    ns.UI.frame:Hide()
+    ns.Core:ApplyInbox({ answers = { { id = e.id, ok = true, answer = "South of Elwynn." } } })
+    r[#r + 1] = "off: card=" .. tostring(ns.Notify.cards and ns.Notify.cards[1] and ns.Notify.cards[1]:IsShown()) .. " box=" .. tostring(ns.Compact:IsShown())
+    ns.Notify:HideAll()
+    ns.Compact:Set("enabled", true)
+    ns.UI:Show()
+    ns.Core:Ask("And Duskwood?")
+    SENT()
+    e = LAST()
+    ns.UI.frame:Hide()
+    ns.Core:ApplyInbox({ answers = { { id = e.id, ok = true, answer = "East of Westfall." } } })
+    r[#r + 1] = "on: card=" .. tostring(ns.Notify.cards[1]:IsShown()) .. " box=" .. tostring(ns.Compact:IsShown()) .. " " .. tostring(ns.Compact.view.asked)
+    -- Opening the window hides the box (it shows the same answer).
+    ns.UI:Show(); ns.UI.frame:GetScript("OnShow")(ns.UI.frame)
+    r[#r + 1] = "windowOpened: box=" .. tostring(ns.Compact:IsShown())
+    -- "Open in chat" opens that chat.
+    ns.UI.frame:Hide()
+    local chatId = ns.Chats:Current().id
+    ns.Chats:New()
+    ns.Compact:Show(e, ns.Chats:Get(chatId))
+    ns.Compact:OpenChat()
+    r[#r + 1] = "open: window=" .. tostring(ns.UI:IsShown()) .. " box=" .. tostring(ns.Compact:IsShown()) .. " sameChat=" .. tostring(ns.db.currentChat == chatId)
+    RESULT = table.concat(r, " ; ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
+  assert.equal(out, [
+    'off: card=true box=false',
+    'on: card=false box=true And Duskwood?',
+    'windowOpened: box=false',
+    'open: window=true box=false sameChat=true',
+  ].join(' ; '));
+});
+
+test('compact answers: problems show in the box, and the settings are on the options page and /ia compact', () => {
+  const out = runLua(`
+    START()
+    local r = {}
+    ns.Compact:Set("enabled", true)
+    InCombatLockdown = function() return true end
+    ns.Core:Listen()
+    r[#r + 1] = "combat: window=" .. tostring(ns.UI:IsShown()) .. " " .. ns.Compact.view.state .. " " .. tostring(ns.Compact.view.body:find(ns.L.IN_COMBAT, 1, true) ~= nil)
+    STEP(6.5); r[#r + 1] = "gone=" .. tostring(not ns.Compact:IsShown())
+    InCombatLockdown = function() return false end
+    -- Settings: 20 s by default, 5 to 60 in steps of 5; only changes are saved.
+    local s = ns.Compact:Settings()
+    r[#r + 1] = string.format("%s %d", tostring(s.enabled), s.seconds)
+    ns.db.compact.seconds = 3;  r[#r + 1] = tostring(ns.Compact:Settings().seconds)
+    ns.db.compact.seconds = 99; r[#r + 1] = tostring(ns.Compact:Settings().seconds)
+    ns.db.compact.seconds = nil
+    local c = ns.Options.compactControls
+    c.seconds:GetScript("OnValueChanged")(c.seconds, 35)
+    r[#r + 1] = "slider=" .. tostring(ns.db.compact.seconds)
+    c.enabled.GetChecked = function() return false end
+    c.enabled:GetScript("OnClick")(c.enabled)
+    r[#r + 1] = "box=" .. tostring(ns.Compact:Settings().enabled)
+    SlashCmdList.FOREVERAICOMPANION("compact");  r[#r + 1] = tostring(ns.Compact:Settings().enabled)
+    SlashCmdList.FOREVERAICOMPANION("compacto"); r[#r + 1] = tostring(ns.Compact:Settings().enabled)
+    RESULT = table.concat(r, " ; ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
+  assert.equal(out, 'combat: window=false message true ; gone=true ; true 20 ; 5 ; 60 ; slider=35 ; box=false ; true ; false');
 });

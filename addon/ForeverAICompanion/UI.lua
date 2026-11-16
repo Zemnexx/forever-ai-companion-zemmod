@@ -643,6 +643,8 @@ function UI:Build()
   self.rows, self.headings, self.bubbles = {}, {}, {}
   -- Dimmed while the character moves (Fade.lua).
   if ns.Fade then ns.Fade:Attach(f) end
+  -- The window shows everything the compact box would: it goes away.
+  if ns.Compact then f:HookScript("OnShow", function() ns.Compact:Hide() end) end
   self:SetSidebar(s.sidebar, true)
   self:ApplyPersona(true)
 end

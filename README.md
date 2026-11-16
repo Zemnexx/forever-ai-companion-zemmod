@@ -121,6 +121,7 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 - **Is the app ready?** The line under the chat title tells you. Green: the app is open and ready. Red: questions won't be answered yet, and it says why (the app is closed or not responding, no AI is chosen, or your AI needs you to sign in). Hover it for what to do.
 - **See what is sent**: in the window click **See the data I send**.
 - **See-through while you move or fight**: the window dims while your character walks, runs, rides or swims, and in combat, then comes back a moment after you stop or the fight ends. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Moving and combat each have their own on/off, opacity and delay in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
+- **Compact answers** (optional): ask with the window closed (talk key, `/ia talk` or `/ia <question>`) and, instead of the window opening, a small see-through box shows the answer for 20 seconds (adjustable) and goes away by itself. Hover it to keep it up, click the item links in it, drag it where you like, or click **Open in chat**. The answer is also in the chat (click the floating button). Turn it on in the same options page or with `/ia compact`.
 - **In combat** you can't ask (on purpose): wait until combat ends.
 
 ### Asking with your voice (optional)
@@ -142,6 +143,7 @@ Every command also works with its Spanish word (shown in parentheses).
 | `/ia <question>` | Asks directly in the open chat |
 | `/ia talk` (`hablar`) | Asks with your voice: run it once to start listening and again to stop (or just stop talking) |
 | `/ia options` (`opciones`) | Opens the addon's settings (Options > AddOns > Forever AI Companion) |
+| `/ia compact` (`compacto`) | Turns compact answers on or off |
 | `/ia new` (`nuevo`) | Starts a new chat |
 | `/ia assistant` (`asistente`) | Choose between Fizzi and Rizzik (`/ia assistant fizzi` or `/ia assistant rizzik`) |
 | `/ia button` (`boton`) | Shows or hides the floating button (`/ia button reset` puts it back in place) |

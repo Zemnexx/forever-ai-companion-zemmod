@@ -1,6 +1,6 @@
 -- The addon's page in Options > AddOns ("Forever AI Companion"), also opened
--- by the gear in the chat window and by /ia options. For now: dimming the
--- window while moving and in combat (Fade.lua).
+-- by the gear in the chat window and by /ia options: dimming the window while
+-- moving and in combat (Fade.lua) and compact answers (Compact.lua).
 --
 -- Controls are built by hand (no option templates, which differ between game
 -- versions), and the page is registered with the Settings API when the game
@@ -122,33 +122,87 @@ local function section(panel, anchor, dx, keys, text, gap)
   return { enabled = enabled, opacity = opacity, delay = delay, opacityText = opacityText, delayText = delayText, show = show, bottom = delay }
 end
 
--- Fills `panel` with the page's controls.
+-- The compact answers section: on/off and how long an answer stays up.
+local function compactSection(parent, anchor)
+  local Compact = ns.Compact
+  local heading = label(parent, "GameFontNormal", L.COMPACT_HEADING)
+  heading:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -26)
+  local enabled = checkbox(parent, L.COMPACT_ENABLE)
+  enabled:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -4, -6)
+  local tip = label(parent, "GameFontDisableSmall", L.COMPACT_TIP)
+  tip:SetPoint("TOPLEFT", enabled, "BOTTOMLEFT", 30, 0)
+  tip:SetWidth(WIDTH + 100)
+  local secondsText = label(parent, "GameFontHighlight", "")
+  secondsText:SetPoint("TOPLEFT", tip, "BOTTOMLEFT", -26, -16)
+  local seconds = slider(parent, Compact.MIN_SECONDS, Compact.MAX_SECONDS, Compact.SECONDS_STEP)
+  seconds:SetPoint("TOPLEFT", secondsText, "BOTTOMLEFT", 4, -8)
+  seconds.low:SetText(string.format(L.SECONDS, Compact.MIN_SECONDS))
+  seconds.high:SetText(string.format(L.SECONDS, Compact.MAX_SECONDS))
+
+  local filling = false
+  local function show()
+    local s = Compact:Settings()
+    filling = true
+    enabled:SetChecked(s.enabled)
+    seconds:SetValue(s.seconds)
+    filling = false
+    secondsText:SetText(string.format(L.COMPACT_SECONDS, s.seconds))
+    local a = s.enabled and 1 or 0.45
+    seconds:SetAlpha(a)
+    secondsText:SetAlpha(a)
+    if seconds.SetEnabled then seconds:SetEnabled(s.enabled) end
+  end
+  enabled:SetScript("OnClick", function(self)
+    Compact:Set("enabled", self:GetChecked() and true or false)
+    show()
+  end)
+  seconds:SetScript("OnValueChanged", function(_, v)
+    if filling then return end
+    Compact:Set("seconds", v)
+    show()
+  end)
+  return { enabled = enabled, seconds = seconds, secondsText = secondsText, show = show, bottom = seconds }
+end
+
+-- Fills `panel` with the page's controls, in a scroll area so it fits any
+-- screen size.
 function Options:Build(panel)
-  local title = label(panel, "GameFontNormalLarge", L.OPTIONS_TITLE)
-  title:SetPoint("TOPLEFT", 16, -16)
-  local intro = label(panel, "GameFontHighlightSmall", L.OPTIONS_INTRO)
+  local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", 0, -4)
+  scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+  local content = CreateFrame("Frame", nil, scroll)
+  content:SetSize(WIDTH + 180, 900)
+  scroll:SetScrollChild(content)
+
+  local title = label(content, "GameFontNormalLarge", L.OPTIONS_TITLE)
+  title:SetPoint("TOPLEFT", 16, -12)
+  local intro = label(content, "GameFontHighlightSmall", L.OPTIONS_INTRO)
   intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
   intro:SetWidth(WIDTH + 140)
 
-  local move = section(panel, intro, 0, { enabled = "enabled", opacity = "opacity", delay = "delay" }, {
+  local move = section(content, intro, 0, { enabled = "enabled", opacity = "opacity", delay = "delay" }, {
     heading = "FADE_HEADING", enable = "FADE_ENABLE", tip = "FADE_ENABLE_TIP", opacity = "FADE_OPACITY", delay = "FADE_DELAY",
   }, 20)
-  local combat = section(panel, move.bottom, -4, { enabled = "combat", opacity = "combatOpacity", delay = "combatDelay" }, {
+  local combat = section(content, move.bottom, -4, { enabled = "combat", opacity = "combatOpacity", delay = "combatDelay" }, {
     heading = "FADE_COMBAT_HEADING", enable = "FADE_COMBAT_ENABLE", tip = "FADE_COMBAT_TIP", opacity = "FADE_COMBAT_OPACITY", delay = "FADE_COMBAT_DELAY",
   }, 34)
 
-  local note = label(panel, "GameFontDisableSmall", L.FADE_NOTE)
+  local note = label(content, "GameFontDisableSmall", L.FADE_NOTE)
   note:SetPoint("TOPLEFT", combat.bottom, "BOTTOMLEFT", -4, -28)
   note:SetWidth(WIDTH + 140)
+
+  local compact = ns.Compact and compactSection(content, note)
 
   local function show()
     move.show()
     combat.show()
+    if compact then compact.show() end
   end
   panel:SetScript("OnShow", show)
   panel.refresh = show -- older Interface Options call this
   self.controls = move
   self.combatControls = combat
+  self.compactControls = compact
   self.show = show
 end
 
