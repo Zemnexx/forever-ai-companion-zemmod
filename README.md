@@ -120,6 +120,7 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 - **Professions**: open each profession window once and the addon remembers your recipes, so you can ask *"What can I craft with what I have?"* or *"Which recipe should I make to level up?"*.
 - **Is the app ready?** The line under the chat title tells you. Green: the app is open and ready. Red: questions won't be answered yet, and it says why (the app is closed or not responding, no AI is chosen, or your AI needs you to sign in). Hover it for what to do.
 - **See what is sent**: in the window click **See the data I send**.
+- **See-through while you move**: the window dims while your character walks, runs, rides or swims, and comes back a moment after you stop. It stays fully visible while your mouse is over it, while you type or talk, and on flight paths. Set how see-through it gets and how long it waits in **Options > AddOns > Forever AI Companion** (or the gear in the window, or `/ia options`).
 - **In combat** you can't ask (on purpose): wait until combat ends.
 
 ### Asking with your voice (optional)
@@ -140,6 +141,7 @@ Every command also works with its Spanish word (shown in parentheses).
 | `/ia` or `/ai` | Opens or closes the window |
 | `/ia <question>` | Asks directly in the open chat |
 | `/ia talk` (`hablar`) | Asks with your voice: run it once to start listening and again to stop (or just stop talking) |
+| `/ia options` (`opciones`) | Opens the addon's settings (Options > AddOns > Forever AI Companion) |
 | `/ia new` (`nuevo`) | Starts a new chat |
 | `/ia assistant` (`asistente`) | Choose between Fizzi and Rizzik (`/ia assistant fizzi` or `/ia assistant rizzik`) |
 | `/ia button` (`boton`) | Shows or hides the floating button (`/ia button reset` puts it back in place) |

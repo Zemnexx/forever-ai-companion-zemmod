@@ -558,6 +558,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     ForeverAICompanion_DB = ForeverAICompanion_DB or {}
     ns.db = ForeverAICompanion_DB
     ns.Chats:Init()
+    if ns.Options then pcall(ns.Options.Init, ns.Options) end
   elseif event == "PLAYER_LOGIN" then
     ns.Uplink:Init()
     ns.Live:Init()
@@ -590,6 +591,7 @@ local COMMANDS = {
   probe = "probe", probar = "probe", ["probar-canales"] = "probe",
   ["test-voice"] = "voice", ["probar-voz"] = "voice",
   talk = "talk", hablar = "talk",
+  options = "options", opciones = "options",
   button = "button", boton = "button", ["botón"] = "button",
   sound = "sound", sonido = "sound",
   assistant = "assistant", asistente = "assistant",
@@ -619,6 +621,8 @@ SlashCmdList.FOREVERAICOMPANION = function(msg)
     ns.Voice:Diagnose()
   elseif cmd == "talk" and rest == "" then
     Core:ToggleListen()
+  elseif cmd == "options" and rest == "" then
+    if not (ns.Options and ns.Options:Open()) then chat(L.OPTIONS_UNAVAILABLE) end
   elseif cmd == "button" and rest == "" then
     ns.Button:Toggle()
   elseif cmd == "button" and rest == "reset" then

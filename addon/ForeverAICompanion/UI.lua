@@ -417,6 +417,16 @@ function UI:Build()
   toggleSide:SetPoint("RIGHT", smaller, "LEFT", -8, 0)
   toggleSide:SetScript("OnClick", function() UI:SetSidebar(not s.sidebar) end)
   tooltip(toggleSide, L.CHATS_TIP)
+  -- Gear: the addon's page in Options > AddOns (dimming while moving...).
+  local gear = CreateFrame("Button", nil, f)
+  gear:SetSize(22, 22)
+  gear:SetPoint("RIGHT", toggleSide, "LEFT", -6, 0)
+  gear:SetNormalTexture("Interface\\Icons\\INV_Misc_Gear_01")
+  gear:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+  gear:SetScript("OnClick", function()
+    if not (ns.Options and ns.Options:Open()) then UI:SetStatus(L.OPTIONS_UNAVAILABLE) end
+  end)
+  tooltip(gear, L.OPTIONS_TITLE, L.OPTIONS_TIP)
 
   -- Sidebar --------------------------------------------------------------------
   local side = newFrame("Frame", nil, f)
@@ -631,6 +641,8 @@ function UI:Build()
   self.title, self.titleBtn, self.renameBox, self.deleteButton = title, titleBtn, renameBox, deleteChat
   self.dot, self.channel, self.status = dot, channel, status
   self.rows, self.headings, self.bubbles = {}, {}, {}
+  -- Dimmed while the character moves (Fade.lua).
+  if ns.Fade then ns.Fade:Attach(f) end
   self:SetSidebar(s.sidebar, true)
   self:ApplyPersona(true)
 end

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased: chat window dims while moving
+
+Addon **1.12.0**.
+
+### Added
+
+- **The chat window dims while the character moves** (walking, running, riding, swimming) and returns to full a moment after stopping.
+  - It stays fully visible while the mouse is over it, while typing in it, while asking by voice, and on flight paths.
+  - Opening it on the move shows it fully until the next stop.
+- **Settings page in Options > AddOns > Forever AI Companion**, also opened by a new gear button in the window and by `/ia options` (`/ia opciones`).
+  - On/off (on by default).
+  - Opacity while moving: 10 to 95%, default 60%. A changed value is previewed on the window for a moment.
+  - Delay before returning to full: 0 to 10 s in 0.5 s steps, default 1 s.
+  - Settings are saved for the whole account.
+
 ## Unreleased: voice questions
 
 Addon **1.11.1**. App `VERSION` unchanged (1.9.0). No npm dependencies added; the bundled code grew by about 20 KB.

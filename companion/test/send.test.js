@@ -975,3 +975,96 @@ test('the talk key has its own section in Key Bindings, with a name the addon se
   assert.match(core, /BINDING_NAME_FOREVERAICOMPANION_TALK = L\.BINDING_TALK/);
   assert.match(core, /function ForeverAICompanion_Talk\(keystate\)/);
 });
+
+// The chat window dims while the character moves, with settings in Options > AddOns.
+const FADE_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Fade.lua', 'Options.lua', 'Button.lua', 'Notify.lua', 'Core.lua'];
+const FADE_APIS = `
+  SPEED = 0; TAXI = false
+  GetUnitSpeed = function(unit) assert(unit == "player"); return SPEED end
+  UnitOnTaxi = function() return TAXI end
+  REG = {}
+  Settings = {
+    RegisterCanvasLayoutCategory = function(panel, name) REG.cat = { ID = 42, name = name, panel = panel }; return REG.cat end,
+    RegisterAddOnCategory = function(c) REG.added = c end,
+    OpenToCategory = function(id) REG.opened = id end,
+  }
+  function TICK(sec) for i = 1, math.floor(sec / 0.05 + 0.5) do NOW = NOW + 0.05; ns.Fade:Update(0.05) end end
+  function A() return string.format("%.2f", ns.UI.frame:GetAlpha()) end
+`;
+
+test('the chat window dims while moving and comes back after the delay, unless it is in use', () => {
+  const out = runLua(`
+    START()
+    ns.UI:Show()
+    local r = {}
+    local function note(name) r[#r + 1] = name .. "=" .. A() end
+    TICK(0.3); note("standing")
+    SPEED = 7; TICK(0.6); note("moving")
+    SPEED = 0; TICK(0.5); note("stopped0.5")
+    TICK(0.8); note("stopped1.3")
+    -- Opened on the move: full until the next stop, then dims as usual.
+    SPEED = 7; ns.Fade:Reset(); TICK(0.6); note("openedMoving")
+    SPEED = 0; TICK(0.2); SPEED = 7; TICK(0.6); note("movingAgain")
+    -- In use: mouse over, typing, asking by voice.
+    ns.UI.frame.IsMouseOver = function() return true end; TICK(0.5); note("mouseOver")
+    ns.UI.frame.IsMouseOver = function() return false end
+    ns.UI.input.HasFocus = function() return true end; TICK(0.5); note("typing")
+    ns.UI.input.HasFocus = function() return false end
+    ns.Core.listening = { id = "x" }; TICK(0.5); note("talking"); ns.Core.listening = nil
+    TAXI = true; TICK(0.5); note("taxi"); TAXI = false
+    TICK(0.6); note("movingOnFoot")
+    ns.Fade:Set("enabled", false); TICK(0.5); note("off")
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
+  assert.deepEqual(got, {
+    standing: '1.00', moving: '0.60', 'stopped0.5': '0.60', 'stopped1.3': '1.00',
+    openedMoving: '1.00', movingAgain: '0.60',
+    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.60', off: '1.00',
+  });
+});
+
+test('fade settings: kept in range, previewed when changed, and on a page in Options > AddOns', () => {
+  const out = runLua(`
+    START()
+    ns.UI:Show()
+    local r = {}
+    local s = ns.Fade:Settings()
+    r[#r + 1] = s.enabled and "on" or "off"
+    local function pair(s) return string.format("%g/%g", s.opacity, s.delay) end
+    r[#r + 1] = pair(s)
+    ns.db.fade.opacity, ns.db.fade.delay = 3, 12;  r[#r + 1] = pair(ns.Fade:Settings())
+    ns.db.fade.opacity, ns.db.fade.delay = 99, 0.7; r[#r + 1] = pair(ns.Fade:Settings())
+    ns.db.fade.opacity = 47; r[#r + 1] = string.format("%g", ns.Fade:Settings().opacity)
+    -- Registered once the saved settings loaded.
+    r[#r + 1] = tostring(REG.cat and REG.cat.name) .. "|" .. tostring(REG.added == REG.cat)
+    -- The page's controls change the settings; a new opacity is shown on the window for a moment.
+    local c = ns.Options.controls
+    c.opacity:GetScript("OnValueChanged")(c.opacity, 30)
+    TICK(0.5); r[#r + 1] = "preview=" .. A()
+    TICK(1.5); r[#r + 1] = "after=" .. A()
+    c.delay:GetScript("OnValueChanged")(c.delay, 2.5)
+    c.enabled.GetChecked = function() return false end
+    c.enabled:GetScript("OnClick")(c.enabled)
+    r[#r + 1] = string.format("%g/%g/%s", ns.db.fade.opacity, ns.db.fade.delay, tostring(ns.db.fade.enabled))
+    -- Gear, /ia options and /ia opciones open it.
+    REG.opened = nil; SlashCmdList.FOREVERAICOMPANION("options"); r[#r + 1] = "slash=" .. tostring(REG.opened)
+    REG.opened = nil; SlashCmdList.FOREVERAICOMPANION("opciones"); r[#r + 1] = "es=" .. tostring(REG.opened)
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  assert.equal(out, 'on 60/1 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
+});
+
+test('without the Settings API the page goes into the older Interface Options', () => {
+  const out = runLua(`
+    Settings = nil
+    ADDED = {}; OPENED = 0
+    InterfaceOptions_AddCategory = function(panel) ADDED[#ADDED + 1] = panel.name end
+    InterfaceOptionsFrame_OpenToCategory = function() OPENED = OPENED + 1 end
+    START()
+    ns.Options:Init()
+    SlashCmdList.FOREVERAICOMPANION("options")
+    RESULT = table.concat(ADDED, ",") .. "|" .. OPENED
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  assert.equal(out, 'Forever AI Companion|2', 'registered once, opened');
+});
