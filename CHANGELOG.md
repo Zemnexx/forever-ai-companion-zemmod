@@ -2,7 +2,7 @@
 
 ## Unreleased: compact answers
 
-Addon **1.14.0**.
+Addon **1.14.1**.
 
 ### Added
 
@@ -21,7 +21,7 @@ Addon **1.14.0**.
 
 ### Changed
 
-- **Dimming while moving defaults to 75% opacity and 1 s**, so the window stays readable on the move. Combat stays at 30% and 2 s.
+- **Dimming while moving defaults to 50% opacity and 1 s**, dim enough to see past and still readable on the move. Combat stays at 30% and 2 s.
 
 ## Unreleased: chat window dims while moving or in combat
 
@@ -36,7 +36,7 @@ Addon **1.13.1**.
 - **Settings page in Options > AddOns > Forever AI Companion**, also opened by a new gear button in the window and by `/ia options` (`/ia opciones`).
   - While moving: on/off, opacity 10 to 95%, delay before returning to full 0 to 10 s in 0.5 s steps.
   - In combat: the same three settings of its own.
-  - Moving defaults to on, 75% and 1 s; combat to on, 30% and 2 s.
+  - Moving defaults to on, 50% and 1 s; combat to on, 30% and 2 s.
   - A changed opacity is previewed on the window for a moment.
   - Settings are saved for the whole account, and only the ones the player changes are saved, so a later default change reaches everyone who never changed that setting. Values the 1.12.0 to 1.13.0 test builds saved on their own (60% and 1 s for moving) are dropped once, so those installs use the current defaults; other choices are kept.
 

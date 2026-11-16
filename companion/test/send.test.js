@@ -1019,9 +1019,9 @@ test('the chat window dims while moving and comes back after the delay, unless i
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
   const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
   assert.deepEqual(got, {
-    standing: '1.00', moving: '0.75', 'stopped0.5': '0.75', 'stopped1.3': '1.00', 'stopped2.2': '1.00',
-    openedMoving: '1.00', movingAgain: '0.75',
-    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.75', off: '1.00',
+    standing: '1.00', moving: '0.50', 'stopped0.5': '0.50', 'stopped1.3': '1.00', 'stopped2.2': '1.00',
+    openedMoving: '1.00', movingAgain: '0.50',
+    mouseOver: '1.00', typing: '1.00', talking: '1.00', taxi: '1.00', movingOnFoot: '0.50', off: '1.00',
   });
 });
 
@@ -1053,7 +1053,7 @@ test('fade settings: kept in range, previewed when changed, and on a page in Opt
     REG.opened = nil; SlashCmdList.FOREVERAICOMPANION("opciones"); r[#r + 1] = "es=" .. tostring(REG.opened)
     RESULT = table.concat(r, " ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'on 75/1 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
+  assert.equal(out, 'on 50/1 10/10 95/0.5 45 Forever AI Companion|true preview=0.30 after=1.00 30/2.5/false slash=42 es=42');
 });
 
 test('without the Settings API the page goes into the older Interface Options', () => {
@@ -1131,7 +1131,7 @@ test('combat settings: their own section of the page, kept in range and previewe
     r[#r + 1] = "saved=" .. tostring(ns.db.fade.opacity) .. "/" .. tostring(ns.db.fade.delay)
     RESULT = table.concat(r, " | ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 75/1 | saved=nil/nil');
+  assert.equal(out, 'true 30/2 | 10/10 | preview=0.20 | after=1.00 | 20/3.5/false | moving untouched true 50/1 | saved=nil/nil');
 });
 
 test('settings saved before combat dimming existed keep working', () => {
@@ -1168,7 +1168,7 @@ test('only changed fade settings are saved, so new defaults reach everyone else'
     r[#r + 1] = string.format("newDefault %g", ns.Fade:Settings().combatDelay)
     RESULT = table.concat(r, " | ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
-  assert.equal(out, 'migrated 75/1 | left=v | kept 45 false | chosen 60 | newDefault 3');
+  assert.equal(out, 'migrated 50/1 | left=v | kept 45 false | chosen 60 | newDefault 3');
 });
 
 // Compact answers: a small box instead of the window, gone after a while.

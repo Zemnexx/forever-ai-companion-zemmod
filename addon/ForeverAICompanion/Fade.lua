@@ -16,7 +16,7 @@ ns.Fade = Fade
 -- "enabled" / "opacity" / "delay": while moving (the names from before combat
 -- was added, so saved settings keep working).
 Fade.DEFAULTS = {
-  enabled = true, opacity = 75, delay = 1,
+  enabled = true, opacity = 50, delay = 1,
   combat = true, combatOpacity = 30, combatDelay = 2,
 }
 -- Values test builds 1.12.0 to 1.13.0 saved without the player choosing them.
