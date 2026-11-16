@@ -35,6 +35,41 @@ Upstream is https://github.com/lucasmenares/forever-ai-companion. For every pull
 - Never include `CLAUDE.md`. This file stays on this fork's own branches only.
 - Never open the pull request from `main` or the working branch.
 
+## Dropped from upstream (sync with upstream 1.11.1)
+
+This fork is Windows only, doesn't publish to CurseForge and doesn't build on GitHub Actions, so the sync with upstream 1.11.1 (upstream commit `98e5519`, merged on `sync-test-1.11.1` in `dc079f6`) left the following out. Any file can be brought back with `git checkout 98e5519 -- <path>`, or from upstream's newest `main`.
+
+### Deleted (upstream files)
+
+- **Mac version:** `companion/macos/` (App.swift, Voice.swift, Info.plist, VoiceInfo.plist, service.entitlements, voice.entitlements), `companion/scripts/build-mac.js`, `companion/src/mac-path.js`, `mac-shell.js`, `mac-update.js`, `mac-voice.js`, `companion/test/mac.test.js`.
+- **CurseForge upload:** `.github/workflows/curseforge.yml`, `companion/scripts/curseforge.mjs`.
+- **Windows build on GitHub Actions:** `.github/workflows/build-windows.yml`, `companion/scripts/smoke-windows.mjs`.
+- `companion/.DS_Store`: a stray macOS Finder file. Don't bring it back.
+
+### Kept at this fork's version (upstream's changes there were Mac only)
+
+- `companion/src/`: `secrets.js` (Keychain), `probe.js`, `screen-reader.js`, `config.js`, `detect.js`, `i18n.js` (Mac wording), `claude-code.js`, `codex.js` (Mac search, install and codesign check, and the Mac folder names in the disk search, which also skipped Windows folders such as `dev`), `updater.js` (the Mac zip), `app/system.js`, `app/server.js` (`show-window`, `screen-settings`).
+- `companion/test/`: `updater.test.js`, `codex-install.test.js`.
+- `app/main.js` and `app/controller.js` too, with upstream's Windows changes applied again: the quit guard and the log of uncaught errors in main.js, `VERSION` and `status.ai.issue` in controller.js.
+
+### Removed inside merged files
+
+- `app/ui.html`: the Mac wording (`I18N_MAC`, `isMacUI`, the `status.platform` switch), the Screen Recording permission row and its `screen` action, and the native-window check when the page closes.
+- `scripts/build.js`: the switch to build-mac.js on a Mac. `scripts/bundle.js`: its comment about the Mac build.
+- `package.json`: the `build:mac` and `curseforge` scripts and the `postject` dev dependency (with `commander` in package-lock.json).
+- `README.md`: the Mac download and "On a Mac" section, the Mac FAQ entries, the Mac notes on invisible sending, uninstalling, the file list and building, notarizing, the Actions build under releasing, and every CurseForge mention.
+- Kept on purpose: the addon's runtime checks for Mac clients (Live.lua, Voice.lua). They do nothing on Windows and keep the addon close to upstream.
+
+### For another pull request to upstream
+
+- The branch starts from upstream's `main` (see above), so everything listed here is already in it. Don't copy the files under "Kept at this fork's version" from this fork into it: that deletes upstream's Mac code. Apply this fork's changes on top of upstream's versions of those files instead.
+- This fork's changes that meet upstream's Mac, CurseForge or CI code:
+  - **Request code** (HMAC-SHA256 of the request id: `Core:AuthCode` in Core.lua, `request-key.js`, the check in `watcher.js`): the check runs in the shared Node service, so it covers the Mac app too. Upstream's smoke test would have to read `RequestKey.lua` after installing the addon and send a coded question with an addon-style id.
+  - **Voice questions**: the microphone helper is C# and Windows only, so they stay off on a Mac (`talkSettings` reports `supported: sys.isWindows`).
+  - **CurseForge**: the zip must never contain `RequestKey.lua`. A key made on the CI machine would go to every player, and CurseForge updates would replace each PC's own key. Leave it out and let the app write it.
+  - **Signed updates and guides**: upstream doesn't have them (they were left out of the first pull request). If they go in, the Mac zip needs its own `.sig`, `mac-update.js` has to check it, and the smoke test's update step must expect an unsigned update to be refused.
+- Normally kept out of a pull request: `CLAUDE.md`, `RELEASE_REPO` pointing at this fork (`companion/src/config.js`), this fork's version numbers, and `CHANGELOG.md` unless upstream wants one.
+
 ## Commits
 
 - End every commit message with exactly `Co-Authored-By: Claude Code`. No `Claude-Session` line and no model names. This replaces the default attribution.

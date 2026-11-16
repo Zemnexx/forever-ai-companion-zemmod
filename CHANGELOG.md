@@ -19,6 +19,7 @@ Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows o
 - **The Mac version**: the native app, its silent voice, Keychain-encrypted keys, Mac updates and the Mac build (with its `postject` build dependency). The addon's few runtime checks for Mac clients stay, so the addon stays close to upstream.
 - **The CurseForge upload** (script and workflow). This fork doesn't publish there, and the zip it built would have carried one PC's request key to every player.
 - Upstream's Mac folder names in the Codex disk search, which also made the Windows search skip folders named `dev`, `music`, `system` and so on.
+- **The GitHub Actions Windows build** (`.github/workflows/build-windows.yml`) and its smoke test (`scripts/smoke-windows.mjs`). Its test question carries no request code and its test update no signature, so it couldn't pass in this fork. `CLAUDE.md` lists everything left out and what a pull request to upstream would need back.
 
 ### Changed in this fork
 
@@ -28,10 +29,6 @@ Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows o
 - **Resends never become recordings.** A slow question is sent again as text only. Voice questions are never sent again and don't count against the voice. A resend doesn't open the window or the compact box.
 - The combat warning checks whether the game hid a value before comparing it, so it can't raise "secret value" errors.
 - Building: upstream moved the bundling step into `scripts/bundle.js`; the microphone helper is embedded there too.
-
-### Known issues
-
-- Upstream's GitHub Actions Windows build (`.github/workflows/build-windows.yml`, `scripts/smoke-windows.mjs`) is kept, but its smoke test expects an update without a signature, so it fails at that step in this fork, whose updates need one.
 
 ## 2.0.0 (addon 1.15.0)
 
