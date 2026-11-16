@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (addon 1.14.1)
+## 2.0.0 (addon 1.14.2)
 
 Based on app 1.9.0 and addon 1.10.3 (upstream commit `d85d47a`). This release:
 
@@ -49,6 +49,10 @@ Updates and guide downloads stay off until a signing key is in `TRUSTED_KEYS` (s
   - Moving defaults to on, 50% and 1 s; combat to on, 30% and 2 s.
   - A changed opacity is previewed on the window for a moment.
   - Settings are saved for the whole account, and only the ones the player changes are saved, so a later default change reaches everyone who never changed that setting. Values the 1.12.0 to 1.13.0 test builds saved on their own (60% and 1 s for moving) are dropped once, so those installs use the current defaults; other choices are kept.
+
+#### Fixed
+
+- **In combat, the window stayed fully visible after hovering it.** Holding a mouse button to turn the camera hides the cursor but leaves it where it was, often over the window, so the window kept counting as hovered. Hovering no longer counts while turning the camera. The compact answer box gets the same fix.
 
 ### Voice questions
 

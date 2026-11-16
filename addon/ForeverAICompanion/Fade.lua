@@ -88,10 +88,18 @@ local function fighting()
   return InCombatLockdown and InCombatLockdown() and true or false
 end
 
+-- The mouse is really on `frame`. Turning the camera with a mouse button held
+-- hides the cursor but leaves it where it was, often over the window (all the
+-- time in combat): that doesn't count.
+function Fade.Hovering(frame)
+  if IsMouselooking and IsMouselooking() then return false end
+  return frame ~= nil and frame.IsMouseOver ~= nil and frame:IsMouseOver() and true or false
+end
+
 -- The player is using the window: never dimmed.
 function Fade:InUse()
   local f = self.frame
-  if f and f.IsMouseOver and f:IsMouseOver() then return true end
+  if Fade.Hovering(f) then return true end
   local input = ns.UI and ns.UI.input
   if input and input.HasFocus and input:HasFocus() then return true end
   if ns.Core and ns.Core.listening then return true end

@@ -267,8 +267,10 @@ function Compact:Update(elapsed)
       self:Render()
     end
   end
-  -- The mouse on it keeps it up; after it leaves, a few more seconds.
-  if f:IsMouseOver() then
+  -- The mouse on it keeps it up; after it leaves, a few more seconds. (Not
+  -- while turning the camera with the mouse: the hidden cursor stays put.)
+  local mouselook = IsMouselooking and IsMouselooking()
+  if not mouselook and f:IsMouseOver() then
     self.hovered = true
     f:SetAlpha(1)
     if self.expires then self.countdown:SetText(L.COMPACT_HELD) end

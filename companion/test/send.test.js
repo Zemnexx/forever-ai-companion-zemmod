@@ -1294,3 +1294,36 @@ test('compact answers: problems show in the box, and the settings are on the opt
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
   assert.equal(out, 'combat: window=false message true ; gone=true ; true 20 ; 5 ; 60 ; slider=35 ; box=false ; true ; false');
 });
+
+test('turning the camera with the mouse over the window does not keep it from dimming (combat)', () => {
+  const out = runLua(`
+    COMBAT = false; MOUSELOOK = false
+    UnitAffectingCombat = function() return COMBAT end
+    InCombatLockdown = function() return COMBAT end
+    IsMouselooking = function() return MOUSELOOK end
+    START()
+    ns.UI:Show()
+    local r = {}
+    local function note(name) r[#r + 1] = name .. "=" .. A() end
+    COMBAT = true; TICK(0.6); note("fighting")
+    -- Hover: fully visible.
+    ns.UI.frame.IsMouseOver = function() return true end
+    TICK(0.5); note("hovered")
+    -- Hold a mouse button to turn: the hidden cursor is still over the window.
+    MOUSELOOK = true; TICK(0.6); note("turningCamera")
+    MOUSELOOK = false; TICK(0.5); note("cursorBack")
+    ns.UI.frame.IsMouseOver = function() return false end
+    TICK(0.6); note("mouseAway")
+    -- The compact box keeps counting down while the camera turns.
+    ns.Compact:Message("hello")
+    ns.Compact.frame.IsMouseOver = function() return true end
+    MOUSELOOK = true
+    for i = 1, 70 do NOW = NOW + 0.1; ns.Compact:Update(0.1) end
+    r[#r + 1] = "compactGone=" .. tostring(not ns.Compact:IsShown())
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS);
+  const got = Object.fromEntries(out.split(' ').map((p) => p.split('=')));
+  assert.deepEqual(got, {
+    fighting: '0.30', hovered: '1.00', turningCamera: '0.30', cursorBack: '1.00', mouseAway: '0.30', compactGone: 'true',
+  });
+});
