@@ -1,6 +1,6 @@
 # Voice questions (speech to text): scope
 
-Status: shipped in app 2.0.0 (addon 1.14.1) and tested on Windows. Branch: `vtt-feature` (from `security-hardening`).
+Status: in app 2.0.0 (addon 1.15.0). Tested on Windows with the earlier 2.0.0 test builds (addon 1.14.x); the build merged with upstream 1.10.1 hasn't been tested on Windows yet.
 
 ## Goal
 
