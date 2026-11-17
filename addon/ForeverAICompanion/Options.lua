@@ -1,6 +1,7 @@
 -- The addon's page in Options > AddOns ("Forever AI Companion"), also opened
--- by the gear in the chat window and by /ia options: dimming the window while
--- moving and in combat (Fade.lua), or the combat warning instead (ns.Combat in
+-- by the gear in the chat window and by /ia options: the window's style (the
+-- game's art or flat, see Themes in UI.lua), dimming the window while moving
+-- and in combat (Fade.lua), or the combat warning instead (ns.Combat in
 -- UI.lua), and compact answers (Compact.lua).
 --
 -- Controls are built by hand (no option templates, which differ between game
@@ -123,6 +124,32 @@ local function section(panel, anchor, dx, keys, text, gap)
   return { enabled = enabled, opacity = opacity, delay = delay, opacityText = opacityText, delayText = delayText, show = show, bottom = delay }
 end
 
+-- The window's style: the game's own art (the default) or flat and minimal.
+-- Ticking one unticks the other; the window changes right away.
+local function themeSection(parent, anchor)
+  local heading = label(parent, "GameFontNormal", L.THEME_HEADING)
+  heading:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -20)
+  local wow = checkbox(parent, L.THEME_WOW)
+  wow:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -4, -6)
+  local flat = checkbox(parent, L.THEME_FLAT)
+  flat:SetPoint("TOPLEFT", wow, "BOTTOMLEFT", 0, -2)
+  local tip = label(parent, "GameFontDisableSmall", L.THEME_TIP)
+  tip:SetPoint("TOPLEFT", flat, "BOTTOMLEFT", 30, 0)
+  tip:SetWidth(WIDTH + 100)
+  local function show()
+    local current = ns.UI and ns.UI.Theme and ns.UI:Theme() or "wow"
+    wow:SetChecked(current == "wow")
+    flat:SetChecked(current == "flat")
+  end
+  local function pick(name)
+    if ns.UI and ns.UI.SetTheme then ns.UI:SetTheme(name) end
+    show()
+  end
+  wow:SetScript("OnClick", function() pick("wow") end)
+  flat:SetScript("OnClick", function() pick("flat") end)
+  return { wow = wow, flat = flat, show = show, bottom = tip }
+end
+
 -- The compact answers section: on/off and how long an answer stays up.
 local function compactSection(parent, anchor)
   local Compact = ns.Compact
@@ -172,7 +199,7 @@ function Options:Build(panel)
   scroll:SetPoint("TOPLEFT", 0, -4)
   scroll:SetPoint("BOTTOMRIGHT", -28, 4)
   local content = CreateFrame("Frame", nil, scroll)
-  content:SetSize(WIDTH + 180, 900)
+  content:SetSize(WIDTH + 180, 1000)
   scroll:SetScrollChild(content)
 
   local title = label(content, "GameFontNormalLarge", L.OPTIONS_TITLE)
@@ -181,7 +208,8 @@ function Options:Build(panel)
   intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
   intro:SetWidth(WIDTH + 140)
 
-  local move = section(content, intro, 0, { enabled = "enabled", opacity = "opacity", delay = "delay" }, {
+  local theme = themeSection(content, intro)
+  local move = section(content, theme.bottom, -26, { enabled = "enabled", opacity = "opacity", delay = "delay" }, {
     heading = "FADE_HEADING", enable = "FADE_ENABLE", tip = "FADE_ENABLE_TIP", opacity = "FADE_OPACITY", delay = "FADE_DELAY",
   }, 20)
   local combat = section(content, move.bottom, -4, { enabled = "combat", opacity = "combatOpacity", delay = "combatDelay" }, {
@@ -202,6 +230,7 @@ function Options:Build(panel)
   local compact = ns.Compact and compactSection(content, note)
 
   local function show()
+    theme.show()
     move.show()
     combat.show()
     warn:SetChecked(ns.Fade:Settings().combatWarn)
@@ -214,6 +243,7 @@ function Options:Build(panel)
   panel:SetScript("OnShow", show)
   panel.refresh = show -- older Interface Options call this
   self.controls = move
+  self.themeControls = theme
   self.combatControls = combat
   self.combatWarnControl = warn
   self.compactControls = compact

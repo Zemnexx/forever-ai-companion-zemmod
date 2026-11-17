@@ -24,6 +24,9 @@ const FAKE_UI = `
       if k == "IsShown" then return function(self) return self.shown end end
       if k == "SetShown" then return function(self, v) self.shown = v end end
       if k == "SetColorTexture" then return function(self, r, g, b) self.color = { r, g, b } end end
+      if k == "SetBackdropColor" then return function(self, r, g, b, a) self.bg = { r, g, b, a } end end
+      if k == "SetBackdropBorderColor" then return function(self, r, g, b, a) self.edge = { r, g, b, a } end end
+      if k == "SetTextColor" then return function(self, r, g, b) self.textColor = { r, g, b } end end
       if k == "CreateTexture" then return function(self) local t = newRegion("Texture", self); TEXTURES[#TEXTURES + 1] = t; return t end end
       if k == "CreateFontString" then return function(self) return newRegion("FontString", self) end end
       if k == "SetScript" then return function(self, name, fn) self.scripts[name] = fn end end
@@ -1681,6 +1684,69 @@ test('compact answers: problems show in the box, and the settings are on the opt
     RESULT = table.concat(r, " ; ")
   `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
   assert.equal(out, 'busy: window=false message true ; gone=true ; true 20 ; 5 ; 60 ; slider=35 ; box=false ; true ; false');
+});
+
+// The window's style: the game's own art (default) or flat and minimal.
+const LOOK = `
+  local function rgb(c) return c and string.format("%.2f,%.2f,%.2f", c[1], c[2], c[3]) or "nil" end
+  function LOOK(name)
+    local U = ns.UI
+    local row, bubble = U.rows[1], U.bubbles[1]
+    return table.concat({
+      name, U:Theme(),
+      "banner=" .. tostring(U.banner.shown),
+      "close=" .. tostring(U.closeButton.shown) .. "/" .. tostring(U.flatClose.shown),
+      "ring=" .. tostring(U.portrait.ring.shown),
+      "side=" .. rgb(U.side.bg),
+      "composer=" .. rgb(U.composer.bg),
+      "send=" .. tostring(U.sendButton.flatBg.shown) .. ":" .. rgb(U.sendButton.flatBg.color),
+      "line=" .. rgb(U.headerLine.color),
+      "row=" .. tostring(row.selected.shown) .. "/" .. tostring(row.flatSel.shown) .. "/" .. tostring(row.flatBar.shown),
+      "you=" .. rgb(bubble.box.bg),
+    }, " ")
+  end
+`;
+const WOW_LOOK = 'banner=true close=true/false ring=true side=0.00,0.00,0.00 composer=0.00,0.00,0.00 send=false:0.17,0.45,0.88 line=0.78,0.64,0.38 row=true/false/false you=0.09,0.27,0.34';
+const FLAT_LOOK = 'banner=false close=false/true ring=false side=0.09,0.10,0.12 composer=0.05,0.06,0.07 send=true:0.17,0.45,0.88 line=0.20,0.22,0.26 row=false/true/true you=0.12,0.27,0.48';
+
+test('window style: the WoW look by default; flat and minimal from the options, at once and both ways', () => {
+  const out = runLua(`
+    START()
+    ns.Personas:Set("fizzi")
+    ns.UI:Show()
+    ns.Core:Ask("¿Qué hago ahora?")
+    ns.UI:Refresh()
+    local r = { LOOK("default") }
+    -- Options > AddOns > Forever AI Companion > Window style.
+    local t = ns.Options.themeControls
+    t.flat:GetScript("OnClick")(t.flat)
+    r[#r + 1] = LOOK("flat")
+    r[#r + 1] = "saved=" .. tostring(ns.db.ui.theme) .. " boxes=" .. tostring(t.wow.checked) .. "/" .. tostring(t.flat.checked)
+    t.wow:GetScript("OnClick")(t.wow)
+    r[#r + 1] = LOOK("back")
+    RESULT = table.concat(r, "|")
+  `, {}, COMBAT_FILES, FAKE_UI + PRELUDE_DRIVE + LOOK + `
+    CHECKED = {}
+  `);
+  const [first, flat, saved, back] = out.split('|');
+  assert.equal(first, `default wow ${WOW_LOOK}`);
+  assert.equal(flat, `flat flat ${FLAT_LOOK}`, 'every part repainted, without /reload');
+  assert.match(saved, /^saved=flat/);
+  assert.equal(back, `back wow ${WOW_LOOK}`, 'and back to the game\'s art');
+});
+
+test('window style: a saved flat look is there when the window first opens, the copy window too', () => {
+  const out = runLua(`
+    ForeverAICompanion_DB = { ui = { theme = "flat" } }
+    START()
+    ns.Personas:Set("fizzi")
+    ns.UI:Show()
+    ns.Core:Ask("¿Qué hago ahora?")
+    ns.UI:Refresh()
+    ns.UI:ShowCopy("texto")
+    RESULT = LOOK("login")
+  `, {}, COMBAT_FILES, FAKE_UI + PRELUDE_DRIVE + LOOK);
+  assert.equal(out, `login flat ${FLAT_LOOK}`);
 });
 
 test('turning the camera with the mouse over the window does not keep it from dimming (combat)', () => {

@@ -4,6 +4,8 @@
 -- title banner, a round portrait with a gold ring in the corner, the red close
 -- button and red panel buttons. Chats on the left; on the right the
 -- conversation as messages with avatars, like the in-game messengers.
+-- A second look, "flat" (dark, flat and minimal, with blue highlights), is a
+-- choice in Options > AddOns: see "Themes" below.
 local _, ns = ...
 local L = ns.L
 
@@ -70,7 +72,7 @@ loadPalette(ns.Personas.list.fizzi)
 
 local painted = setmetatable({}, { __mode = "k" })
 
-local DEFAULTS = { width = 860, height = 600, fontSize = 13, sidebar = true }
+local DEFAULTS = { width = 860, height = 600, fontSize = 13, sidebar = true, theme = "wow" }
 local MIN_W, MIN_H = 600, 430
 local SIDEBAR_W = 220
 local TOP_H = 64          -- room for the banner, the portrait and the tools
@@ -218,23 +220,107 @@ local function panel(frame, edge, bg, edgeSize)
   frame:SetBackdropBorderColor(edge[1], edge[2], edge[3], edge[4] or 1)
 end
 
+-- Themes -----------------------------------------------------------------------
+-- Two looks, picked in Options > AddOns (Options.lua) and saved with the
+-- window's settings: "wow" (the default), the game's own art described at the
+-- top, and "flat": dark, flat and minimal, with blue highlights. Switching
+-- repaints the window at once. Each part registers how it paints itself in
+-- each look (onTheme); the parts drawn on every refresh (chat rows, messages)
+-- look at flat() as they draw. Only the look changes: every feature stays.
+
+local FLAT = {
+  window    = { 0.067, 0.075, 0.09, 0.97 },
+  border    = { 0.18, 0.2, 0.24, 1 },
+  panel     = { 0.09, 0.1, 0.12, 0.96 },
+  input     = { 0.05, 0.056, 0.068, 1 },
+  chip      = { 0.12, 0.135, 0.16, 1 },
+  user      = { 0.12, 0.27, 0.48, 0.95 },
+  ai        = { 0.13, 0.145, 0.17, 0.95 },
+  error     = { 0.3, 0.085, 0.085, 0.92 },
+  errorEdge = { 0.62, 0.22, 0.2, 1 },
+  line      = { 0.2, 0.22, 0.26, 1 },
+  accent    = { 0.24, 0.58, 1, 1 },
+  select    = { 0.24, 0.58, 1, 0.16 },
+  hover     = { 1, 1, 1, 0.06 },
+  button    = { 0.16, 0.175, 0.21, 1 },
+  primary   = { 0.17, 0.45, 0.88, 1 },
+  text      = { 0.9, 0.92, 0.95, 1 },
+  muted     = { 0.56, 0.6, 0.66, 1 },
+}
+UI.FLAT = FLAT
+UI.THEMES = { "wow", "flat" }
+local ACCENT_TEXT = "|cff3d94ff" -- FLAT.accent, as a text color code
+
+local themers = {}
+local function flat() return settings().theme == "flat" end
+
+-- Registers how fn(isFlat) paints a part, and paints it now.
+local function onTheme(fn)
+  themers[#themers + 1] = fn
+  fn(flat())
+end
+
+-- A solid fill with a 1-pixel edge (the fill's own color without `edge`).
+local function flatPanel(frame, bg, edge)
+  if not frame.SetBackdrop then return end
+  frame:SetBackdrop({ bgFile = ART.white, edgeFile = ART.white, edgeSize = 1, insets = { left = 1, right = 1, top = 1, bottom = 1 } })
+  frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
+  edge = edge or bg
+  frame:SetBackdropBorderColor(edge[1], edge[2], edge[3], edge[4] or 1)
+end
+
+-- Each kind of panel in the flat look: its fill, and its edge if it has one.
+local FLAT_PANELS = {
+  panel = { "panel", "border" }, input = { "input", "border" }, chip = { "chip" }, card = { "chip", "border" },
+  user = { "user" }, ai = { "ai" }, error = { "error", "errorEdge" },
+}
+local function paintPanel(frame, isFlat, role, edge, bg, edgeSize)
+  if isFlat then
+    local look = FLAT_PANELS[role] or FLAT_PANELS.panel
+    flatPanel(frame, FLAT[look[1]], look[2] and FLAT[look[2]])
+  else
+    panel(frame, edge, bg, edgeSize)
+  end
+end
+
+-- panel() in both looks: the WoW look with these colors, the flat one of `role`.
+local function themedPanel(frame, role, edge, bg, edgeSize)
+  onTheme(function(isFlat) paintPanel(frame, isFlat, role, edge, bg, edgeSize) end)
+end
+
+local function textColor(fs, c) fs:SetTextColor(c[1], c[2], c[3]) end
+
 -- The big window look: dark base, rock texture and the gold dialog border.
+-- Flat: one solid color inside a 1-pixel edge.
 local function dialog(frame)
   local base = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
-  base:SetPoint("TOPLEFT", 6, -6)
-  base:SetPoint("BOTTOMRIGHT", -6, 6)
-  base:SetColorTexture(0.06, 0.055, 0.05, 0.97)
+  local rock
   if ART.rock then
-    local rock = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    rock = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
     rock:SetPoint("TOPLEFT", 6, -6)
     rock:SetPoint("BOTTOMRIGHT", -6, 6)
     rock:SetTexture(ART.rock, "REPEAT", "REPEAT")
     if rock.SetHorizTile then rock:SetHorizTile(true); rock:SetVertTile(true) end
     rock:SetVertexColor(0.55, 0.55, 0.55, 1)
   end
-  if frame.SetBackdrop then
-    frame:SetBackdrop({ edgeFile = ART.border, edgeSize = 26, insets = { left = 6, right = 6, top = 6, bottom = 6 } })
-  end
+  onTheme(function(isFlat)
+    local inset = isFlat and 1 or 6
+    base:ClearAllPoints()
+    base:SetPoint("TOPLEFT", inset, -inset)
+    base:SetPoint("BOTTOMRIGHT", -inset, inset)
+    local c = isFlat and FLAT.window or { 0.06, 0.055, 0.05, 0.97 }
+    base:SetColorTexture(c[1], c[2], c[3], c[4])
+    if rock then rock:SetShown(not isFlat) end
+    if frame.SetBackdrop then
+      if isFlat then
+        frame:SetBackdrop({ edgeFile = ART.white, edgeSize = 1 })
+        frame:SetBackdropBorderColor(FLAT.border[1], FLAT.border[2], FLAT.border[3], FLAT.border[4])
+      else
+        frame:SetBackdrop({ edgeFile = ART.border, edgeSize = 26, insets = { left = 6, right = 6, top = 6, bottom = 6 } })
+        frame:SetBackdropBorderColor(1, 1, 1, 1)
+      end
+    end
+  end)
 end
 
 -- Round picture inside the gold minimap ring (proportions as LibDBIcon).
@@ -254,7 +340,12 @@ local function ringedPortrait(parent, size)
   ring:SetTexture(ART.ring)
   ring:SetSize(size * 1.62, size * 1.62)
   ring:SetPoint("TOPLEFT")
-  h.icon, h.ring = icon, ring
+  h.icon, h.ring, h.disc = icon, ring, disc
+  -- Flat: just the round picture.
+  onTheme(function(isFlat)
+    ring:SetShown(not isFlat)
+    disc:SetShown(not isFlat)
+  end)
   return h
 end
 
@@ -266,15 +357,45 @@ local function avatar(parent, size)
   return t
 end
 
--- The game's red button with gold text.
-local function panelButton(parent, label, width, height)
+-- The game's red button with gold text. Flat: a plain dark button, or blue
+-- for the main action (`primary`), lighter under the mouse.
+local function panelButton(parent, label, width, height, primary)
   local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
   b:SetSize(width, height)
   b:SetText(label)
+  local bg = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+  bg:SetAllPoints()
+  local hl = b:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  b.flatBg = bg
+  -- The template's own art (its three pieces and state textures).
+  local art = {}
+  for _, key in ipairs({ "Left", "Middle", "Right" }) do
+    if type(b[key]) == "table" then art[#art + 1] = b[key] end
+  end
+  for _, get in ipairs({ "GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture" }) do
+    local t = b[get] and b[get](b)
+    if t then art[#art + 1] = t end
+  end
+  onTheme(function(isFlat)
+    for _, t in ipairs(art) do t:SetAlpha(isFlat and 0 or 1) end
+    local c = primary and FLAT.primary or FLAT.button
+    bg:SetColorTexture(c[1], c[2], c[3], c[4])
+    bg:SetShown(isFlat)
+    hl:SetColorTexture(1, 1, 1, isFlat and 0.08 or 0)
+    if b.SetNormalFontObject and GameFontNormal then
+      b:SetNormalFontObject(isFlat and GameFontHighlight or GameFontNormal)
+      b:SetHighlightFontObject(GameFontHighlight)
+    end
+  end)
   return b
 end
 
--- Text-only button (gold, brightens on hover).
+-- Text-only button: gold, brightens on hover. Flat: grey, blue on hover.
+local function linkColors()
+  if flat() then return FLAT.muted, FLAT.accent end
+  return GOLD, { 1, 1, 1 }
+end
 local function linkButton(parent, label, width, height, font)
   local b = CreateFrame("Button", nil, parent)
   b:SetSize(width, height)
@@ -282,9 +403,70 @@ local function linkButton(parent, label, width, height, font)
   fs:SetPoint("CENTER")
   fs:SetText(label)
   b.label = fs
-  b:SetScript("OnEnter", function() fs:SetTextColor(1, 1, 1) end)
-  b:SetScript("OnLeave", function() fs:SetTextColor(GOLD[1], GOLD[2], GOLD[3]) end)
+  local function paint(over)
+    local normal, hover = linkColors()
+    textColor(fs, over and hover or normal)
+  end
+  b:SetScript("OnEnter", function() paint(true) end)
+  b:SetScript("OnLeave", function() paint(false) end)
+  onTheme(function() paint(false) end)
   return b
+end
+
+-- The red close button; flat: a plain "x" (`flatY`: its distance from the top).
+local function closeButtons(frame, onClick, flatY)
+  local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", -3, -3)
+  local x = linkButton(frame, "x", 24, 24, "GameFontHighlightLarge")
+  x:SetPoint("TOPRIGHT", -8, -(flatY or 8))
+  local function hide() frame:Hide() end
+  close:SetScript("OnClick", onClick or hide)
+  x:SetScript("OnClick", onClick or hide)
+  onTheme(function(isFlat)
+    close:SetShown(not isFlat)
+    x:SetShown(isFlat)
+  end)
+  return close, x
+end
+
+-- Scroll bars, flat: a thin grey thumb and no arrow buttons (the mouse wheel
+-- and dragging still work). Left alone where the game builds them differently.
+local unpackArgs = unpack or table.unpack
+local function child(t, key, globalName)
+  local v = type(t) == "table" and t[key] or nil
+  if type(v) ~= "table" and globalName then v = _G[globalName] end
+  return type(v) == "table" and v or nil
+end
+local function themedScroll(scroll)
+  local name = scroll.GetName and scroll:GetName()
+  local bar = child(scroll, "ScrollBar", name and (name .. "ScrollBar"))
+  if not bar then return end
+  local barName = bar.GetName and bar:GetName()
+  local up = child(bar, "ScrollUpButton", barName and (barName .. "ScrollUpButton"))
+  local down = child(bar, "ScrollDownButton", barName and (barName .. "ScrollDownButton"))
+  local thumb = child(bar, "ThumbTexture", barName and (barName .. "ThumbTexture"))
+  local orig
+  if thumb then
+    pcall(function()
+      local coords = { thumb:GetTexCoord() }
+      orig = { file = thumb:GetTexture(), coords = #coords > 0 and coords or nil, w = thumb:GetWidth() }
+    end)
+  end
+  onTheme(function(isFlat)
+    pcall(function()
+      if up then up:SetAlpha(isFlat and 0 or 1) end
+      if down then down:SetAlpha(isFlat and 0 or 1) end
+      if not thumb then return end
+      if isFlat then
+        thumb:SetColorTexture(FLAT.muted[1], FLAT.muted[2], FLAT.muted[3], 0.5)
+        thumb:SetWidth(5)
+      elseif orig and orig.file then
+        thumb:SetTexture(orig.file)
+        if orig.coords then thumb:SetTexCoord(unpackArgs(orig.coords)) end
+        if orig.w and orig.w > 0 then thumb:SetWidth(orig.w) end
+      end
+    end)
+  end)
 end
 
 local function tooltip(frame, title, text)
@@ -413,18 +595,27 @@ function UI:Build()
   f:SetScript("OnDragStart", function() f:StartMoving() end)
   f:SetScript("OnDragStop", function() f:StopMovingOrSizing(); savePosition() end)
 
-  -- Title banner on the top edge, like the classic option windows.
+  -- Title banner on the top edge, like the classic option windows. Flat: just
+  -- the name, small and grey, at the top.
   local banner = f:CreateTexture(nil, "ARTWORK")
   banner:SetTexture(ART.banner)
   banner:SetSize(300, 64)
   banner:SetPoint("TOP", 0, 12)
   local bannerTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  bannerTitle:SetPoint("TOP", banner, "TOP", 0, -14)
   bannerTitle:SetText(L.WINDOW_TITLE)
+  onTheme(function(isFlat)
+    banner:SetShown(not isFlat)
+    bannerTitle:ClearAllPoints()
+    if isFlat then
+      bannerTitle:SetPoint("TOP", 0, -10)
+      textColor(bannerTitle, FLAT.muted)
+    else
+      bannerTitle:SetPoint("TOP", banner, "TOP", 0, -14)
+      textColor(bannerTitle, GOLD)
+    end
+  end)
 
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -3, -3)
-  close:SetScript("OnClick", function() f:Hide() end)
+  local close, flatClose = closeButtons(f, function() f:Hide() end, 19)
 
   -- The assistant: round portrait with a gold ring over the corner, name and
   -- role beside it. Click either to change assistant.
@@ -443,6 +634,22 @@ function UI:Build()
   who:SetScript("OnClick", function() UI:ShowChooser() end)
   tooltip(who, L.CHANGE_ASSISTANT, L.CHANGE_ASSISTANT_TIP)
   self.logo, self.appName, self.tagline = portrait.icon, appName, tagline
+  -- Flat: a small round portrait inside the top bar, the name beside it.
+  onTheme(function(isFlat)
+    local size = isFlat and 36 or 84
+    local icon = isFlat and 36 or 84 * 0.64
+    portrait:SetSize(size, size)
+    portrait.icon:SetSize(icon, icon)
+    portrait:ClearAllPoints()
+    who:ClearAllPoints()
+    if isFlat then
+      portrait:SetPoint("TOPLEFT", 14, -14)
+      who:SetPoint("TOPLEFT", 60, -16)
+    else
+      portrait:SetPoint("TOPLEFT", -22, 20)
+      who:SetPoint("TOPLEFT", 66, -26)
+    end
+  end)
 
   -- Tools on the right of the top bar.
   local bigger = panelButton(f, "A+", 34, 22)
@@ -467,13 +674,24 @@ function UI:Build()
     if not (ns.Options and ns.Options:Open()) then UI:SetStatus(L.OPTIONS_UNAVAILABLE) end
   end)
   tooltip(gear, L.OPTIONS_TITLE, L.OPTIONS_TIP)
+  -- Flat: the tools line up with the plain close button, the gear in grey.
+  onTheme(function(isFlat)
+    bigger:ClearAllPoints()
+    if isFlat then bigger:SetPoint("TOPRIGHT", -38, -20) else bigger:SetPoint("TOPRIGHT", -36, -32) end
+    local t = gear.GetNormalTexture and gear:GetNormalTexture()
+    if t then
+      if t.SetDesaturated then t:SetDesaturated(isFlat) end
+      local v = isFlat and 0.8 or 1
+      t:SetVertexColor(v, v, v, 1)
+    end
+  end)
 
   -- Sidebar --------------------------------------------------------------------
   local side = newFrame("Frame", nil, f)
   side:SetPoint("TOPLEFT", 12, -TOP_H)
   side:SetPoint("BOTTOMLEFT", 12, 12)
   side:SetWidth(SIDEBAR_W)
-  panel(side)
+  themedPanel(side, "panel")
 
   local newChat = panelButton(side, L.NEW_CHAT_BUTTON, SIDEBAR_W - 20, 26)
   newChat:SetPoint("TOP", 0, -10)
@@ -490,6 +708,7 @@ function UI:Build()
   local list = CreateFrame("Frame", nil, listScroll)
   list:SetSize(SIDEBAR_W - 34, 10)
   listScroll:SetScrollChild(list)
+  themedScroll(listScroll)
 
   local myData = linkButton(side, L.MY_DATA, SIDEBAR_W - 20, 22)
   myData:SetPoint("BOTTOM", 0, 8)
@@ -500,7 +719,7 @@ function UI:Build()
   local main = newFrame("Frame", nil, f)
   main:SetPoint("TOPRIGHT", -12, -TOP_H)
   main:SetPoint("BOTTOMRIGHT", -12, 12)
-  panel(main)
+  themedPanel(main, "panel")
 
   -- Chat header: title (click to rename), connection line, delete.
   local titleBtn = CreateFrame("Button", nil, main)
@@ -515,7 +734,10 @@ function UI:Build()
   if title.SetWordWrap then title:SetWordWrap(false) end
   local titleHl = titleBtn:CreateTexture(nil, "HIGHLIGHT")
   titleHl:SetAllPoints()
-  titleHl:SetColorTexture(1, 0.82, 0, 0.06)
+  onTheme(function(isFlat)
+    if isFlat then titleHl:SetColorTexture(FLAT.accent[1], FLAT.accent[2], FLAT.accent[3], 0.08)
+    else titleHl:SetColorTexture(1, 0.82, 0, 0.06) end
+  end)
   tooltip(titleBtn, L.RENAME_CHAT, L.RENAME_CHAT_TIP)
 
   local renameBox = newFrame("EditBox", nil, main)
@@ -524,7 +746,7 @@ function UI:Build()
   renameBox:SetAutoFocus(false)
   renameBox:SetMaxLetters(60)
   renameBox:SetTextInsets(6, 6, 0, 0)
-  panel(renameBox, EDGE_GOLD, { 0, 0, 0, 0.8 }, 12)
+  themedPanel(renameBox, "input", EDGE_GOLD, { 0, 0, 0, 0.8 }, 12)
   renameBox:Hide()
   local function finishRename(save)
     if save then ns.Chats:Rename(ns.db.currentChat, renameBox:GetText()) end
@@ -577,7 +799,10 @@ function UI:Build()
   headerLine:SetPoint("TOPLEFT", 8, -54)
   headerLine:SetPoint("TOPRIGHT", -8, -54)
   headerLine:SetHeight(1)
-  headerLine:SetColorTexture(EDGE_GOLD[1], EDGE_GOLD[2], EDGE_GOLD[3], 0.35)
+  onTheme(function(isFlat)
+    if isFlat then headerLine:SetColorTexture(FLAT.line[1], FLAT.line[2], FLAT.line[3], 1)
+    else headerLine:SetColorTexture(EDGE_GOLD[1], EDGE_GOLD[2], EDGE_GOLD[3], 0.35) end
+  end)
 
   -- Messages.
   local scroll = CreateFrame("ScrollFrame", "ForeverAICompanionScroll", main, "UIPanelScrollFrameTemplate")
@@ -586,16 +811,18 @@ function UI:Build()
   local content = CreateFrame("Frame", nil, scroll)
   content:SetSize(400, 10)
   scroll:SetScrollChild(content)
+  themedScroll(scroll)
   scroll:SetScript("OnSizeChanged", function() UI:RefreshConversation() end)
 
-  -- Composer: gold-edged text box and the red "Send" button.
+  -- Composer: gold-edged text box and the red "Send" button (flat: a dark box
+  -- edged in blue while typing, and a blue Send).
   local composer = newFrame("Frame", nil, main)
   composer:SetPoint("BOTTOMLEFT", 10, 28)
   composer:SetPoint("BOTTOMRIGHT", -100, 28)
   composer:SetHeight(32)
-  panel(composer, EDGE_GOLD, { 0, 0, 0, 0.65 }, 12)
+  themedPanel(composer, "input", EDGE_GOLD, { 0, 0, 0, 0.65 }, 12)
 
-  local send = panelButton(main, L.SEND, 84, 28)
+  local send = panelButton(main, L.SEND, 84, 28, true)
   send:SetPoint("LEFT", composer, "RIGHT", 6, 0)
   send:SetScript("OnClick", function() UI:Submit() end)
 
@@ -630,6 +857,12 @@ function UI:Build()
   end)
   input:SetScript("OnEnterPressed", function() UI:Submit() end)
   input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+  input:HookScript("OnEditFocusGained", function()
+    if flat() and composer.SetBackdropBorderColor then composer:SetBackdropBorderColor(FLAT.accent[1], FLAT.accent[2], FLAT.accent[3], 1) end
+  end)
+  input:HookScript("OnEditFocusLost", function()
+    if flat() and composer.SetBackdropBorderColor then composer:SetBackdropBorderColor(FLAT.border[1], FLAT.border[2], FLAT.border[3], 1) end
+  end)
   composer:EnableMouse(true)
   composer:SetScript("OnMouseDown", function() input:SetFocus() end)
 
@@ -650,6 +883,7 @@ function UI:Build()
   status:SetPoint("BOTTOMLEFT", 14, 10)
   status:SetPoint("RIGHT", usage, "LEFT", -12, 0)
   status:SetJustifyH("LEFT")
+  onTheme(function(isFlat) textColor(status, isFlat and FLAT.text or GOLD) end)
 
   -- Resize grip.
   local grip = CreateFrame("Button", nil, f)
@@ -690,6 +924,8 @@ function UI:Build()
   end)
 
   self.frame, self.side, self.main = f, side, main
+  self.banner, self.closeButton, self.flatClose, self.portrait = banner, close, flatClose, portrait
+  self.headerLine, self.composer, self.sendButton = headerLine, composer, send
   self.scroll, self.content, self.input = scroll, content, input
   self.list, self.listScroll = list, listScroll
   self.title, self.titleBtn, self.renameBox, self.deleteButton = title, titleBtn, renameBox, deleteChat
@@ -721,6 +957,18 @@ function UI:ApplyPersona(silent)
     self.welcome.sub:SetText(p.sub)
   end
   if not silent then self:Refresh() end
+end
+
+-- The window's look: "wow" (the default) or "flat". Switching repaints at once.
+function UI:Theme()
+  return flat() and "flat" or "wow"
+end
+
+function UI:SetTheme(name)
+  settings().theme = name == "flat" and "flat" or "wow"
+  local isFlat = flat()
+  for _, fn in ipairs(themers) do fn(isFlat) end
+  self:Refresh()
 end
 
 function UI:SetSidebar(shown, silent)
@@ -792,6 +1040,23 @@ function UI:Row(i)
   hl:SetTexture(ART.rowLight)
   if hl.SetBlendMode then hl:SetBlendMode("ADD") end
   hl:SetVertexColor(1, 0.82, 0.3, 0.35)
+  row.hl = hl
+  -- Flat: selected is a light blue fill with a blue bar on the left; the
+  -- mouse brings a faint highlight (shown by RefreshList for the look in use).
+  local flatSel = row:CreateTexture(nil, "BACKGROUND")
+  flatSel:SetAllPoints()
+  flatSel:SetColorTexture(FLAT.select[1], FLAT.select[2], FLAT.select[3], FLAT.select[4])
+  row.flatSel = flatSel
+  local flatBar = row:CreateTexture(nil, "ARTWORK")
+  flatBar:SetPoint("TOPLEFT")
+  flatBar:SetPoint("BOTTOMLEFT")
+  flatBar:SetWidth(2)
+  flatBar:SetColorTexture(FLAT.accent[1], FLAT.accent[2], FLAT.accent[3], 1)
+  row.flatBar = flatBar
+  local flatHl = row:CreateTexture(nil, "HIGHLIGHT")
+  flatHl:SetAllPoints()
+  flatHl:SetColorTexture(FLAT.hover[1], FLAT.hover[2], FLAT.hover[3], FLAT.hover[4])
+  row.flatHl = flatHl
 
   local face = avatar(row, AVATAR)
   face:SetPoint("LEFT", 4, 0)
@@ -860,6 +1125,7 @@ end
 function UI:RefreshList()
   local width = self.list:GetWidth()
   local p = persona()
+  local isFlat = flat()
   local y, rowIndex, headIndex, lastGroup = 0, 0, 0, nil
   for _, c in ipairs(ns.Chats:All()) do
     local group = dayGroup(c.updated)
@@ -885,12 +1151,16 @@ function UI:RefreshList()
     local pending = false
     for _, m in ipairs(c.messages) do if m.status == "pending" then pending = true break end end
     if not row.deleteBtn.confirm then
-      row.info:SetText(pending and ("|cffffd100" .. string.format(L.IS_TYPING, p.name) .. "|r")
+      row.info:SetText(pending and ((isFlat and ACCENT_TEXT or "|cffffd100") .. string.format(L.IS_TYPING, p.name) .. "|r")
         or string.format("%s · %d %s", stamp(c.updated), #c.messages, #c.messages == 1 and L.MESSAGE_ONE or L.MESSAGE_MANY))
     end
     local isCurrent = c.id == ns.db.currentChat
-    row.selected:SetShown(isCurrent)
-    if isCurrent then row.name:SetTextColor(1, 1, 1) else row.name:SetTextColor(GOLD[1], GOLD[2], GOLD[3]) end
+    row.selected:SetShown(isCurrent and not isFlat)
+    row.flatSel:SetShown(isCurrent and isFlat)
+    row.flatBar:SetShown(isCurrent and isFlat)
+    row.hl:SetAlpha(isFlat and 0 or 1)
+    row.flatHl:SetAlpha(isFlat and 1 or 0)
+    textColor(row.name, isCurrent and { 1, 1, 1 } or isFlat and FLAT.text or GOLD)
     row.dot:SetShown(c.unread and true or false)
     row:Show()
     y = y + ROW_H
@@ -1013,8 +1283,15 @@ function UI:PlaceBubble(i, y, kind, textValue, metaValue, onAction, actionLabel,
     b.action:SetPoint("LEFT", b.meta, "RIGHT", 6, 0)
   end
   b.box:SetSize(boxW, boxH)
-  local bg = mine and C.user or kind == "error" and C.error or { 0.02, 0.02, 0.02, 0.75 }
-  panel(b.box, kind == "error" and { 0.8, 0.3, 0.25, 0.9 } or EDGE_GOLD, bg, 12)
+  if flat() then
+    -- Flat: borderless boxes, blue for the player, grey for the assistant.
+    flatPanel(b.box, mine and FLAT.user or kind == "error" and FLAT.error or FLAT.ai, kind == "error" and FLAT.errorEdge or nil)
+    textColor(b.who, FLAT.text)
+  else
+    local bg = mine and C.user or kind == "error" and C.error or { 0.02, 0.02, 0.02, 0.75 }
+    panel(b.box, kind == "error" and { 0.8, 0.3, 0.25, 0.9 } or EDGE_GOLD, bg, 12)
+    textColor(b.who, GOLD)
+  end
   b.text:SetTextColor(1, 1, 1)
   if kind == "pending" then b.text:SetTextColor(0.75, 0.75, 0.75) end
   b.pending = kind == "pending"
@@ -1038,7 +1315,7 @@ end
 -- A suggested question, like a quest dialog option.
 local function makeChip(w)
   local chip = newFrame("Button", nil, w)
-  panel(chip, EDGE_DIM, { 0, 0, 0, 0.55 }, 12)
+  themedPanel(chip, "chip", EDGE_DIM, { 0, 0, 0, 0.55 }, 12)
   local icon = chip:CreateTexture(nil, "ARTWORK")
   icon:SetSize(14, 14)
   icon:SetPoint("LEFT", 10, 0)
@@ -1055,6 +1332,17 @@ local function makeChip(w)
   hl:SetTexture(ART.rowLight)
   if hl.SetBlendMode then hl:SetBlendMode("ADD") end
   hl:SetVertexColor(1, 0.82, 0.3, 0.4)
+  -- Flat: a blue tint under the mouse, a blue icon and light text.
+  local flatHl = chip:CreateTexture(nil, "HIGHLIGHT")
+  flatHl:SetAllPoints()
+  onTheme(function(isFlat)
+    hl:SetAlpha(isFlat and 0 or 1)
+    flatHl:SetColorTexture(FLAT.accent[1], FLAT.accent[2], FLAT.accent[3], isFlat and 0.12 or 0)
+    if icon.SetDesaturated then icon:SetDesaturated(isFlat) end
+    local ic = isFlat and FLAT.accent or { 1, 1, 1 }
+    icon:SetVertexColor(ic[1], ic[2], ic[3], 1)
+    textColor(fs, isFlat and FLAT.text or GOLD)
+  end)
   chip:SetScript("OnClick", function(self) if self.question then ns.Core:Ask(self.question) end end)
   return chip
 end
@@ -1097,11 +1385,14 @@ function UI:ShowWelcome()
     local context = w:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     context:SetJustifyH("CENTER")
     if context.SetWordWrap then context:SetWordWrap(true) end
-    context:SetTextColor(1, 0.82, 0.3)
     w.context = context
     local hint = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetText(L.WELCOME_HINT)
     w.hint = hint
+    onTheme(function(isFlat)
+      textColor(hello, isFlat and FLAT.text or GOLD)
+      textColor(context, isFlat and FLAT.accent or { 1, 0.82, 0.3 })
+    end)
     self.welcome = w
     self:ApplyPersona(true)
   end
@@ -1159,7 +1450,7 @@ local CARD_H = 262
 
 local function chooserCard(parent, p)
   local card = newFrame("Frame", nil, parent)
-  panel(card, EDGE_GOLD, { 0, 0, 0, 0.55 }, 14)
+  themedPanel(card, "card", EDGE_GOLD, { 0, 0, 0, 0.55 }, 14)
   local top = card:CreateTexture(nil, "BORDER")
   top:SetPoint("TOPLEFT", 4, -4)
   top:SetPoint("TOPRIGHT", -4, -4)
@@ -1190,7 +1481,7 @@ local function chooserCard(parent, p)
   sample:SetText(p.sample)
   card.sample = sample
 
-  local pick = panelButton(card, string.format(L.PICK_PERSONA, p.name), 150, 26)
+  local pick = panelButton(card, string.format(L.PICK_PERSONA, p.name), 150, 26, true)
   pick:SetPoint("BOTTOM", 0, 14)
   pick:SetScript("OnClick", function() UI:PickPersona(p.id) end)
   card.pick = pick
@@ -1213,6 +1504,7 @@ function UI:LayoutChooser()
     local title = ch:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     title:SetPoint("TOP", 0, -14)
     title:SetText(L.CHOOSER_TITLE)
+    onTheme(function(isFlat) textColor(title, isFlat and FLAT.text or GOLD) end)
     local sub = ch:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     sub:SetPoint("TOP", title, "BOTTOM", 0, -8)
     sub:SetJustifyH("CENTER")
@@ -1454,20 +1746,30 @@ function UI:ShowCopy(text, heading)
     banner:SetSize(360, 64)
     banner:SetPoint("TOP", 0, 12)
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", banner, "TOP", 0, -14)
     f.title = title
+    onTheme(function(isFlat)
+      banner:SetShown(not isFlat)
+      title:ClearAllPoints()
+      if isFlat then
+        title:SetPoint("TOPLEFT", 16, -12)
+        textColor(title, FLAT.text)
+      else
+        title:SetPoint("TOP", banner, "TOP", 0, -14)
+        textColor(title, GOLD)
+      end
+    end)
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("TOPLEFT", 18, -30)
     hint:SetText(L.COPY_HINT)
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -3, -3)
+    closeButtons(f, nil, 8)
     local inset = newFrame("Frame", nil, f)
     inset:SetPoint("TOPLEFT", 12, -48)
     inset:SetPoint("BOTTOMRIGHT", -12, 12)
-    panel(inset)
+    themedPanel(inset, "panel")
     local scroll = CreateFrame("ScrollFrame", "ForeverAICompanionCopyScroll", inset, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 10, -10)
     scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+    themedScroll(scroll)
     local edit = CreateFrame("EditBox", nil, scroll)
     edit:SetMultiLine(true)
     edit:SetFontObject(ChatFontNormal)
