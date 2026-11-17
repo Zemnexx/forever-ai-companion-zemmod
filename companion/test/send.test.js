@@ -1749,6 +1749,38 @@ test('window style: a saved flat look is there when the window first opens, the 
   assert.equal(out, `login flat ${FLAT_LOOK}`);
 });
 
+test('compact answers: the box is resized from its corner, keeps the size, and right-click goes back to automatic', () => {
+  const out = runLua(`
+    START()
+    ns.Compact:Set("enabled", true)
+    local C = ns.Compact
+    C:Message("hola")
+    local f, grip = C.frame, C.grip
+    local r = { "auto=" .. f.w .. "x" .. f.h }
+    -- Dragging the corner: the game resizes the frame as the mouse moves.
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    f.w, f.h = 520, 300
+    f.scripts.OnSizeChanged(f, 520, 300)
+    r[#r + 1] = "live=" .. C.text.w .. "," .. C.scroll.h
+    grip.scripts.OnMouseUp(grip, "LeftButton")
+    local s = ns.db.compact.size
+    r[#r + 1] = "saved=" .. s.w .. "x" .. s.h .. " frame=" .. f.w .. "x" .. f.h .. " text=" .. C.text.w .. " scroll=" .. C.scroll.w .. "x" .. C.scroll.h
+    -- The next time it shows: the same size (a long answer scrolls inside).
+    C:Hide()
+    C:Message("otra")
+    r[#r + 1] = "again=" .. f.w .. "x" .. f.h
+    -- Sizes out of range are kept in range.
+    ns.db.compact.size = { w = 5000, h = 10 }
+    C:Render()
+    r[#r + 1] = "clamped=" .. f.w .. "x" .. f.h
+    -- Right-click on the corner: the automatic size again.
+    grip.scripts.OnMouseUp(grip, "RightButton")
+    r[#r + 1] = "reset=" .. tostring(ns.db.compact.size) .. "," .. f.w .. "x" .. f.h
+    RESULT = table.concat(r, " ")
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
+  assert.equal(out, 'auto=380x84 live=476,230 saved=520x300 frame=520x300 text=476 scroll=480x230 again=520x300 clamped=900x110 reset=nil,380x84');
+});
+
 test('turning the camera with the mouse over the window does not keep it from dimming (combat)', () => {
   const out = runLua(`
     COMBAT = false; MOUSELOOK = false

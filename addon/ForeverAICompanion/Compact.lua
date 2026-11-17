@@ -3,8 +3,9 @@
 -- slightly see-through box shows "Listening...", then "Thinking...", then the
 -- answer for a while (20 s by default, set in Options) and goes away by itself.
 -- Hovering it keeps it up, item links in it work like in the chat, and it
--- can be dragged anywhere. The answer is in the chat as usual: the floating
--- button (or "Open in chat") shows it there.
+-- can be dragged anywhere and resized from its corner (right-click the corner
+-- to go back to the automatic size). The answer is in the chat as usual: the
+-- minimap button (or "Open in chat") shows it there.
 local _, ns = ...
 local L = ns.L
 
@@ -14,8 +15,10 @@ ns.Compact = Compact
 Compact.DEFAULTS = { enabled = false, seconds = 20 }
 Compact.MIN_SECONDS, Compact.MAX_SECONDS, Compact.SECONDS_STEP = 5, 60, 5
 
-local WIDTH = 380
-local MAX_TEXT = 240        -- tallest the answer gets before it scrolls
+local WIDTH = 380           -- until the player resizes it
+local MAX_TEXT = 240        -- tallest the answer gets before it scrolls (automatic size)
+local MIN_W, MIN_H = 240, 110
+local MAX_W, MAX_H = 900, 700
 local ALPHA = 0.85          -- see-through while the mouse is elsewhere
 local FADE = 0.6            -- seconds of fading out at the end
 local AFTER_HOVER = 5       -- seconds it stays at least, after the mouse leaves
@@ -56,6 +59,14 @@ function Compact:Toggle()
   return self:Settings().enabled
 end
 
+-- The size the player gave the box by dragging its corner, or nil: then it is
+-- WIDTH wide and as tall as the answer, up to MAX_TEXT before it scrolls.
+local function chosenSize()
+  local size = saved().size
+  if type(size) ~= "table" or not tonumber(size.w) or not tonumber(size.h) then return nil end
+  return max(MIN_W, min(MAX_W, floor(size.w))), max(MIN_H, min(MAX_H, floor(size.h)))
+end
+
 -- Asking right now goes to the box instead of opening the window.
 function Compact:Active()
   return self:Settings().enabled and not (ns.UI and ns.UI:IsShown())
@@ -82,6 +93,9 @@ function Compact:Build()
   f:SetFrameStrata("HIGH")
   f:SetClampedToScreen(true)
   f:SetMovable(true)
+  f:SetResizable(true)
+  if f.SetResizeBounds then f:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
+  elseif f.SetMinResize then f:SetMinResize(MIN_W, MIN_H); if f.SetMaxResize then f:SetMaxResize(MAX_W, MAX_H) end end
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function(self) self:StartMoving() end)
@@ -160,13 +174,48 @@ function Compact:Build()
   open:SetPoint("BOTTOMLEFT", 12, 9)
   open:SetScript("OnClick", function() Compact:OpenChat() end)
   local countdown = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  countdown:SetPoint("BOTTOMRIGHT", -12, 10)
+  countdown:SetPoint("BOTTOMRIGHT", -24, 10)
   countdown:SetJustifyH("RIGHT")
+
+  -- Resize corner: drag it to set the box's size, kept for next time.
+  -- Right-click: back to the automatic size.
+  local grip = CreateFrame("Button", nil, f)
+  grip:SetSize(16, 16)
+  grip:SetPoint("BOTTOMRIGHT", -3, 3)
+  grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+  grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+  grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+  grip:SetScript("OnMouseDown", function(_, button)
+    if button == "RightButton" then return end
+    Compact.sizing = true
+    f:StartSizing("BOTTOMRIGHT")
+  end)
+  grip:SetScript("OnMouseUp", function(_, button)
+    if button == "RightButton" then
+      saved().size = nil
+    elseif Compact.sizing then
+      Compact.sizing = false
+      f:StopMovingOrSizing()
+      saved().size = { w = floor(f:GetWidth() + 0.5), h = floor(f:GetHeight() + 0.5) }
+      local point, _, rel, x, y = f:GetPoint(1)
+      saved().pos = { point = point, rel = rel, x = x, y = y }
+    end
+    Compact:Render()
+  end)
+  grip:SetScript("OnEnter", function(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(L.COMPACT_RESIZE, 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  grip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  -- While the corner is dragged, the answer follows the new size.
+  f:SetScript("OnSizeChanged", function() if Compact.sizing then Compact:Render(true) end end)
 
   f:SetScript("OnUpdate", function(_, elapsed) Compact:Update(elapsed) end)
   f:Hide()
   self.frame, self.icon, self.title, self.question = f, icon, title, question
-  self.scroll, self.child, self.text, self.countdown = scroll, child, text, countdown
+  self.scroll, self.child, self.text, self.countdown, self.grip = scroll, child, text, countdown, grip
   self:Place()
 end
 
@@ -202,7 +251,9 @@ function Compact:View()
   return { state = "error", body = "|cffff6060" .. escape(e.answer or L.SOMETHING_WRONG) .. "|r", asked = asked }
 end
 
-function Compact:Render()
+-- live: the corner is being dragged, so the text follows the frame's size
+-- instead of setting it.
+function Compact:Render(live)
   local f = self.frame
   if not f then return end
   local v = self:View()
@@ -212,7 +263,11 @@ function Compact:Render()
   local chatTitle = self.chat and self.chat.title
   self.title:SetText((p.nameColor or "") .. (p.name or "") .. "|r"
     .. (chatTitle and ("  |cff999999" .. escape(chatTitle) .. "|r") or ""))
+  local chosenW, chosenH = chosenSize()
+  local w = live and floor(f:GetWidth() + 0.5) or chosenW or WIDTH
+  local boxH = live and floor(f:GetHeight() + 0.5) or chosenH
   local top = 36
+  self.question:SetWidth(w - 24)
   if v.asked then
     self.question:SetText(string.format(L.COMPACT_ASKED, v.asked))
     self.question:Show()
@@ -220,14 +275,23 @@ function Compact:Render()
   else
     self.question:Hide()
   end
+  self.text:SetWidth(w - 44)
+  self.child:SetWidth(w - 44)
   self.text:SetText(v.body)
   local h = max(14, self.text:GetStringHeight() or 14)
   self.child:SetHeight(h)
-  local shown = min(h, MAX_TEXT)
+  local shown
+  if boxH then
+    -- A size the player chose: the answer fills it and scrolls when longer.
+    shown = max(14, boxH - top - 34)
+  else
+    shown = min(h, MAX_TEXT)
+    boxH = top + shown + 34
+  end
   self.scroll:ClearAllPoints()
   self.scroll:SetPoint("TOPLEFT", 12, -top)
-  self.scroll:SetSize(WIDTH - 40, shown)
-  f:SetHeight(top + shown + 34)
+  self.scroll:SetSize(w - 40, shown)
+  if not live then f:SetSize(w, boxH) end
   if f.SetBackdropBorderColor then
     if v.state == "error" then f:SetBackdropBorderColor(0.9, 0.25, 0.2, 1) else f:SetBackdropBorderColor(1, 0.82, 0.3, 1) end
   end

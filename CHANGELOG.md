@@ -1,9 +1,10 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.1)
+## 2.1.2 (addon 1.16.2)
 
 ### Added
 
+- **The compact answer box can be resized.** Drag its bottom-right corner, from 240 to 900 pixels wide and 110 to 700 tall. It keeps that size the next time it opens, and a long answer scrolls inside it. Right-click the corner to go back to the automatic size (380 wide, as tall as the answer).
 - **A flat, minimal window style.** Options > AddOns > Forever AI Companion > Window style: **WoW style** (the game's own art, the default) or **Flat and minimal** (dark, with blue highlights). The chat window switches at once, without `/reload`, and the choice is kept for the whole account. Everything works the same in both: chats, messages and item links, suggestions, voice questions, compact answers, dimming and the combat warning.
   - Flat: solid dark panels with thin edges, the assistant's round portrait inside the top bar without its gold ring, blue for your messages, the selected chat and the Send button, a plain "x" to close, and thin scroll bars.
   - The compact answer box, the minimap button and the red combat warning keep their look.
