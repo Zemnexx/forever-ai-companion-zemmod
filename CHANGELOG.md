@@ -1,8 +1,8 @@
 # Changelog
 
-## Sync test with upstream 1.11.1 (app 1.11.1, addon 1.11.10)
+## 2.1.0 (addon 1.16.0)
 
-Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows only, on a test branch. It uses upstream's version numbers; 2.0 stays for this fork's main line, so the version goes back to 2.0.x when this is copied there.
+Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows only. It was tested on Windows first as a sync test build with upstream's version numbers (app 1.11.1, addon 1.11.10).
 
 ### Kept from upstream 1.11.0 and 1.11.1
 

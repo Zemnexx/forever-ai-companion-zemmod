@@ -1,6 +1,6 @@
 # Voice questions (speech to text): scope
 
-Status: in the fork's app 2.0.0 (addon 1.15.0), and in the sync test with upstream 1.11.1 (app 1.11.1, addon 1.11.10, upstream's numbering). Tested on Windows with the earlier 2.0.0 test builds (addon 1.14.x); the builds merged with upstream (1.10.1, 1.11.1) haven't been tested on Windows yet.
+Status: in app 2.1.0 (addon 1.16.0), which includes upstream 1.11.1. Tested on Windows with the 2.0.0 test builds (addon 1.14.x) and with the sync test build of upstream 1.11.1 (app 1.11.1, addon 1.11.10).
 
 ## Goal
 
