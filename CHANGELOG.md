@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.2)
+## 2.1.2 (addon 1.16.3)
 
 ### Added
 
@@ -24,6 +24,10 @@
   - hearthstone and rested XP, only for travel or leveling questions.
 
   A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
+
+### Fixed
+
+- **A spell cast from a macro no longer counts as missing from your bars.** The AI kept saying, for example, that Judgement wasn't on any bar when it was in a macro. The addon now reads which spells a macro casts: the one the game shows for it, and the names after `/cast`, `/use`, `/castsequence`, `/castrandom` and `#showtooltip`, without conditions like `[@mouseover]`, `reset=` or ranks.
 
 ## 2.1.0 (addon 1.16.0)
 

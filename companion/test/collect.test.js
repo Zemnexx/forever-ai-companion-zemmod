@@ -471,6 +471,38 @@ test('action bars with keys, and known spells that are on no bar', () => {
   assert.deepEqual(snap.spells, [{ tab: 'Marksmanship', spells: ['Arcane Shot (Rank 1)', 'Serpent Sting (Rank 1)', 'Aspect of the Hawk'], notLearned: ['Volley (level 40)'] }]);
 });
 
+test('a spell used only through a macro counts as on the bars', () => {
+  const extra = `
+    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+    local book = {
+      { name = "Judgement", itemType = 1 }, { name = "Seal of Command", subName = "Rank 2", itemType = 1 },
+      { name = "Crusader Strike", itemType = 1 }, { name = "Hammer of Wrath", subName = "Rank 1", itemType = 1 },
+      { name = "Holy Light", subName = "Rank 4", itemType = 1 }, { name = "Divine Shield", itemType = 1 },
+    }
+    C_SpellBook = {
+      GetNumSpellBookSkillLines = function() return 1 end,
+      GetSpellBookSkillLineInfo = function() return { name = "Retribution", itemIndexOffset = 0, numSpellBookItems = #book } end,
+      GetSpellBookItemInfo = function(i) return book[i] end,
+      GetSpellBookItemLevelLearned = function() return 1 end,
+    }
+    local macros = {
+      [1] = { "Ret", "#showtooltip\\n/cast [@target,harm][] Judgement\\n/castsequence reset=target Seal of Command(Rank 2), crusader strike" },
+      [2] = { "Heal", "/cast [@mouseover,help][] !Holy Light" },
+      [3] = { "Bubble", "/stopcasting" },
+    }
+    local bar = { [1] = { "macro", 1 }, [2] = { "macro", 2 }, [3] = { "macro", 3 } }
+    HasAction = function(s) return bar[s] ~= nil end
+    GetActionInfo = function(s) return bar[s][1], bar[s][2] end
+    GetMacroInfo = function(i) return macros[i][1], 134400, macros[i][2] end
+    -- The spell the game shows for a macro (its #showtooltip or first /cast).
+    GetMacroSpell = function(i) if i == 3 then return 642 end end
+    C_Spell = { GetSpellName = function(id) return id == 642 and "Divine Shield" or nil end }
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.actionBars, ['macro Ret (Judgement)', 'macro Heal (Holy Light)', 'macro Bubble (Divine Shield)']);
+  assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath'], 'only the spell that is really on no bar or macro');
+});
+
 test('recent red error messages and deaths go along for a while', () => {
   const extra = `
     FRAMES = {}

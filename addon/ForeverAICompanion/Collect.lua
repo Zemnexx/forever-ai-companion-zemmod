@@ -1763,10 +1763,36 @@ local function spellName(id)
   return getName and getName(id)
 end
 
+-- The spells a macro casts: the one the game shows for it (GetMacroSpell)
+-- and the names after /cast, /use, /castsequence, /castrandom and
+-- #showtooltip, without conditions ("[@mouseover]"), "reset=", "!" or ranks.
+-- A spell used only through a macro is on the bars too.
+local MACRO_COMMANDS = { cast = true, use = true, castsequence = true, castrandom = true, showtooltip = true, show = true }
+local function macroSpells(index, body)
+  local out = {}
+  if GetMacroSpell then
+    local ok, id = pcall(GetMacroSpell, index)
+    local name = ok and (type(id) == "number" and spellName(id) or type(id) == "string" and id) or nil
+    if type(name) == "string" and name ~= "" and not secret(name) then out[#out + 1] = name end
+  end
+  if type(body) ~= "string" or secret(body) then return out end
+  for line in body:gmatch("[^\r\n]+") do
+    local cmd, args = line:match("^%s*[/#](%a+)%s*(.*)$")
+    if cmd and MACRO_COMMANDS[cmd:lower()] then
+      args = args:gsub("%[.-%]", ""):gsub("reset=%S+", "")
+      for part in args:gmatch("[^;,]+") do
+        local name = part:gsub("^%s*!?%s*", ""):gsub("%s*%(.-%)%s*$", ""):gsub("%s+$", "")
+        if name ~= "" then out[#out + 1] = name end
+      end
+    end
+  end
+  return out
+end
+
 local MAX_ACTIONS = 72
 local function actionBars()
   if not (GetActionInfo and HasAction) then return nil end
-  local list, onBars = {}, {}
+  local list, onBars, onBarsLower = {}, {}, {}
   for slot = 1, 120 do
     if HasAction(slot) then
       local kind, id = GetActionInfo(slot)
@@ -1776,8 +1802,11 @@ local function actionBars()
       elseif kind == "item" then
         name = GetItemInfo(id)
       elseif kind == "macro" then
-        local macro = GetMacroInfo and GetMacroInfo(id)
-        name = macro and ("macro " .. macro)
+        local macro, _, body
+        if GetMacroInfo then macro, _, body = GetMacroInfo(id) end
+        local inside = macroSpells(id, body)
+        for _, spell in ipairs(inside) do onBarsLower[spell:lower()] = true end
+        name = macro and ("macro " .. macro .. (inside[1] and (" (" .. inside[1] .. ")") or ""))
       elseif kind == "flyout" and GetFlyoutInfo then
         local flyout, _, slots = GetFlyoutInfo(id)
         name = flyout
@@ -1799,7 +1828,7 @@ local function actionBars()
   for _, tab in ipairs(safe(spells) or {}) do
     for _, s in ipairs(tab.spells or {}) do
       local base = s:gsub(" %(.-%)$", "")
-      if not onBars[base] and not onBars[s] then missing[#missing + 1] = base end
+      if not onBars[base] and not onBars[s] and not onBarsLower[base:lower()] then missing[#missing + 1] = base end
     end
   end
   return { actionBars = list, spellsNotOnBars = #missing > 0 and missing or nil }
