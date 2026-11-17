@@ -131,6 +131,25 @@ test('each assistant has its own personality over the same rules', () => {
   assert.match(buildSystem('', 'rizzik', { client: { locale: 'esMX' } }), /Rizzik Bujíaveloz/, 'old addons: from the client locale');
   assert.match(fizzi, /client is in English/);
 });
+test('the AI sticks to the question, and adds a reminder only past clear thresholds', () => {
+  const s = buildSystem('', 'fizzi');
+  assert.match(s, /using the parts of their data that matter to the question\. Don't comment on the rest/);
+  const at = s.indexOf('7. Reminders:');
+  assert.ok(at > 0, 'the reminders rule is there');
+  const rule = s.slice(at);
+  for (const re of [
+    /one short reminder \(two at most\)/,
+    /don't repeat a reminder already given in the chat history/,
+    /"lowestDurabilityPct" 20% or less, or 40% or less before a dungeon/,
+    /"bags\.freeSlots" 2 or less, or 4 or less before a dungeon/,
+    /leaving crafting materials/,
+    /"notLearned" at their level or below/,
+    /25 or more points under its cap/,
+    /"ammo\.equipped" under 200/,
+    /\("hardcore": true\), a real danger to its life goes first/,
+  ]) assert.match(rule, re);
+  assert.match(s, /A reminder \(rule 7 above\) fits inside that limit, on its own last line, and is the first thing to cut/);
+});
 test('the AI knows WoW Forever and searches only when it can', () => {
   const withSearch = buildSystem('', 'fizzi', { canSearch: true });
   const without = buildSystem('', 'fizzi', { canSearch: false });

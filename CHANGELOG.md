@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.1.1 (addon 1.16.0)
+
+AI answers only: the addon is unchanged.
+
+### Changed
+
+- **The AI sticks to what you asked.** It uses the parts of your character's data that matter to the question and no longer comments on the rest, for example bag space with 5 free slots.
+- **Reminders only when they would hold you back.** After an answer it may add one short reminder (two at most), on its own last line, and only past these thresholds:
+  - repair: a broken item, durability 20% or less, or 40% or less before a dungeon, a raid or a long trip (with the cost when a vendor that repairs is open);
+  - bag space: 2 free slots or fewer, or 4 or fewer before a dungeon or a farming or gathering trip (sell greys; leave crafting materials at a bank you're in or passing);
+  - an empty gear slot, or a clear upgrade sitting in your bags;
+  - spells to train at your level, unspent talent points, or an important ability on none of your bars;
+  - a weapon skill 25 or more points under its cap;
+  - riding, once you have the level and the money the guide gives;
+  - hunters: an unhappy pet, pet training points to spend, and ammo under 200 before a dungeon or a long trip, or under 100;
+  - a finished quest whose turn-in is close or on your way;
+  - hearthstone and rested XP, only for travel or leveling questions.
+
+  A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
+
 ## 2.1.0 (addon 1.16.0)
 
 Upstream 1.11.1 (commit `98e5519`) merged into this fork's 2.0.0 work, Windows only. It was tested on Windows first as a sync test build with upstream's version numbers (app 1.11.1, addon 1.11.10).
