@@ -421,13 +421,24 @@ function Core:RememberStable()
   if pets then self:CharData().stable = { seenAt = date("%Y-%m-%d %H:%M"), pets = pets } end
 end
 
+-- A quest turned in: the last 10 titles (recentlyCompletedQuests), and every
+-- quest by id with its title and the zone the quest log listed it under
+-- (QuestHelp: what was done where).
 function Core:RememberTurnIn(questID)
+  local entry = ns.QuestHelp and ns.QuestHelp:LogEntry(questID)
   local title = C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(questID)
-  if not title then return end
+  title = title or (entry and entry.title)
   local data = self:CharData()
-  data.turnedIn = data.turnedIn or {}
-  table.insert(data.turnedIn, 1, title)
-  while #data.turnedIn > 10 do table.remove(data.turnedIn) end
+  if title then
+    data.turnedIn = data.turnedIn or {}
+    table.insert(data.turnedIn, 1, title)
+    while #data.turnedIn > 10 do table.remove(data.turnedIn) end
+  end
+  if type(questID) == "number" then
+    data.questsDone = data.questsDone or {}
+    data.questsDone[questID] = { t = title, z = entry and entry.zone, d = date("%Y-%m-%d") }
+  end
+  if ns.QuestHelp then ns.QuestHelp:Refresh() end
 end
 
 -- `extra`: additional request fields (used by the channel probe).
@@ -516,6 +527,23 @@ function Core:Ask(question, extra, chatId, listen, again)
   -- Invisible voice channel when available; otherwise the strip on screen.
   local context = linked and { linkedItems = linked } or nil
   local co = coroutine.create(function()
+    -- A zone named in the question: the quests available there (QuestHelp).
+    -- In a coroutine of its own: it pauses with the preparation, and if it
+    -- fails, the question still goes without it.
+    if not listen and ns.QuestHelp then
+      local sub = coroutine.create(function() return ns.QuestHelp:ForQuestion(question, Core.step) end)
+      local asked
+      while true do
+        local ok, res = coroutine.resume(sub)
+        if not ok then break end
+        if coroutine.status(sub) == "dead" then asked = res break end
+        coroutine.yield()
+      end
+      if asked then
+        context = context or {}
+        context.availableQuestsAsked = asked
+      end
+    end
     if not again and ns.Voice:Available() then
       local frame = Core:BuildFrame(req, Core.step, ns.Voice.MAX_FRAME_BYTES, context)
       if frame and ns.Voice:Send(frame, req.id, Core.step) then

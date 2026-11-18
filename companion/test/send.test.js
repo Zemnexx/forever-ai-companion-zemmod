@@ -1783,6 +1783,177 @@ test('at a flight master the addon keeps which flight points the player has, and
   assert.deepEqual(second, [{ continent: 'Eastern Kingdoms', known: ['Menethil Harbor, Wetlands', 'Thelsamar, Loch Modan'] }]);
 });
 
+// Quest help (QuestHelp.lua) with a fake QuestieDB: a level 25 Undead
+// paladin of the Horde in Ashenvale (area 331), at 50, 50.
+const QUEST_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'QuestHelp.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Button.lua', 'Notify.lua', 'Core.lua'];
+const QUESTIE = `
+  UnitLevel = function() return 25 end
+  UnitRace = function() return "Undead", "Scourge", 5 end
+  UnitClass = function() return "Paladin", "PALADIN" end
+  UnitFactionGroup = function() return "Horde", "Horda" end
+  ZONE = "Ashenvale"
+  GetRealZoneText = function() return ZONE end
+  GetZoneText = function() return ZONE end
+  local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [1637] = "Orgrimmar" }
+  C_Map = {
+    GetAreaInfo = function(id) return areas[id] end,
+    GetBestMapForUnit = function() return 1440 end,
+    GetMapInfo = function() return { name = ZONE, mapType = 3 } end,
+    GetPlayerMapPosition = function() return { GetXY = function() return 0.5, 0.5 end } end,
+  }
+  LOG = { { header = "Ashenvale" }, { id = 6571, title = "Warsong Supplies" }, { header = "The Barrens" }, { id = 850, title = "Kolkar Leaders" } }
+  DONE = { 101, 50 }
+  C_QuestLog = {
+    GetNumQuestLogEntries = function() return #LOG end,
+    GetInfo = function(i)
+      local e = LOG[i]
+      if not e then return nil end
+      if e.header then return { isHeader = true, title = e.header } end
+      return { title = e.title, questID = e.id, level = 25 }
+    end,
+    GetAllCompletedQuestIDs = function() return DONE end,
+    GetTitleForQuestID = function(id) return ({ [6571] = "Warsong Supplies" })[id] end,
+  }
+  C_Reputation = { GetFactionDataByID = function(id) return id == 530 and { currentStanding = 3500 } or nil end }
+  IsPlayerSpell = function(id) return id == 7328 end
+  -- Race bits as the game's (Horde: orc 2, undead 16, tauren 32, troll 128); 2^32 = a race beyond 32 bits.
+  local H, A = 178, 77
+  local function q(name, zone, level, extra)
+    local t = { name = name, zoneOrSort = zone, questLevel = level, requiredLevel = level - 3, requiredRaces = H, startedBy = { { 900 } } }
+    for k, v in pairs(extra or {}) do t[k] = v end
+    return t
+  end
+  local quests = {
+    [6571] = q("Warsong Supplies", 331, 25, { nextQuestInChain = 6572 }),
+    [6572] = q("Warsong Scout Update", 331, 25, { preQuestSingle = { 6571 } }),
+    [100] = q("Wood for the Front", 331, 25),
+    [101] = q("Done Before", 331, 24),
+    [102] = q("Arcane Studies", 331, 25, { requiredClasses = 128 }),
+    [103] = q("Alliance Only", 331, 25, { requiredRaces = A }),
+    [104] = q("After Done Before", 331, 25, { preQuestSingle = { 101 }, startedBy = { { 901 } } }),
+    [105] = q("Needs Two", 331, 25, { preQuestGroup = { 101, 999 } }),
+    [106] = q("Too Soon", 331, 33),
+    [107] = q("Grey Errand", 331, 12),
+    [108] = q("Other Path", 331, 25, { exclusiveTo = { 101 } }),
+    [109] = q("Old Step", 331, 25, { nextQuestInChain = 6571 }),
+    [110] = q("Strange Note", 331, 25, { startedBy = { {}, {}, { 5000 } } }),
+    [111] = q("Silverwing Plea", 331, 25, { requiredRaces = 0, startedBy = { { 902 } } }),
+    [112] = q("Friends of the Horde", 331, 26, { requiredMinRep = { 530, 3000 } }),
+    [113] = q("Honored Errand", 331, 26, { requiredMinRep = { 530, 9000 } }),
+    [114] = q("Smithing Job", 331, 25, { requiredSkill = { 164, 50 } }),
+    [115] = q("Festival", 331, 25, { specialFlags = 2 }),
+    [116] = q("Skyborne Welcome", 331, 24, { requiredRaces = H + 2^32, startedBy = { { 903 } } }),
+    [117] = q("Paladin Calling", 331, 25, { requiredClasses = 2, requiredSpell = 7328, startedBy = { {}, { 300 } } }),
+    [118] = q("Forgotten Lore", 331, 25, { requiredSpell = -7328 }),
+    [119] = q("Pickup Elsewhere", 331, 25, { startedBy = { { 904 } } }),
+    [50] = q("Orgrimmar Errand", 1637, 10),
+    [850] = q("Kolkar Leaders", 17, 25),
+    [851] = q("Barrens Errand", 17, 23, { startedBy = { { 905 } } }),
+    [852] = q("Barrens Two", 17, 24, { startedBy = { { 905 } } }),
+    [853] = q("Barrens Three", 17, 25, { startedBy = { { 905 } } }),
+    [854] = q("Barrens Four", 17, 26, { startedBy = { { 905 } } }),
+    [860] = q("Stonetalon Task", 406, 24, { startedBy = { { 906 } } }),
+  }
+  local npcs = {
+    [900] = { name = "Kuray'bin", friendlyToFaction = "H", spawns = { [331] = { { 60, 50 } } } },
+    [901] = { name = "Mitsuwa", friendlyToFaction = "H", spawns = { [331] = { { 40, 40 } } } },
+    [902] = { name = "Sentinel Onaeya", friendlyToFaction = "A", spawns = { [331] = { { 30, 70 } } } },
+    [903] = { name = "Skyborne Herald", friendlyToFaction = "AH", spawns = { [331] = { { 50, 52 } } } },
+    [904] = { name = "Gryshka", friendlyToFaction = "H", spawns = { [1637] = { { 45.04, 63.37 } } } },
+    [905] = { name = "Thork", friendlyToFaction = "H", spawns = { [17] = { { 51.5, 30.3 } } } },
+    [906] = { name = "Seereth Stonebreak", friendlyToFaction = "H", spawns = { [406] = { { 70, 70 } } } },
+  }
+  local objects = { [300] = { name = "Altar of the Light", spawns = { [331] = { { 30, 30 } } } } }
+  local function entity(rows)
+    return {
+      Get = function(id, key) local r = rows[id]; return r and r[key] end,
+      GetAllIds = function() local ids = {} for id in pairs(rows) do ids[#ids + 1] = id end table.sort(ids) return ids end,
+    }
+  end
+  QuestDB, NpcDB, ObjectDB = entity(quests), entity(npcs), entity(objects)
+  LibQuestieDB = {
+    contractVersion = 4,
+    RequireContract = function(v) return v >= 1 and v <= 4, "ok" end,
+    Enum = { raceMaskById = { [1] = 1, [5] = 16 }, classKeys = { PALADIN = 2, MAGE = 128 } },
+    Quest = QuestDB, Npc = NpcDB, Object = ObjectDB,
+  }
+`;
+
+test('quest help: done quests of the zone, quests available now with their giver, and the next one of a chain', () => {
+  const out = runLua(`
+    ns.QuestHelp.START_DELAY = 0
+    START()
+    RUN_FRAMES(300)
+    local snap = ns.Collect:Snapshot()
+    local log = {}
+    for _, q in ipairs(snap.quests or {}) do log[#log + 1] = q.title .. ">" .. tostring(q.next) end
+    local r = { ns.Json.Encode(snap.completedQuests), ns.Json.Encode(snap.availableQuests), table.concat(log, ",") }
+    -- Asking about another zone: its quests go along with that question.
+    local orig = ns.Core.BuildFrame
+    ns.Core.BuildFrame = function(self, req, step, maxBytes, extra) CAPTURED = extra; return orig(self, req, step, maxBytes, extra) end
+    ASK("What can I do in Stonetalon Mountains?")
+    r[#r + 1] = ns.Json.Encode(CAPTURED and CAPTURED.availableQuestsAsked)
+    -- Warsong Supplies turned in: kept with its zone, and the next quest of the chain opens.
+    FIRE("QUEST_TURNED_IN", 6571)
+    table.remove(LOG, 2)
+    FIRE("QUEST_REMOVED", 6571)
+    RUN_FRAMES(300)
+    local snap2 = ns.Collect:Snapshot()
+    local rec = ns.Core:CharData().questsDone[6571]
+    r[#r + 1] = rec.t .. "|" .. rec.z .. "|" .. ns.Json.Encode(snap2.completedQuests.inZone) .. "|" .. snap2.availableQuests[1].quests[1].name
+    RESULT = table.concat(r, "#")
+  `, {}, QUEST_FILES, FAKE_UI + PRELUDE_DRIVE + QUESTIE);
+  const [done, available, log, asked, after] = out.split('#');
+  assert.deepEqual(JSON.parse(done), { total: 2, zone: 'Ashenvale', inZone: ['Done Before'] });
+  const g = (giver, zone, x, y) => ({ giver, at: { zone, x, y } });
+  assert.deepEqual(JSON.parse(available), [
+    {
+      zone: 'Ashenvale',
+      quests: [
+        // Closest to the player's level first, then nearest.
+        { id: 100, name: 'Wood for the Front', level: 25, minLevel: 22, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
+        { id: 104, name: 'After Done Before', level: 25, minLevel: 22, ...g('Mitsuwa', 'Ashenvale', 40, 40) },
+        { id: 117, name: 'Paladin Calling', level: 25, minLevel: 22, ...g('Altar of the Light', 'Ashenvale', 30, 30) },
+        { id: 119, name: 'Pickup Elsewhere', level: 25, minLevel: 22, ...g('Gryshka', 'Orgrimmar', 45, 63.4) },
+        { id: 116, name: 'Skyborne Welcome', level: 24, minLevel: 21, ...g('Skyborne Herald', 'Ashenvale', 50, 52) },
+        { id: 112, name: 'Friends of the Horde', level: 26, minLevel: 23, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
+      ],
+    },
+    // A zone with a quest in the log: a few more to pick up there.
+    {
+      zone: 'The Barrens', more: 1,
+      quests: [
+        // Same distance from the player's level: by name.
+        { id: 853, name: 'Barrens Three', level: 25, minLevel: 22, ...g('Thork', 'The Barrens', 51.5, 30.3) },
+        { id: 854, name: 'Barrens Four', level: 26, minLevel: 23, ...g('Thork', 'The Barrens', 51.5, 30.3) },
+        { id: 852, name: 'Barrens Two', level: 24, minLevel: 21, ...g('Thork', 'The Barrens', 51.5, 30.3) },
+      ],
+    },
+  ]);
+  assert.equal(log, 'Warsong Supplies>Warsong Scout Update,Kolkar Leaders>nil');
+  assert.deepEqual(JSON.parse(asked), [
+    { zone: 'Stonetalon Mountains', quests: [{ id: 860, name: 'Stonetalon Task', level: 24, minLevel: 21, ...g('Seereth Stonebreak', 'Stonetalon Mountains', 70, 70) }] },
+  ]);
+  assert.equal(after, 'Warsong Supplies|Ashenvale|["Done Before","Warsong Supplies"]|Warsong Scout Update');
+});
+
+test('quest help without QuestieDB: the total and the quests the addon saw turned in, nothing more', () => {
+  const out = runLua(`
+    LibQuestieDB, QuestDB = nil, nil
+    ns.QuestHelp.START_DELAY = 0
+    START()
+    FIRE("QUEST_TURNED_IN", 6571)
+    table.remove(LOG, 2)
+    RUN_FRAMES(200)
+    local snap = ns.Collect:Snapshot()
+    RESULT = ns.Json.Encode(snap.completedQuests) .. "#" .. tostring(snap.availableQuests) .. "#" .. tostring(snap.quests and snap.quests[1] and snap.quests[1].next)
+  `, {}, QUEST_FILES, FAKE_UI + PRELUDE_DRIVE + QUESTIE);
+  const [done, available, next] = out.split('#');
+  assert.deepEqual(JSON.parse(done), { total: 3, zone: 'Ashenvale', inZone: ['Warsong Supplies'] });
+  assert.equal(available, 'nil');
+  assert.equal(next, 'nil');
+});
+
 // The corner grips (UI.Resizer): a fake mouse, and frames that know where they are.
 const RESIZE = `
   CURSOR = { 0, 0 }

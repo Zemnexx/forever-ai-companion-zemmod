@@ -885,6 +885,7 @@ local function questsModern()
         end
         safe(questLocation, q, id, onMap)
         safe(questRewards, q, id, i)
+        if ns.QuestHelp then q.next = safe(ns.QuestHelp.Next, ns.QuestHelp, id) end
         list[#list + 1] = q
       end
     end
@@ -919,6 +920,7 @@ local function questsClassic()
         if objectiveText and objectiveText ~= "" then q.goal = clean(objectiveText) end
         if questID then safe(questRewards, q, questID, i) end
       end
+      if questID and ns.QuestHelp then q.next = safe(ns.QuestHelp.Next, ns.QuestHelp, questID) end
       list[#list + 1] = q
     end
   end
@@ -2130,6 +2132,9 @@ local SECTIONS = {
     "BAG_UPDATE_DELAYED", "GET_ITEM_INFO_RECEIVED" } },
   { "position", one("position", position) },
   { "quests", one("quests", quests), events = { "QUEST_LOG_UPDATE", "GET_ITEM_INFO_RECEIVED" } },
+  -- Done and available quests (QuestHelp works them out in the background and
+  -- marks this section dirty when they change).
+  { "questHelp", function() return ns.QuestHelp and ns.QuestHelp:Snapshot() or {} end, events = {} },
   { "professions", one("professions", professions), events = { "SKILL_LINES_CHANGED", "PLAYER_LEVEL_UP" } },
   { "skills", one("skills", skills), events = { "SKILL_LINES_CHANGED", "PLAYER_LEVEL_UP" } },
   { "lockouts", one("lockouts", lockouts), events = { "UPDATE_INSTANCE_INFO", "PLAYER_ENTERING_WORLD" } },
@@ -2201,6 +2206,8 @@ function Collect:Gather(step)
       end
     end
   end
+  -- Why the quest lists may be missing (QuestHelp works in the background).
+  if ns.QuestHelp and ns.QuestHelp.lastError then errors.questHelp = tostring(ns.QuestHelp.lastError):sub(1, 120) end
   snap.localTime = date("%Y-%m-%d %H:%M")
   put(snap, "serverTime", function() return string.format("%02d:%02d", GetGameTime()) end)
   return snap, meta, errors

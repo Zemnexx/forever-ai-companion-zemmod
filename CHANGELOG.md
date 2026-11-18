@@ -1,9 +1,15 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.7)
+## 2.1.2 (addon 1.16.8)
 
 ### Added
 
+- **The AI knows which quests you've done and which ones you can pick up.** Every quest you turn in is kept with its zone, and the AI gets how many quests you've completed and the ones done in your current zone. With the QuestieDB addon installed (it comes with Questie), it also gets:
+  - the names of quests you completed before, in your current zone (the game keeps every completed quest; QuestieDB knows their names and zones);
+  - the quests you can pick up now in your current zone and in zones where you have quests: right level (not grey), race and class, prerequisites done, not done and not in your log, with the quest giver and its coordinates. Name another zone in your question and its quests go along with that question;
+  - for each quest in your log, the next quest of its chain.
+
+  It recommends new quests only from that list, never one you've done. The addon reads QuestieDB in the background, a little each frame and never in combat, so the game doesn't stutter. Without QuestieDB everything else works as before.
 - **The compact answer box can be resized.** Drag its bottom-right corner, from 240 to 900 pixels wide and 110 to 700 tall. It keeps that size the next time it opens, and a long answer scrolls inside it. Right-click the corner to go back to the automatic size (380 wide, as tall as the answer).
 - **A flat, minimal window style.** Options > AddOns > Forever AI Companion > Window style: **WoW style** (the game's own art, the default) or **Flat and minimal** (dark, with blue highlights). The chat window switches at once, without `/reload`, and the choice is kept for the whole account. Everything works the same in both: chats, messages and item links, suggestions, voice questions, compact answers, dimming and the combat warning.
   - Flat: solid dark panels with thin edges, the assistant's round portrait inside the top bar without its gold ring, blue for your messages, the selected chat and the Send button, a plain "x" to close, and thin scroll bars.
