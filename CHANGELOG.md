@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.3)
+## 2.1.2 (addon 1.16.4)
 
 ### Added
 
@@ -27,7 +27,7 @@
 
 ### Fixed
 
-- **A spell cast from a macro no longer counts as missing from your bars.** The AI kept saying, for example, that Judgement wasn't on any bar when it was in a macro. The addon now reads which spells a macro casts: the one the game shows for it, and the names after `/cast`, `/use`, `/castsequence`, `/castrandom` and `#showtooltip`, without conditions like `[@mouseover]`, `reset=` or ranks.
+- **A spell cast from a macro no longer counts as missing from your bars.** The AI kept saying, for example, that Judgement wasn't on any bar when it was in a macro. The addon now reads which spells a macro casts: the one the game shows for it, and the names after `/cast`, `/use`, `/castsequence`, `/castrandom` and `#showtooltip`, without conditions like `[@mouseover]`, `reset=` or ranks. On newer game clients a macro's bar slot gives the spell the macro shows instead of the macro itself: that spell counts, and the macro is found by the name on its button. Bars beyond the first 120 slots are read too.
 
 ## 2.1.0 (addon 1.16.0)
 

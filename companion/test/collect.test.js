@@ -503,6 +503,36 @@ test('a spell used only through a macro counts as on the bars', () => {
   assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath'], 'only the spell that is really on no bar or macro');
 });
 
+test('newer clients: a macro slot gives the spell it shows, and the macro is found by its name', () => {
+  const extra = `
+    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+    local book = {
+      { name = "Judgement", itemType = 1 }, { name = "Seal of Command", subName = "Rank 2", itemType = 1 },
+      { name = "Blessing of Might", subName = "Rank 3", itemType = 1 }, { name = "Hammer of Wrath", subName = "Rank 1", itemType = 1 },
+    }
+    C_SpellBook = {
+      GetNumSpellBookSkillLines = function() return 1 end,
+      GetSpellBookSkillLineInfo = function() return { name = "Retribution", itemIndexOffset = 0, numSpellBookItems = #book } end,
+      GetSpellBookItemInfo = function(i) return book[i] end,
+      GetSpellBookItemLevelLearned = function() return 1 end,
+    }
+    -- Slot 2: a macro showing Judgement (spell 20271); slot 150: a macro on a newer bar.
+    local bar = { [2] = { "macro", 20271, "spell" }, [150] = { "macro", 19835, "spell" } }
+    HasAction = function(s) return bar[s] ~= nil end
+    GetActionInfo = function(s) return bar[s][1], bar[s][2], bar[s][3] end
+    GetActionText = function(s) return s == 2 and "Ret" or s == 150 and "Buff" or nil end
+    local macros = { Ret = 7, Buff = 8 }
+    GetMacroIndexByName = function(name) return macros[name] or 0 end
+    local bodies = { [7] = { "Ret", "/cast Judgement\\n/cast Seal of Command" }, [8] = { "Buff", "/cast [@target,help][] Blessing of Might" } }
+    -- Asked with the spell id, as a macro index it is nothing.
+    GetMacroInfo = function(i) local m = bodies[i]; if m then return m[1], 1, m[2] end end
+    C_Spell = { GetSpellName = function(id) return id == 20271 and "Judgement" or id == 19835 and "Blessing of Might" or nil end }
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.actionBars, ['macro Ret (Judgement)', 'macro Buff (Blessing of Might)']);
+  assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath']);
+});
+
 test('recent red error messages and deaths go along for a while', () => {
   const extra = `
     FRAMES = {}

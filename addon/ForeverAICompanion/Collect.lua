@@ -1789,22 +1789,44 @@ local function macroSpells(index, body)
   return out
 end
 
+-- A macro on a bar: its name and the spells it casts. Older clients give the
+-- macro's index; newer ones give the spell (or item) the macro shows instead,
+-- with subType "spell" ("item"). So that counts too, and the macro itself is
+-- looked up by the name on its button.
+local function macroOnBar(slot, id, subType)
+  local inside = {}
+  local function add(name)
+    if type(name) == "string" and name ~= "" and not secret(name) then inside[#inside + 1] = name end
+  end
+  if subType == "spell" then add(spellName(id)) elseif subType == "item" then add(GetItemInfo(id)) end
+  local text = GetActionText and GetActionText(slot)
+  if type(text) ~= "string" or text == "" or secret(text) then text = nil end
+  local index
+  if text and GetMacroIndexByName then
+    local i = tonumber(GetMacroIndexByName(text))
+    if i and i > 0 then index = i end
+  end
+  if not index and subType ~= "spell" and subType ~= "item" then index = tonumber(id) end
+  local macro, _, body
+  if index and GetMacroInfo then macro, _, body = GetMacroInfo(index) end
+  for _, spell in ipairs(macroSpells(index or text, body)) do add(spell) end
+  return macro or text, inside
+end
+
 local MAX_ACTIONS = 72
 local function actionBars()
   if not (GetActionInfo and HasAction) then return nil end
   local list, onBars, onBarsLower = {}, {}, {}
-  for slot = 1, 120 do
+  for slot = 1, 180 do -- 120 on most clients; newer ones have more bars
     if HasAction(slot) then
-      local kind, id = GetActionInfo(slot)
+      local kind, id, subType = GetActionInfo(slot)
       local name
       if kind == "spell" then
         name = spellName(id)
       elseif kind == "item" then
         name = GetItemInfo(id)
       elseif kind == "macro" then
-        local macro, _, body
-        if GetMacroInfo then macro, _, body = GetMacroInfo(id) end
-        local inside = macroSpells(id, body)
+        local macro, inside = macroOnBar(slot, id, subType)
         for _, spell in ipairs(inside) do onBarsLower[spell:lower()] = true end
         name = macro and ("macro " .. macro .. (inside[1] and (" (" .. inside[1] .. ")") or ""))
       elseif kind == "flyout" and GetFlyoutInfo then
