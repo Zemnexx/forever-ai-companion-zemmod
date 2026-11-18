@@ -56,7 +56,7 @@ With every question the AI receives, without you having to explain anything:
 - your **character**: race, class, level, experience (rested XP in points and as a share of the level), talents and stats;
 - your **gear** slot by slot with its effects ("Equip:", "Use:", set bonuses), what's in your **bags** and your bank;
 - your **pet**: its abilities with rank and autocast, stance, loyalty, training points, diet and stats, plus what **Beast Training** can teach it;
-- your **spells**, which ones are not on your **action bars** yet, and your weapon skills;
+- your **spells**, which ones are not on your **action bars** yet (a spell in a macro or on the stance bar counts), and your weapon skills;
 - **where you are**: zone and coordinates, and on each continent the flight paths you know and the ones you haven't discovered yet;
 - your **quests** with progress, rewards and the real coordinates of where to do them;
 - your **target** (family, whether it counts for a quest, its tooltip), recent error messages and deaths;
@@ -120,6 +120,7 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 3. **Type your question** and click Send. The answer arrives in a few seconds; if the window was closed, you get a notification.
 
 - **Chats by topic**: each chat remembers its conversation (gear, quests, dungeons…). Right-click the minimap button to start a new chat.
+- **Answers stick to your question**: the AI uses the parts of your data that matter to it. At the end it may add one short reminder, only when something would hold you back (repairs, bag space before a dungeon, spells to train, a finished quest on your way…), and it doesn't repeat one already given in the chat. Travel directions only use flight paths you have.
 - **Ask about a specific item**: while typing, shift-click an item (in your bags, a vendor, a quest reward…) to put it in the question, like in the chat box: *"Is [this ring] better than mine?"*. The AI gets its full stats, and the link stays clickable in your message.
 - **Clickable items in the answers**: when the assistant names an item from your gear, bags, bank, quest rewards or an open vendor, it shows up as a real item link. Hover it for the tooltip, click to open it, shift-click to paste it in the chat or ctrl-click to try it on. Items that aren't in your data (for example, dungeon loot) are written as plain text.
 - **Ask about what's open**: with a quest, vendor, trainer, Beast Training, flight map, auction house or loot window open, the AI sees it, and a new chat suggests questions about that window. Try *"Should I accept this quest?"*, *"Which reward should I pick?"*, *"What should I buy here?"*, *"What should I teach my pet?"* or *"What from my bags should I sell here?"*.
