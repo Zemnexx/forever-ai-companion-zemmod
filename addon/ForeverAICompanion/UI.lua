@@ -469,6 +469,73 @@ local function themedScroll(scroll)
   end)
 end
 
+-- Resizing from a corner grip. The top-left corner stays where it is and the
+-- size follows the mouse from where it was pressed, so a click without moving
+-- changes nothing (the game's StartSizing made the window jump to a larger
+-- size on the click). bounds = { minW, minH, maxW, maxH }, and never past the
+-- right or bottom edge of the screen. onSize(w, h) while dragging;
+-- onDone(button, changed) when the button is let go, and after a right-click
+-- (which doesn't resize). grip.sizing is true while dragging.
+function UI.Resizer(grip, frame, bounds, onSize, onDone)
+  local huge = math.huge
+  local function cursor()
+    local x, y = GetCursorPosition()
+    local scale = frame.GetEffectiveScale and frame:GetEffectiveScale()
+    if type(scale) ~= "number" or scale <= 0 then scale = 1 end
+    return (x or 0) / scale, (y or 0) / scale
+  end
+  local start -- while dragging: where the mouse and the size started, and the limits
+  grip.sizing = false
+  local function finish(button)
+    grip:SetScript("OnUpdate", nil)
+    local was = start
+    start, grip.sizing = nil, false
+    local changed = was ~= nil and (frame:GetWidth() ~= was.w or frame:GetHeight() ~= was.h)
+    if onDone then onDone(button, changed) end
+  end
+  local function follow()
+    -- Let go somewhere the grip didn't hear it (the window was hidden): stop.
+    if IsMouseButtonDown and not IsMouseButtonDown(start.button) then return finish(start.button) end
+    local x, y = cursor()
+    if not start.moved then
+      -- Pressed and not moved yet: nothing changes (not even a size outside
+      -- the bounds, such as the compact box's automatic size).
+      if x == start.x and y == start.y then return end
+      start.moved = true
+    end
+    local w = max(bounds[1], min(start.maxW, start.w + x - start.x))
+    local h = max(bounds[2], min(start.maxH, start.h + start.y - y))
+    if w ~= frame:GetWidth() or h ~= frame:GetHeight() then
+      frame:SetSize(w, h)
+      if onSize then onSize(w, h) end
+    end
+  end
+  grip:SetScript("OnMouseDown", function(_, button)
+    if button == "RightButton" or start or not GetCursorPosition then return end
+    local left, top = frame:GetLeft(), frame:GetTop()
+    if not (left and top) then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+    local x, y = cursor()
+    local w, h = frame:GetWidth(), frame:GetHeight()
+    local right = UIParent.GetRight and UIParent:GetRight()
+    start = {
+      button = button, x = x, y = y, w = w, h = h,
+      maxW = max(w, min(bounds[3] or huge, right and (right - left) or huge)),
+      maxH = max(h, min(bounds[4] or huge, top)),
+    }
+    grip.sizing = true
+    grip:SetScript("OnUpdate", follow)
+  end)
+  grip:SetScript("OnMouseUp", function(_, button)
+    if start then
+      if button == start.button then finish(button) end
+    elseif button == "RightButton" and onDone then
+      onDone(button, false)
+    end
+  end)
+end
+
 local function tooltip(frame, title, text)
   frame:HookScript("OnEnter", function(self)
     if not GameTooltip then return end
@@ -893,8 +960,8 @@ function UI:Build()
   grip:SetNormalTexture(ART.grip .. "-Up")
   grip:SetHighlightTexture(ART.grip .. "-Highlight")
   grip:SetPushedTexture(ART.grip .. "-Down")
-  grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
-  grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing(); savePosition(); UI:Refresh() end)
+  UI.Resizer(grip, f, { MIN_W, MIN_H }, nil, function() savePosition(); UI:Refresh() end)
+  self.grip = grip
 
   f:SetScript("OnShow", function()
     local current = ns.Chats:Get(ns.db.currentChat)

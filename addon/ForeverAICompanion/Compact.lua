@@ -185,17 +185,11 @@ function Compact:Build()
   grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
   grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
   grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-  grip:SetScript("OnMouseDown", function(_, button)
-    if button == "RightButton" then return end
-    Compact.sizing = true
-    f:StartSizing("BOTTOMRIGHT")
-  end)
-  grip:SetScript("OnMouseUp", function(_, button)
+  -- The size follows the mouse (UI.Resizer); while dragging, so does the answer.
+  ns.UI.Resizer(grip, f, { MIN_W, MIN_H, MAX_W, MAX_H }, function() Compact:Render(true) end, function(button, changed)
     if button == "RightButton" then
       saved().size = nil
-    elseif Compact.sizing then
-      Compact.sizing = false
-      f:StopMovingOrSizing()
+    elseif changed then
       saved().size = { w = floor(f:GetWidth() + 0.5), h = floor(f:GetHeight() + 0.5) }
       local point, _, rel, x, y = f:GetPoint(1)
       saved().pos = { point = point, rel = rel, x = x, y = y }
@@ -209,8 +203,6 @@ function Compact:Build()
     GameTooltip:Show()
   end)
   grip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-  -- While the corner is dragged, the answer follows the new size.
-  f:SetScript("OnSizeChanged", function() if Compact.sizing then Compact:Render(true) end end)
 
   f:SetScript("OnUpdate", function(_, elapsed) Compact:Update(elapsed) end)
   f:Hide()
@@ -252,10 +244,12 @@ function Compact:View()
 end
 
 -- live: the corner is being dragged, so the text follows the frame's size
--- instead of setting it.
+-- instead of setting it. (Also when something else redraws the box during the
+-- drag, such as the "thinking" dots: it keeps the size the mouse gives it.)
 function Compact:Render(live)
   local f = self.frame
   if not f then return end
+  if self.grip and self.grip.sizing == true then live = true end
   local v = self:View()
   self.view = v
   local p = ns.Personas:Current()

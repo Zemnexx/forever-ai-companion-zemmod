@@ -1749,6 +1749,85 @@ test('window style: a saved flat look is there when the window first opens, the 
   assert.equal(out, `login flat ${FLAT_LOOK}`);
 });
 
+// The corner grips (UI.Resizer): a fake mouse, and frames that know where they are.
+const RESIZE = `
+  CURSOR = { 0, 0 }
+  GetCursorPosition = function() return CURSOR[1], CURSOR[2] end
+  function PLACE(f, left, top)
+    f.GetLeft = function() return left end
+    f.GetTop = function() return top end
+    f.SetPoint = function(self, p, rel, rp, x, y) self.pt = { p, rp or p, x or 0, y or 0 } end
+    f.GetPoint = function(self) local p = self.pt or {}; return p[1], UIParent, p[2], p[3], p[4] end
+  end
+  function DRAG(grip, x, y)
+    CURSOR = { x, y }
+    if grip.scripts.OnUpdate then grip.scripts.OnUpdate(grip, 0.016) end
+  end
+  function SIZE(f) return string.format("%dx%d", f.w, f.h) end
+`;
+
+test('chat window: the corner resizes by how far the mouse moves, a click alone changes nothing', () => {
+  const out = runLua(`
+    START()
+    ns.UI:Show()
+    local f, grip = ns.UI.frame, ns.UI.grip
+    PLACE(f, 200, 700)
+    local r = { "start=" .. SIZE(f) }
+    -- Pressed on the corner (the mouse is a few pixels inside it), not moved.
+    CURSOR = { 1046, 114 }
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    DRAG(grip, 1046, 114)
+    r[#r + 1] = "pressed=" .. SIZE(f) .. " anchor=" .. f.pt[1] .. "/" .. f.pt[2] .. " " .. f.pt[3] .. "," .. f.pt[4]
+    DRAG(grip, 1146, 64)
+    r[#r + 1] = "dragged=" .. SIZE(f)
+    DRAG(grip, 0, 2000)
+    r[#r + 1] = "min=" .. SIZE(f)
+    DRAG(grip, 1146, 64)
+    grip.scripts.OnMouseUp(grip, "LeftButton")
+    local s = ns.db.ui
+    r[#r + 1] = "saved=" .. s.width .. "x" .. s.height .. " " .. s.point .. "/" .. s.relPoint .. " " .. s.x .. "," .. s.y
+    r[#r + 1] = "stopped=" .. tostring(grip.scripts.OnUpdate) .. "," .. tostring(grip.sizing)
+    -- Never past the right or bottom edge of the screen.
+    UIParent.GetRight = function() return 1200 end
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    DRAG(grip, 3000, -3000)
+    grip.scripts.OnMouseUp(grip, "LeftButton")
+    r[#r + 1] = "edge=" .. SIZE(f)
+    -- A click alone, again: nothing moves.
+    CURSOR = { 1190, 10 }
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    DRAG(grip, 1190, 10)
+    grip.scripts.OnMouseUp(grip, "LeftButton")
+    r[#r + 1] = "click=" .. SIZE(f) .. "," .. s.width .. "x" .. s.height
+    -- The button let go where the grip didn't hear it (the window was hidden): it stops.
+    HELD = true
+    IsMouseButtonDown = function(b) return HELD and b == "LeftButton" end
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    DRAG(grip, 1100, 200)
+    HELD = false
+    DRAG(grip, 900, 300)
+    r[#r + 1] = "letGo=" .. SIZE(f) .. "," .. s.width .. "x" .. s.height .. "," .. tostring(grip.scripts.OnUpdate)
+    -- Right-click doesn't resize.
+    grip.scripts.OnMouseDown(grip, "RightButton")
+    DRAG(grip, 400, 600)
+    grip.scripts.OnMouseUp(grip, "RightButton")
+    r[#r + 1] = "right=" .. SIZE(f)
+    RESULT = table.concat(r, " ")
+  `, {}, COMBAT_FILES, FAKE_UI + PRELUDE_DRIVE + RESIZE);
+  assert.equal(out, [
+    'start=860x600',
+    'pressed=860x600 anchor=TOPLEFT/BOTTOMLEFT 200,700',
+    'dragged=960x650',
+    'min=600x430',
+    'saved=960x650 TOPLEFT/BOTTOMLEFT 200,700',
+    'stopped=nil,false',
+    'edge=1000x700',
+    'click=1000x700,1000x700',
+    'letGo=910x510,910x510,nil',
+    'right=910x510',
+  ].join(' '));
+});
+
 test('compact answers: the box is resized from its corner, keeps the size, and right-click goes back to automatic', () => {
   const out = runLua(`
     START()
@@ -1756,29 +1835,54 @@ test('compact answers: the box is resized from its corner, keeps the size, and r
     local C = ns.Compact
     C:Message("hola")
     local f, grip = C.frame, C.grip
-    local r = { "auto=" .. f.w .. "x" .. f.h }
-    -- Dragging the corner: the game resizes the frame as the mouse moves.
+    PLACE(f, 300, 600)
+    local r = { "auto=" .. SIZE(f) }
+    -- A click on the corner without moving: nothing changes, nothing is saved.
+    CURSOR = { 670, 526 }
     grip.scripts.OnMouseDown(grip, "LeftButton")
-    f.w, f.h = 520, 300
-    f.scripts.OnSizeChanged(f, 520, 300)
-    r[#r + 1] = "live=" .. C.text.w .. "," .. C.scroll.h
+    DRAG(grip, 670, 526)
     grip.scripts.OnMouseUp(grip, "LeftButton")
-    local s = ns.db.compact.size
-    r[#r + 1] = "saved=" .. s.w .. "x" .. s.h .. " frame=" .. f.w .. "x" .. f.h .. " text=" .. C.text.w .. " scroll=" .. C.scroll.w .. "x" .. C.scroll.h
+    r[#r + 1] = "click=" .. SIZE(f) .. "," .. tostring(ns.db.compact.size)
+    -- Dragging the corner: the size follows the mouse, and the answer the size.
+    grip.scripts.OnMouseDown(grip, "LeftButton")
+    DRAG(grip, 810, 310)
+    r[#r + 1] = "live=" .. C.text.w .. "," .. C.scroll.h
+    -- At most MAX_W wide, and not past the bottom of the screen.
+    DRAG(grip, 5000, -5000)
+    r[#r + 1] = "max=" .. SIZE(f)
+    DRAG(grip, 810, 310)
+    -- Redrawn meanwhile (the "thinking" dots): it keeps the size the mouse gives it.
+    C:Render()
+    r[#r + 1] = "redraw=" .. SIZE(f)
+    grip.scripts.OnMouseUp(grip, "LeftButton")
+    local s, p = ns.db.compact.size, ns.db.compact.pos
+    r[#r + 1] = "saved=" .. s.w .. "x" .. s.h .. " frame=" .. SIZE(f) .. " text=" .. C.text.w .. " scroll=" .. C.scroll.w .. "x" .. C.scroll.h
+    r[#r + 1] = "pos=" .. p.point .. "/" .. p.rel .. " " .. p.x .. "," .. p.y
     -- The next time it shows: the same size (a long answer scrolls inside).
     C:Hide()
     C:Message("otra")
-    r[#r + 1] = "again=" .. f.w .. "x" .. f.h
+    r[#r + 1] = "again=" .. SIZE(f)
     -- Sizes out of range are kept in range.
     ns.db.compact.size = { w = 5000, h = 10 }
     C:Render()
-    r[#r + 1] = "clamped=" .. f.w .. "x" .. f.h
+    r[#r + 1] = "clamped=" .. SIZE(f)
     -- Right-click on the corner: the automatic size again.
     grip.scripts.OnMouseUp(grip, "RightButton")
-    r[#r + 1] = "reset=" .. tostring(ns.db.compact.size) .. "," .. f.w .. "x" .. f.h
+    r[#r + 1] = "reset=" .. tostring(ns.db.compact.size) .. "," .. SIZE(f)
     RESULT = table.concat(r, " ")
-  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS);
-  assert.equal(out, 'auto=380x84 live=476,230 saved=520x300 frame=520x300 text=476 scroll=480x230 again=520x300 clamped=900x110 reset=nil,380x84');
+  `, {}, FADE_FILES, FAKE_UI + PRELUDE_DRIVE + FADE_APIS + COMPACT_APIS + RESIZE);
+  assert.equal(out, [
+    'auto=380x84',
+    'click=380x84,nil',
+    'live=476,230',
+    'max=900x600',
+    'redraw=520x300',
+    'saved=520x300 frame=520x300 text=476 scroll=480x230',
+    'pos=TOPLEFT/BOTTOMLEFT 300,600',
+    'again=520x300',
+    'clamped=900x110',
+    'reset=nil,380x84',
+  ].join(' '));
 });
 
 test('turning the camera with the mouse over the window does not keep it from dimming (combat)', () => {
