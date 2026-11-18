@@ -596,8 +596,8 @@ test('recent red error messages and deaths go along for a while', () => {
 });
 
 test('the open flight map lists where the player can fly and the cost', () => {
-  const extra = `
-    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
+  const extra = (withEnum) => `
+    ${withEnum ? 'Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }' : ''}
     C_TaxiMap = { GetAllTaxiNodes = function() return {
       { name = "Stormwind, Elwynn", state = 0, slotIndex = 1 },
       { name = "Booty Bay, Stranglethorn", state = 1, slotIndex = 2 },
@@ -607,12 +607,91 @@ test('the open flight map lists where the player can fly and the cost', () => {
     TaxiNodeCost = function(i) return i == 2 and 4500 or 0 end
     GetNumRoutes = function(i) return i == 2 and 3 or 1 end
   `;
+  for (const withEnum of [true, false]) {
+    const out = runLua(`
+      ns.Collect.open.taxi = true
+      RESULT = ns.Json.Encode(ns.Collect:Snapshot().screen.flightMap)
+    `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra(withEnum));
+    assert.deepEqual(JSON.parse(out), {
+      from: 'Stormwind, Elwynn', destinations: [{ name: 'Booty Bay, Stranglethorn', cost: '0g 45s 0c', stops: 3 }],
+    }, withEnum ? 'with Enum.FlightPathState' : 'without it: the same numbers');
+  }
+});
+
+test('flight points: per continent, the ones the player can fly to and the ones not discovered yet', () => {
+  const extra = `
+    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 }, UIMapType = { Continent = 2, Zone = 3 } }
+    local maps = {
+      [1437] = { name = "Wetlands", mapType = 3, parentMapID = 1415 },
+      [1415] = { name = "Eastern Kingdoms", mapType = 2, parentMapID = 947 },
+      [1414] = { name = "Kalimdor", mapType = 2, parentMapID = 947 },
+      [947] = { name = "Azeroth", mapType = 1 },
+    }
+    C_Map = { GetBestMapForUnit = function() return 1437 end, GetMapInfo = function(id) return maps[id] end }
+    UnitFactionGroup = function() return "Alliance", "Alianza" end
+    C_TaxiMap = {
+      -- The flight master's map in Menethil Harbor: 0 = here, 1 = can fly there, 2 = not discovered.
+      GetAllTaxiNodes = function() return {
+        { nodeID = 7, name = "Menethil Harbor, Wetlands", state = 0, slotIndex = 1 },
+        { nodeID = 6, name = "Ironforge, Dun Morogh", state = 1, slotIndex = 2 },
+        { nodeID = 8, name = "Thelsamar, Loch Modan", state = 2, slotIndex = 3 },
+        { nodeID = 19, name = "Booty Bay, Stranglethorn", state = 2, slotIndex = 4 },
+        { nodeID = 10, name = "Undercity, Tirisfal", state = 2, slotIndex = 5 },
+      } end,
+      -- Every flight point of a continent, both factions (2 Alliance, 1 Horde, 0 neutral),
+      -- named in the client's language now.
+      GetTaxiNodesForMap = function(id)
+        if id == 1415 then return {
+          { nodeID = 7, name = "Puerto de Menethil, Los Humedales", faction = 2 },
+          { nodeID = 6, name = "Forjaz, Dun Morogh", faction = 2 },
+          { nodeID = 8, name = "Thelsamar, Loch Modan", faction = 2 },
+          { nodeID = 19, name = "Bahía del Botín, Tuercespina", faction = 0 },
+          { nodeID = 10, name = "Entrañas, Tirisfal", faction = 1 },
+        } end
+        if id == 1414 then return {
+          { nodeID = 26, name = "Auberdine, Darkshore", faction = 2 },
+          { nodeID = 22, name = "Thunder Bluff, Mulgore", faction = 1 },
+        } end
+      end,
+    }
+  `;
   const out = runLua(`
-    ns.Collect.open.taxi = true
-    RESULT = ns.Json.Encode(ns.Collect:Snapshot().screen.flightMap)
+    -- The older list (names only) from before.
+    local data = { flightPaths = { ["Auberdine, Darkshore"] = true, ["Ironforge, Dun Morogh"] = true } }
+    ns.Core = { CharData = function() return data end }
+    local status = ns.Collect.FlightMapStatus()
+    -- What Core:RememberFlightPaths keeps for the continent.
+    data.flights = { [status.continent] = { name = status.name, seenAt = "2026-11-18 10:00", known = status.known, notKnown = status.notKnown } }
+    RESULT = ns.Json.Encode(status) .. "#" .. ns.Json.Encode(ns.Collect:Snapshot().flightPaths)
   `, {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  const [status, sent] = out.split('#').map((j) => JSON.parse(j));
+  assert.deepEqual(status, {
+    continent: 1415, name: 'Eastern Kingdoms',
+    known: [{ id: 7, name: 'Menethil Harbor, Wetlands' }, { id: 6, name: 'Ironforge, Dun Morogh' }],
+    notKnown: [{ id: 8, name: 'Thelsamar, Loch Modan' }, { id: 19, name: 'Booty Bay, Stranglethorn' }, { id: 10, name: 'Undercity, Tirisfal' }],
+  });
+  assert.deepEqual(sent, [
+    // No flight master's map seen there yet: what the older list had on that continent.
+    { continent: 'Kalimdor', notChecked: true, known: ['Auberdine, Darkshore'] },
+    // Today's names; the other faction's flight point is left out.
+    {
+      continent: 'Eastern Kingdoms', seenAt: '2026-11-18 10:00',
+      known: ['Forjaz, Dun Morogh', 'Puerto de Menethil, Los Humedales'],
+      notKnown: ['Bahía del Botín, Tuercespina', 'Thelsamar, Loch Modan'],
+    },
+  ]);
+});
+
+test('flight points on older clients: DISTANT ones are not discovered yet', () => {
+  const extra = `
+    local nodes = { { "Stormwind, Elwynn", "CURRENT" }, { "Lakeshire, Redridge", "REACHABLE" }, { "Darkshire, Duskwood", "DISTANT" }, { "?", "NONE" } }
+    NumTaxiNodes = function() return #nodes end
+    TaxiNodeName = function(i) return nodes[i][1] end
+    TaxiNodeGetType = function(i) return nodes[i][2] end
+  `;
+  const out = runLua('RESULT = ns.Json.Encode(ns.Collect.FlightMapStatus())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
   assert.deepEqual(JSON.parse(out), {
-    from: 'Stormwind, Elwynn', destinations: [{ name: 'Booty Bay, Stranglethorn', cost: '0g 45s 0c', stops: 3 }],
+    continent: 0, known: [{ name: 'Stormwind, Elwynn' }, { name: 'Lakeshire, Redridge' }], notKnown: [{ name: 'Darkshire, Duskwood' }],
   });
 });
 

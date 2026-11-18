@@ -1310,6 +1310,135 @@ local function lootWindow()
   return #list > 0 and list or nil
 end
 
+-- Flight points -------------------------------------------------------------------
+-- Enum.FlightPathState: Current = 0, Reachable = 1, Unreachable = 2. On a
+-- flight master's map the game lists the player's faction's and neutral flight
+-- points of the continent: Unreachable ones aren't discovered yet (the map
+-- hides them). The older API calls those "DISTANT".
+local function flightStates()
+  local S = Enum and Enum.FlightPathState or {}
+  return S.Current or 0, S.Reachable or 1
+end
+
+local FLIGHT_CONTINENTS = { 1414, 1415 } -- Kalimdor, Eastern Kingdoms (uiMapID)
+
+-- The continent a map is on: its uiMapID and name, or nil.
+function Collect.ContinentOf(mapID)
+  if not (C_Map and C_Map.GetMapInfo) then return nil end
+  local continent = Enum and Enum.UIMapType and Enum.UIMapType.Continent or 2
+  for _ = 1, 8 do
+    local info = type(mapID) == "number" and safe(C_Map.GetMapInfo, mapID)
+    if type(info) ~= "table" then return nil end
+    if info.mapType == continent then return mapID, info.name end
+    mapID = info.parentMapID
+  end
+end
+
+-- Every flight point of a continent, without a flight master
+-- (C_TaxiMap.GetTaxiNodesForMap): nodeID -> node and name -> node, with
+-- "faction" (0 neutral, 1 Horde, 2 Alliance) and the name in the client's
+-- language. It doesn't say which ones the player knows.
+local function taxiNodes(continent)
+  local byId, byName = {}, {}
+  if C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap and type(continent) == "number" and continent > 0 then
+    for _, n in ipairs(safe(C_TaxiMap.GetTaxiNodesForMap, continent) or {}) do
+      if type(n) == "table" and type(n.name) == "string" and not secret(n.name) then
+        if num(n.nodeID) then byId[n.nodeID] = n end
+        byName[n.name] = n
+      end
+    end
+  end
+  return byId, byName
+end
+
+-- The open flight master's map: which continent, the flight points the player
+-- can fly to ("known") and the ones it lists but they haven't discovered
+-- ("notKnown"), as { id = nodeID, name = name }. Core:RememberFlightPaths
+-- keeps it per continent. nil when no flight map is open.
+function Collect.FlightMapStatus()
+  local known, notKnown = {}, {}
+  local zone = C_Map and C_Map.GetBestMapForUnit and safe(C_Map.GetBestMapForUnit, "player")
+  local taxiMap = GetTaxiMapID and safe(GetTaxiMapID)
+  if C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
+    local current, reachable = flightStates()
+    for _, node in ipairs(safe(C_TaxiMap.GetAllTaxiNodes, taxiMap or zone) or {}) do
+      if type(node) == "table" and type(node.name) == "string" and not secret(node.name) then
+        local e = { id = num(node.nodeID), name = node.name }
+        if node.state == current or node.state == reachable then known[#known + 1] = e
+        else notKnown[#notKnown + 1] = e end
+      end
+    end
+  elseif NumTaxiNodes and TaxiNodeName and TaxiNodeGetType then
+    for i = 1, num(safe(NumTaxiNodes)) or 0 do
+      local kind, name = TaxiNodeGetType(i), TaxiNodeName(i)
+      if type(name) == "string" and not secret(name) then
+        if kind == "CURRENT" or kind == "REACHABLE" then known[#known + 1] = { name = name }
+        elseif kind == "DISTANT" then notKnown[#notKnown + 1] = { name = name } end
+      end
+    end
+  end
+  if #known == 0 then return nil end
+  local continent, name = Collect.ContinentOf(zone)
+  if not continent then continent, name = Collect.ContinentOf(taxiMap) end
+  if not continent and known[1].id then
+    -- Not on the map's continent chain: the continent that lists this flight point.
+    for _, id in ipairs(FLIGHT_CONTINENTS) do
+      if taxiNodes(id)[known[1].id] then continent = id; break end
+    end
+  end
+  return { continent = continent or 0, name = name, known = known, notKnown = notKnown }
+end
+
+-- What the AI gets: per continent, the flight points the player can fly to and
+-- those of their faction (or neutral) they can't fly to yet, from the last
+-- flight master's map seen there, with today's names. A continent with no flight
+-- map seen yet is "notChecked", with what the older list (names only, kept
+-- before 1.16.7) had there.
+local function flightPaths(data)
+  local records = type(data.flights) == "table" and data.flights or {}
+  local faction = UnitFactionGroup and safe(UnitFactionGroup, "player")
+  local other = (faction == "Alliance" and 1) or (faction == "Horde" and 2) or nil
+  local order, listed = {}, {}
+  for _, id in ipairs(FLIGHT_CONTINENTS) do order[#order + 1] = id; listed[id] = true end
+  local extra = {}
+  for id in pairs(records) do if not listed[id] then extra[#extra + 1] = id end end
+  table.sort(extra, function(a, b) return tostring(a) < tostring(b) end)
+  for _, id in ipairs(extra) do order[#order + 1] = id end
+  local out = {}
+  for _, id in ipairs(order) do
+    local byId, byName = taxiNodes(id)
+    local rec = records[id]
+    local info = type(id) == "number" and id > 0 and C_Map and C_Map.GetMapInfo and safe(C_Map.GetMapInfo, id)
+    local entry = { continent = (type(info) == "table" and info.name) or (rec and rec.name) or "?" }
+    local function names(list, skipOther)
+      local res, seen = {}, {}
+      for _, e in ipairs(type(list) == "table" and list or {}) do
+        local n = e.id and byId[e.id]
+        local name = (n and n.name) or e.name
+        if type(name) == "string" and not seen[name] and not (skipOther and n and other and n.faction == other) then
+          seen[name] = true
+          res[#res + 1] = name
+        end
+      end
+      table.sort(res)
+      return #res > 0 and res or nil
+    end
+    if type(rec) == "table" then
+      entry.seenAt, entry.known, entry.notKnown = rec.seenAt, names(rec.known), names(rec.notKnown, true)
+      out[#out + 1] = entry
+    elseif next(byName) then
+      entry.notChecked = true
+      local old = {}
+      for name in pairs(type(data.flightPaths) == "table" and data.flightPaths or {}) do
+        if byName[name] then old[#old + 1] = { name = name } end
+      end
+      entry.known = names(old)
+      out[#out + 1] = entry
+    end
+  end
+  return #out > 0 and out or nil
+end
+
 -- The flight master's map: where the player can fly from here and for how much.
 local MAX_FLIGHTS = 60
 local function flightMapWindow()
@@ -1323,12 +1452,12 @@ local function flightMapWindow()
     f.destinations[#f.destinations + 1] = d
   end
   if C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
-    local S = Enum and Enum.FlightPathState
+    local current, reachable = flightStates()
     local mapID = (GetTaxiMapID and GetTaxiMapID()) or (C_Map and C_Map.GetBestMapForUnit("player"))
     for _, node in ipairs(C_TaxiMap.GetAllTaxiNodes(mapID) or {}) do
-      if S and node.state == S.Current then
+      if node.state == current then
         f.from = node.name
-      elseif not S or node.state == S.Reachable then
+      elseif node.state == reachable then
         add(node.name, node.slotIndex)
       end
     end
@@ -1959,12 +2088,7 @@ local function remembered()
   if data.bank and data.bank.items then
     out.bank = { seenAt = data.bank.seenAt, items = data.bank.items }
   end
-  if data.flightPaths and next(data.flightPaths) then
-    local names = {}
-    for name in pairs(data.flightPaths) do names[#names + 1] = name end
-    table.sort(names)
-    out.knownFlightPaths = names
-  end
+  out.flightPaths = safe(flightPaths, data)
   if data.turnedIn and #data.turnedIn > 0 then out.recentlyCompletedQuests = data.turnedIn end
   if data.recipes and next(data.recipes) then
     local list = {}

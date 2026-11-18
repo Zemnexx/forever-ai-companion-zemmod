@@ -1749,6 +1749,40 @@ test('window style: a saved flat look is there when the window first opens, the 
   assert.equal(out, `login flat ${FLAT_LOOK}`);
 });
 
+test('at a flight master the addon keeps which flight points the player has, and sends both lists', () => {
+  const out = runLua(`
+    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 }, UIMapType = { Continent = 2 } }
+    local maps = { [1437] = { name = "Wetlands", mapType = 3, parentMapID = 1415 }, [1415] = { name = "Eastern Kingdoms", mapType = 2 } }
+    C_Map = { GetBestMapForUnit = function() return 1437 end, GetMapInfo = function(id) return maps[id] end }
+    UnitFactionGroup = function() return "Alliance" end
+    local nodes = {
+      { nodeID = 7, name = "Menethil Harbor, Wetlands", state = 0 },
+      { nodeID = 8, name = "Thelsamar, Loch Modan", state = 2 },
+    }
+    C_TaxiMap = {
+      GetAllTaxiNodes = function() return nodes end,
+      GetTaxiNodesForMap = function(id)
+        if id == 1415 then return { { nodeID = 7, name = nodes[1].name, faction = 2 }, { nodeID = 8, name = nodes[2].name, faction = 2 } } end
+      end,
+    }
+    START()
+    local function fire(event) for _, f in ipairs(FRAMES) do if f.scripts.OnEvent then f.scripts.OnEvent(f, event) end end end
+    fire("TAXIMAP_OPENED")
+    local first = ns.Json.Encode(ns.Collect:Snapshot().flightPaths)
+    -- Thelsamar discovered: the next flight master's map there replaces what was seen.
+    nodes[2].state = 1
+    fire("TAXIMAP_OPENED")
+    RESULT = first .. "#" .. ns.Json.Encode(ns.Collect:Snapshot().flightPaths)
+  `, {}, FILES, FAKE_UI + PRELUDE_DRIVE);
+  const [first, second] = out.split('#').map((j) => JSON.parse(j));
+  for (const list of [first, second]) {
+    assert.match(list[0].seenAt, /^\d{4}-\d\d-\d\d \d\d:\d\d$/);
+    delete list[0].seenAt;
+  }
+  assert.deepEqual(first, [{ continent: 'Eastern Kingdoms', known: ['Menethil Harbor, Wetlands'], notKnown: ['Thelsamar, Loch Modan'] }]);
+  assert.deepEqual(second, [{ continent: 'Eastern Kingdoms', known: ['Menethil Harbor, Wetlands', 'Thelsamar, Loch Modan'] }]);
+});
+
 // The corner grips (UI.Resizer): a fake mouse, and frames that know where they are.
 const RESIZE = `
   CURSOR = { 0, 0 }

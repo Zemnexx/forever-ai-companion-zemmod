@@ -154,6 +154,13 @@ test('the AI sticks to the question, and adds a reminder only past clear thresho
   assert.doesNotMatch(rule, /spellsNotOnBars/);
   assert.match(s, /spellsNotOnBars: [^\n]*and so do auras, stances and forms on the stance bar[^\n]*use this when the player asks about their bars, keybinds, rotation or an ability they can't find[^\n]*Don't bring it up otherwise\./);
 });
+test('flights: the AI flies the player only between flight points they know', () => {
+  const s = buildSystem('', 'fizzi');
+  assert.match(s, /- flightPaths: per continent[^\n]*"known" = the flight points they can fly to; "notKnown" = [^\n]*can't fly to yet[^\n]*"notChecked"/);
+  assert.match(s, /Flying: only between flight points in "flightPaths\.known"\. Never send them by air to one in "notKnown"/);
+  assert.match(s, /fly only between flight points they know, rule 2/);
+  assert.doesNotMatch(s, /knownFlightPaths/);
+});
 test('the AI knows WoW Forever and searches only when it can', () => {
   const withSearch = buildSystem('', 'fizzi', { canSearch: true });
   const without = buildSystem('', 'fizzi', { canSearch: false });

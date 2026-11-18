@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.6)
+## 2.1.2 (addon 1.16.7)
 
 ### Added
 
@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- **Directions no longer fly you to flight points you haven't discovered.** At each flight master, the addon now keeps both lists for that continent: the flight points you can fly to, and the ones of your faction (or neutral) you haven't discovered yet, which the game's map hides. The AI plans flights only between the ones you have, and for one you're missing it tells you to get there another way and talk to its flight master. A continent where you haven't opened a flight master's map since this update is marked as not checked, and the AI asks you to open one there. Names follow the game's current language, so they no longer show up twice after switching the client between English and Spanish.
 - **Auras, stances and forms count as on your bars.** The stance bar (paladin auras, warrior stances, druid forms, stealth, Shadowform) wasn't read, so the AI told you to drag your auras to a bar.
 - **Resizing no longer jumps.** Clicking the bottom-right corner of the chat window (in both styles) made it jump to a larger size before the mouse moved, and the compact answer box could jump too. Now nothing changes until you drag: the size follows the mouse by as much as it moves, the top-left corner stays where it is, and the window stops at the right and bottom edges of the screen.
 - **A spell cast from a macro no longer counts as missing from your bars.** The AI kept saying, for example, that Judgement wasn't on any bar when it was in a macro. The addon now reads which spells a macro casts: the one the game shows for it, and the names after `/cast`, `/use`, `/castsequence`, `/castrandom` and `#showtooltip`, without conditions like `[@mouseover]`, `reset=` or ranks. On newer game clients a macro's bar slot gives the spell the macro shows instead of the macro itself: that spell counts, and the macro is found by the name on its button. Bars beyond the first 120 slots are read too.

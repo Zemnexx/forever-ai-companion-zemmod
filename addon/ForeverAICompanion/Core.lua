@@ -351,20 +351,18 @@ function Core:RememberBank()
   end
 end
 
+-- At a flight master: which flight points of this continent the player can fly
+-- to and which they haven't discovered, replacing what was seen here before
+-- (Collect.FlightMapStatus). The older list of names (data.flightPaths) is
+-- only read now, for continents not seen again yet.
 function Core:RememberFlightPaths()
+  local status = ns.Collect.FlightMapStatus()
+  if not status then return end
   local data = self:CharData()
-  data.flightPaths = data.flightPaths or {}
-  if C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
-    local mapID = (GetTaxiMapID and GetTaxiMapID()) or (C_Map and C_Map.GetBestMapForUnit("player"))
-    local unreachable = Enum and Enum.FlightPathState and Enum.FlightPathState.Unreachable
-    for _, node in ipairs(C_TaxiMap.GetAllTaxiNodes(mapID) or {}) do
-      if node.name and node.state ~= unreachable then data.flightPaths[node.name] = true end
-    end
-  elseif NumTaxiNodes and TaxiNodeName then
-    for i = 1, NumTaxiNodes() do
-      if TaxiNodeGetType(i) ~= "NONE" then data.flightPaths[TaxiNodeName(i)] = true end
-    end
-  end
+  data.flights = data.flights or {}
+  data.flights[status.continent] = {
+    name = status.name, seenAt = date("%Y-%m-%d %H:%M"), known = status.known, notKnown = status.notKnown,
+  }
 end
 
 -- The open profession window's recipes, remembered per character and

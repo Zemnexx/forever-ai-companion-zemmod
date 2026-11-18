@@ -57,7 +57,7 @@ With every question the AI receives, without you having to explain anything:
 - your **gear** slot by slot with its effects ("Equip:", "Use:", set bonuses), what's in your **bags** and your bank;
 - your **pet**: its abilities with rank and autocast, stance, loyalty, training points, diet and stats, plus what **Beast Training** can teach it;
 - your **spells**, which ones are not on your **action bars** yet, and your weapon skills;
-- **where you are**: zone and coordinates, and the flight paths you know;
+- **where you are**: zone and coordinates, and on each continent the flight paths you know and the ones you haven't discovered yet;
 - your **quests** with progress, rewards and the real coordinates of where to do them;
 - your **target** (family, whether it counts for a quest, its tooltip), recent error messages and deaths;
 - **professions**, reputations, dungeon lockouts and group;
