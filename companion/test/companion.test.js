@@ -136,7 +136,8 @@ test('the AI sticks to the question, and adds a reminder only past clear thresho
   assert.match(s, /using the parts of their data that matter to the question\. Don't comment on the rest/);
   const at = s.indexOf('7. Reminders:');
   assert.ok(at > 0, 'the reminders rule is there');
-  const rule = s.slice(at);
+  const end = s.indexOf('\n## ', at);
+  const rule = s.slice(at, end > 0 ? end : undefined);
   for (const re of [
     /one short reminder \(two at most\)/,
     /don't repeat a reminder already given in the chat history/,
@@ -149,6 +150,9 @@ test('the AI sticks to the question, and adds a reminder only past clear thresho
     /\("hardcore": true\), a real danger to its life goes first/,
   ]) assert.match(rule, re);
   assert.match(s, /A reminder \(rule 7 above\) fits inside that limit, on its own last line, and is the first thing to cut/);
+  // Abilities missing from the bars: never a reminder, only when the player asks.
+  assert.doesNotMatch(rule, /spellsNotOnBars/);
+  assert.match(s, /spellsNotOnBars: [^\n]*and so do auras, stances and forms on the stance bar[^\n]*use this when the player asks about their bars, keybinds, rotation or an ability they can't find[^\n]*Don't bring it up otherwise\./);
 });
 test('the AI knows WoW Forever and searches only when it can', () => {
   const withSearch = buildSystem('', 'fizzi', { canSearch: true });

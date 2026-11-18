@@ -1813,6 +1813,23 @@ local function macroOnBar(slot, id, subType)
   return macro or text, inside
 end
 
+-- The stance bar (paladin auras, warrior stances, druid forms, stealth,
+-- Shadowform...) isn't in the action slots, but what is on it is within reach
+-- too. Newer clients give (icon, active, castable, spellID), older ones
+-- (icon, name, active, castable).
+local function stanceBar()
+  local out = {}
+  if not (GetNumShapeshiftForms and GetShapeshiftFormInfo) then return out end
+  for i = 1, num(safe(GetNumShapeshiftForms)) or 0 do
+    local ok, _, second, _, spellID = pcall(GetShapeshiftFormInfo, i)
+    local name
+    if ok and type(second) == "string" then name = second
+    elseif ok and num(spellID) then name = spellName(spellID) end
+    if type(name) == "string" and not secret(name) then out[#out + 1] = name end
+  end
+  return out
+end
+
 local MAX_ACTIONS = 72
 local function actionBars()
   if not (GetActionInfo and HasAction) then return nil end
@@ -1846,6 +1863,7 @@ local function actionBars()
     end
   end
   if #list == 0 then return nil end
+  for _, name in ipairs(stanceBar()) do onBars[name] = true end
   local missing = {}
   for _, tab in ipairs(safe(spells) or {}) do
     for _, s in ipairs(tab.spells or {}) do

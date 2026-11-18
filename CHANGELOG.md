@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.5)
+## 2.1.2 (addon 1.16.6)
 
 ### Added
 
@@ -16,7 +16,7 @@
   - repair: a broken item, durability 20% or less, or 40% or less before a dungeon, a raid or a long trip (with the cost when a vendor that repairs is open);
   - bag space: 2 free slots or fewer, or 4 or fewer before a dungeon or a farming or gathering trip (sell greys; leave crafting materials at a bank you're in or passing);
   - an empty gear slot, or a clear upgrade sitting in your bags;
-  - spells to train at your level, unspent talent points, or an important ability on none of your bars;
+  - spells to train at your level, or unspent talent points;
   - a weapon skill 25 or more points under its cap;
   - riding, once you have the level and the money the guide gives;
   - hunters: an unhappy pet, pet training points to spend, and ammo under 200 before a dungeon or a long trip, or under 100;
@@ -24,9 +24,11 @@
   - hearthstone and rested XP, only for travel or leveling questions.
 
   A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
+- **No more reminders about abilities missing from your bars.** They kept naming abilities your spec doesn't use. The AI still knows which abilities are on no bar, and uses that only when you ask about your bars, keybinds, rotation or a spell you can't find.
 
 ### Fixed
 
+- **Auras, stances and forms count as on your bars.** The stance bar (paladin auras, warrior stances, druid forms, stealth, Shadowform) wasn't read, so the AI told you to drag your auras to a bar.
 - **Resizing no longer jumps.** Clicking the bottom-right corner of the chat window (in both styles) made it jump to a larger size before the mouse moved, and the compact answer box could jump too. Now nothing changes until you drag: the size follows the mouse by as much as it moves, the top-left corner stays where it is, and the window stops at the right and bottom edges of the screen.
 - **A spell cast from a macro no longer counts as missing from your bars.** The AI kept saying, for example, that Judgement wasn't on any bar when it was in a macro. The addon now reads which spells a macro casts: the one the game shows for it, and the names after `/cast`, `/use`, `/castsequence`, `/castrandom` and `#showtooltip`, without conditions like `[@mouseover]`, `reset=` or ranks. On newer game clients a macro's bar slot gives the spell the macro shows instead of the macro itself: that spell counts, and the macro is found by the name on its button. Bars beyond the first 120 slots are read too.
 

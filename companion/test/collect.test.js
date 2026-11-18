@@ -533,6 +533,35 @@ test('newer clients: a macro slot gives the spell it shows, and the macro is fou
   assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath']);
 });
 
+test('auras, stances and forms on the stance bar count as on the bars', () => {
+  const extra = `
+    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+    local book = {
+      { name = "Judgement", itemType = 1 }, { name = "Devotion Aura", subName = "Rank 3", itemType = 1 },
+      { name = "Retribution Aura", subName = "Rank 2", itemType = 1 }, { name = "Concentration Aura", itemType = 1 },
+      { name = "Hammer of Wrath", subName = "Rank 1", itemType = 1 },
+    }
+    C_SpellBook = {
+      GetNumSpellBookSkillLines = function() return 1 end,
+      GetSpellBookSkillLineInfo = function() return { name = "Retribution", itemIndexOffset = 0, numSpellBookItems = #book } end,
+      GetSpellBookItemInfo = function(i) return book[i] end,
+      GetSpellBookItemLevelLearned = function() return 1 end,
+    }
+    local bar = { [1] = { "spell", 20271 } }
+    HasAction = function(s) return bar[s] ~= nil end
+    GetActionInfo = function(s) return bar[s][1], bar[s][2] end
+    local names = { [20271] = "Judgement", [10292] = "Devotion Aura", [10299] = "Retribution Aura" }
+    C_Spell = { GetSpellName = function(id) return names[id] end }
+    -- Newer clients: icon, active, castable, spellID. Older ones: icon, name, active, castable.
+    local stances = { { 1, true, true, 10292 }, { 2, false, true, 10299 }, { 3, "Concentration Aura", false, true } }
+    GetNumShapeshiftForms = function() return #stances end
+    GetShapeshiftFormInfo = function(i) return table.unpack(stances[i]) end
+  `;
+  const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
+  assert.deepEqual(snap.actionBars, ['Judgement']);
+  assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath'], 'the auras are on the stance bar');
+});
+
 test('recent red error messages and deaths go along for a while', () => {
   const extra = `
     FRAMES = {}
