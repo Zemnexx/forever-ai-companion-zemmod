@@ -344,9 +344,11 @@ function Core:CharData()
   return ns.db.chars[key]
 end
 
-function Core:RememberBank()
+-- allowEmpty: the bank is known to be open, so nothing in it means it is empty
+-- (right after it opens, an empty read may just be the bank not loaded yet).
+function Core:RememberBank(allowEmpty)
   local items = ns.Collect.ContainerItems(ns.Collect.BankBags(), false)
-  if items and #items > 0 then
+  if items and (#items > 0 or allowEmpty) then
     self:CharData().bank = { seenAt = date("%Y-%m-%d %H:%M"), items = items }
   end
 end
@@ -738,7 +740,7 @@ BINDING_NAME_FOREVERAICOMPANION_TALK = L.BINDING_TALK
 
 local events = CreateFrame("Frame")
 for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "BANKFRAME_OPENED", "BANKFRAME_CLOSED",
-                     "PLAYERBANKSLOTS_CHANGED", "TAXIMAP_OPENED", "QUEST_TURNED_IN",
+                     "PLAYERBANKSLOTS_CHANGED", "BAG_UPDATE_DELAYED", "TAXIMAP_OPENED", "QUEST_TURNED_IN",
                      "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_LIST_UPDATE",
                      "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
                      "PET_STABLE_SHOW", "PET_STABLE_UPDATE",
@@ -792,10 +794,17 @@ events:SetScript("OnEvent", function(_, event, arg1)
     C_Timer.After(5, function() pcall(ns.Uplink.Warmup, ns.Uplink) end)
   elseif not ns.db then
     return
-  elseif event == "BANKFRAME_OPENED" or event == "BANKFRAME_CLOSED" or event == "PLAYERBANKSLOTS_CHANGED" then
-    -- Bank contents are only readable while it is open: remember them.
-    if event ~= "BANKFRAME_CLOSED" or not Core.bankSaved then pcall(Core.RememberBank, Core) end
-    Core.bankSaved = event ~= "BANKFRAME_CLOSED" and true or nil
+  elseif event == "BANKFRAME_OPENED" then
+    -- Bank contents are only readable while it is open: remember them now and
+    -- after every change during the visit, in its main slots
+    -- (PLAYERBANKSLOTS_CHANGED) or in the bags inside it (BAG_UPDATE_DELAYED),
+    -- so what is remembered is the bank as it was left.
+    Core.bankOpen = true
+    pcall(Core.RememberBank, Core)
+  elseif event == "BANKFRAME_CLOSED" then
+    Core.bankOpen = nil -- not readable any more: keep what was seen
+  elseif event == "PLAYERBANKSLOTS_CHANGED" or (event == "BAG_UPDATE_DELAYED" and Core.bankOpen) then
+    pcall(Core.RememberBank, Core, Core.bankOpen)
   elseif event == "TAXIMAP_OPENED" then
     pcall(Core.RememberFlightPaths, Core)
   elseif event == "QUEST_TURNED_IN" then

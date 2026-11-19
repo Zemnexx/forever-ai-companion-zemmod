@@ -1783,6 +1783,49 @@ test('at a flight master the addon keeps which flight points the player has, and
   assert.deepEqual(second, [{ continent: 'Eastern Kingdoms', known: ['Menethil Harbor, Wetlands', 'Thelsamar, Loch Modan'] }]);
 });
 
+test('the bank is remembered as it is left: changes in its bags count, and closing it keeps what was seen', () => {
+  const out = runLua(`
+    START()
+    -- The bank: its main slots (-1) and a bag inside it (5).
+    local SILK, WOOL = "|Hitem:4306::::|h[Silk Cloth]|h", "|Hitem:2592::::|h[Wool Cloth]|h"
+    BANK = { [-1] = { { SILK, 20 } }, [5] = { { SILK, 53 }, { WOOL, 40 } } }
+    C_Container = {
+      GetContainerNumSlots = function(bag) return BANK[bag] and 2 or 0 end,
+      GetContainerItemInfo = function(bag, slot)
+        local e = BANK[bag] and BANK[bag][slot]
+        if e then return { hyperlink = e[1], stackCount = e[2] } end
+      end,
+    }
+    local function seen()
+      local out = {}
+      for _, it in ipairs(ns.Core:CharData().bank.items) do out[#out + 1] = it.name .. "=" .. it.count end
+      table.sort(out)
+      return "[" .. table.concat(out, ",") .. "]"
+    end
+    FIRE("BANKFRAME_OPENED")
+    local r = { seen() }
+    -- 53 silk taken out of the bag inside the bank: only the bag changes.
+    BANK[5][1] = nil
+    FIRE("BAG_UPDATE_DELAYED")
+    r[#r + 1] = seen()
+    -- Closed: the game hides the bank. Bag changes elsewhere don't touch what was seen.
+    FIRE("BANKFRAME_CLOSED")
+    BANK = {}
+    FIRE("BAG_UPDATE_DELAYED")
+    r[#r + 1] = seen()
+    -- Opened again and emptied: an empty bank is remembered too (not right at opening,
+    -- when an empty read may be the bank still loading).
+    FIRE("BANKFRAME_OPENED")
+    r[#r + 1] = seen()
+    FIRE("PLAYERBANKSLOTS_CHANGED")
+    r[#r + 1] = seen()
+    RESULT = table.concat(r, " ")
+  `, {}, FILES, FAKE_UI + PRELUDE_DRIVE + `
+    GetItemInfo = function(link) return link:match("%[(.-)%]"), link, 1 end -- read when the addon loads
+  `);
+  assert.equal(out, '[Silk Cloth=73,Wool Cloth=40] [Silk Cloth=20,Wool Cloth=40] [Silk Cloth=20,Wool Cloth=40] [Silk Cloth=20,Wool Cloth=40] []');
+});
+
 // Quest help (QuestHelp.lua) with a fake QuestieDB: a level 25 Undead
 // paladin of the Horde in Ashenvale (area 331), at 50, 50.
 const QUEST_FILES = ['Locale.lua', 'Json.lua', 'Collect.lua', 'QuestHelp.lua', 'Uplink.lua', 'Voice.lua', 'Live.lua', 'Chats.lua', 'Personas.lua', 'UI.lua', 'Button.lua', 'Notify.lua', 'Core.lua'];
