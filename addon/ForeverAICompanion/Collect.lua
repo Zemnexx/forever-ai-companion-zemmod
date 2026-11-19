@@ -556,18 +556,29 @@ Collect.ContainerItems = containerItems
 
 -- Spells, auras, reputation, currencies ---------------------------------------
 
+-- Left out of the spell list: the auto attack ("Attack"), which every class
+-- has, and the spellbook's groups (flyouts such as "Blessings" or "Auras",
+-- whose spells are listed one by one anyway).
+local AUTO_ATTACK = 6603
+local function autoAttackName()
+  local getName = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
+  return getName and safe(getName, AUTO_ATTACK)
+end
+
 local function spells()
   local tabs = {}
   if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
     local FUTURE = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.FutureSpell
+    local FLYOUT = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout
     for i = 1, C_SpellBook.GetNumSpellBookSkillLines() do
       local line = C_SpellBook.GetSpellBookSkillLineInfo(i)
       if line and not line.offSpecID and not line.shouldHide then
         local names, future, seen = {}, {}, {}
         for j = line.itemIndexOffset + 1, line.itemIndexOffset + line.numSpellBookItems do
           local info = C_SpellBook.GetSpellBookItemInfo(j, bank)
-          if info and info.name and not info.isPassive and not seen[info.name] then
+          if info and info.name and not info.isPassive and not seen[info.name]
+            and not (FLYOUT and info.itemType == FLYOUT) and info.spellID ~= AUTO_ATTACK then
             seen[info.name] = true
             local name = (info.subName and info.subName ~= "") and (info.name .. " (" .. info.subName .. ")") or info.name
             if FUTURE and info.itemType == FUTURE then
@@ -585,6 +596,7 @@ local function spells()
       end
     end
   elseif GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
+    local attack = autoAttackName()
     for t = 1, GetNumSpellTabs() do
       local tabName, _, offset, num = GetSpellTabInfo(t)
       -- Keep the highest rank of each spell (ranks are listed in order).
@@ -592,7 +604,8 @@ local function spells()
       for i = offset + 1, offset + num do
         local name, rank = GetSpellBookItemName(i, BOOKTYPE_SPELL or "spell")
         local passive = IsPassiveSpell and IsPassiveSpell(i, BOOKTYPE_SPELL or "spell")
-        if name and not passive then
+        local kind = GetSpellBookItemInfo and GetSpellBookItemInfo(i, BOOKTYPE_SPELL or "spell")
+        if name and not passive and kind ~= "FLYOUT" and name ~= attack then
           if not best[name] then order[#order + 1] = name end
           best[name] = (rank and rank ~= "") and (name .. " (" .. rank .. ")") or name
         end
@@ -684,7 +697,7 @@ local function skillLines()
   local count = (C_SkillInfo and C_SkillInfo.GetNumSkillLines) or GetNumSkillLines
   local info = (C_SkillInfo and C_SkillInfo.GetSkillLineInfo) or GetSkillLineInfo
   if not (count and info) then return nil end
-  local list, header = {}, nil
+  local list, header, seen = {}, nil, {}
   for i = 1, num(count()) or 0 do
     local r = { info(i) }
     local name, isHeader, rank, maxRank
@@ -699,7 +712,9 @@ local function skillLines()
     end
     if isHeader then
       header = name
-    elseif type(name) == "string" and name ~= "" then
+    elseif type(name) == "string" and name ~= "" and not seen[name] then
+      -- Each skill once: WoW Forever lists professions and secondary skills twice.
+      seen[name] = true
       list[#list + 1] = { name = name, rank = num(rank), max = num(maxRank), group = header }
     end
     if #list >= MAX_SKILLS then break end

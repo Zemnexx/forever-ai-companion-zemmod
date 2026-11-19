@@ -379,6 +379,10 @@ test('weapon skills from C_SkillInfo (WoW Forever), and rested XP as points plus
   const extra = `
     GetProfessions = function() return nil end
     local lines = {
+      { skillName = "Professions", isHeader = true },
+      -- WoW Forever lists professions and secondary skills twice.
+      { skillName = "Mining", skillRank = 199, skillMaxRank = 225 },
+      { skillName = "Mining", skillRank = 199, skillMaxRank = 225 },
       { skillName = "Weapon Skills", isHeader = true },
       { skillName = "Bows", skillRank = 150, skillMaxRank = 180 },
       { skillName = "Daggers", skillRank = 1, skillMaxRank = 180 },
@@ -390,6 +394,7 @@ test('weapon skills from C_SkillInfo (WoW Forever), and rested XP as points plus
   `;
   const snap = JSON.parse(runLua('RESULT = ns.Json.Encode(ns.Collect:Snapshot())', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra));
   assert.deepEqual(snap.skills, [
+    { name: 'Mining', rank: 199, max: 225, group: 'Professions' },
     { name: 'Bows', rank: 150, max: 180, group: 'Weapon Skills' },
     { name: 'Daggers', rank: 1, max: 180, group: 'Weapon Skills' },
   ]);
@@ -445,10 +450,12 @@ test('items carry their Equip/Use effects and weapon speed from the tooltip', ()
 
 test('action bars with keys, and known spells that are on no bar', () => {
   const extra = `
-    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+    Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2, Flyout = 4 } }
     local book = {
       { name = "Arcane Shot", subName = "Rank 1", itemType = 1 }, { name = "Serpent Sting", subName = "Rank 1", itemType = 1 },
       { name = "Aspect of the Hawk", itemType = 1 }, { name = "Volley", itemType = 2 },
+      -- Not spells to list: a group of the spellbook (flyout) and the auto attack.
+      { name = "Aspects", itemType = 4 }, { name = "Attack", itemType = 1, spellID = 6603 },
     }
     C_SpellBook = {
       GetNumSpellBookSkillLines = function() return 1 end,
