@@ -8,10 +8,10 @@
 -- public API, LibQuestieDB) also:
 --   - the names of the quests done before, in the current zone (the game keeps
 --     the ids of every completed quest; the database knows their names and zones),
---   - the quests available now: right level (not grey), race and class,
+--   - the quests available now: right level (not grey or red), race and class,
 --     prerequisites done, not done and not in the log, with the quest giver and
---     where it stands, in the current zone, the zones of quests in the log and a
---     zone named in the question,
+--     where it stands, in the current zone (saying so when there is none), the
+--     nearest zones of quests in the log and a zone named in the question,
 --   - the next quest of a chain, for quests in the log.
 -- The database is indexed by zone once per session, a little each frame and
 -- never in combat, so the game doesn't stutter; the lists are worked out again
@@ -29,6 +29,7 @@ QuestHelp.MAX_ASKED = 10     -- ...for a zone named in the question (2 zones at 
 QuestHelp.MAX_LOG_ZONES = 3  -- other zones with quests in the log...
 QuestHelp.MAX_LOG_ZONE = 3   -- ...and quests listed for each
 QuestHelp.MAX_DONE = 40      -- completed quests listed for the zone
+QuestHelp.RED = 5            -- quests this many levels above the player are left out (red)
 
 local floor, abs, sqrt, huge = math.floor, math.abs, math.sqrt, math.huge
 
@@ -86,13 +87,19 @@ local function completedSet()
   return set, n
 end
 
--- The quest log: questID -> { title, zone (its header) }, and the zones in order.
+-- The quest log: questID -> { title, zone (its header), dist (yards, when it
+-- is on this continent) }, and the zones in order.
 local lastLog = {}
 local function questLog()
   local entries, zones, seen = {}, {}, {}
   local function add(id, title, header)
     if not id then return end
-    entries[id] = { title = title, zone = header }
+    local e = { title = title, zone = header }
+    if C_QuestLog and C_QuestLog.GetDistanceSqToQuest then
+      local ok, distSq, onContinent = pcall(C_QuestLog.GetDistanceSqToQuest, id)
+      if ok and num(distSq) and onContinent then e.dist = sqrt(distSq) end
+    end
+    entries[id] = e
     if header and not seen[header] then seen[header] = true; zones[#zones + 1] = header end
   end
   local header
@@ -289,7 +296,7 @@ local function available(db, id, p, area)
   local maxLevel = num(get(Q, id, "requiredMaxLevel")) or 0
   if maxLevel > 0 and p.level > maxLevel then return nil end
   local level = num(get(Q, id, "questLevel")) or 0
-  if level > 0 and level < p.minQuestLevel then return nil end
+  if level > 0 and (level < p.minQuestLevel or level - p.level >= QuestHelp.RED) then return nil end
   local races = num(get(Q, id, "requiredRaces")) or 0
   if races ~= 0 and not (p.raceBit and hasBit(races, p.raceBit)) then return nil end
   local classes = num(get(Q, id, "requiredClasses")) or 0
@@ -342,15 +349,17 @@ local function available(db, id, p, area)
 end
 
 -- The quests available in one zone, closest to the player's level first, then
--- nearest. { zone, quests, more = how many more there are }.
-local function zoneList(db, area, p, max, step)
+-- nearest. { zone, quests, more = how many more there are }. With none:
+-- { zone, none = true } when keepEmpty (the current zone, a zone asked about),
+-- nil otherwise.
+local function zoneList(db, area, p, max, step, keepEmpty)
   local rows = {}
   for i, id in ipairs(index.byArea[area] or {}) do
     local row = available(db, id, p, area)
     if row then rows[#rows + 1] = row end
     if i % 10 == 0 then step() end
   end
-  if #rows == 0 then return nil end
+  if #rows == 0 then return keepEmpty and { zone = index.names[area], none = true } or nil end
   local function gap(r) return abs((r.level or p.level) - p.level) end
   table.sort(rows, function(a, b)
     if gap(a) ~= gap(b) then return gap(a) < gap(b) end
@@ -388,6 +397,24 @@ local function doneIn(db, area, zone, p, step)
   return #names > 0 and names or nil
 end
 
+-- The zones of quests in the log, nearest first (by their nearest quest on
+-- this continent), then the others in log order.
+local function nearestZones(p)
+  local best, order = {}, {}
+  for _, e in pairs(p.log) do
+    if e.zone and e.dist and (not best[e.zone] or e.dist < best[e.zone]) then best[e.zone] = e.dist end
+  end
+  for i, zone in ipairs(p.logZones) do order[i] = { zone = zone, i = i } end
+  table.sort(order, function(a, b)
+    local da, dz = best[a.zone] or huge, best[b.zone] or huge
+    if da ~= dz then return da < dz end
+    return a.i < b.i
+  end)
+  local out = {}
+  for i, o in ipairs(order) do out[i] = o.zone end
+  return out
+end
+
 -- Everything for the snapshot.
 local function compute(db, step)
   local p = player(db)
@@ -401,10 +428,10 @@ local function compute(db, step)
   }
   if db and index and p.completed then
     local zones = {}
-    if area then zones[#zones + 1] = zoneList(db, area, p, QuestHelp.MAX_HERE, step) end
-    -- Zones of quests in the log: what else to pick up there.
+    if area then zones[#zones + 1] = zoneList(db, area, p, QuestHelp.MAX_HERE, step, true) end
+    -- Zones of quests in the log, nearest first: what else to pick up there.
     local others = 0
-    for _, header in ipairs(p.logZones) do
+    for _, header in ipairs(nearestZones(p)) do
       local a = areaFor(header)
       if a and a ~= area and others < QuestHelp.MAX_LOG_ZONES then
         local z = zoneList(db, a, p, QuestHelp.MAX_LOG_ZONE, step)
@@ -513,7 +540,7 @@ function QuestHelp:ForQuestion(text, yield)
   table.sort(found, function(a, b) return a.len > b.len end)
   local out = {}
   for i = 1, math.min(2, #found) do
-    local z = zoneList(db, found[i].area, p, self.MAX_ASKED, yield or function() end)
+    local z = zoneList(db, found[i].area, p, self.MAX_ASKED, yield or function() end, true)
     if z then out[#out + 1] = z end
   end
   return #out > 0 and out or nil

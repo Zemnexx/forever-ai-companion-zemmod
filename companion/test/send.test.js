@@ -1794,15 +1794,21 @@ const QUESTIE = `
   ZONE = "Ashenvale"
   GetRealZoneText = function() return ZONE end
   GetZoneText = function() return ZONE end
-  local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [1637] = "Orgrimmar" }
+  local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [405] = "Desolace", [1637] = "Orgrimmar" }
   C_Map = {
     GetAreaInfo = function(id) return areas[id] end,
     GetBestMapForUnit = function() return 1440 end,
     GetMapInfo = function() return { name = ZONE, mapType = 3 } end,
     GetPlayerMapPosition = function() return { GetXY = function() return 0.5, 0.5 end } end,
   }
-  LOG = { { header = "Ashenvale" }, { id = 6571, title = "Warsong Supplies" }, { header = "The Barrens" }, { id = 850, title = "Kolkar Leaders" } }
+  LOG = {
+    { header = "Ashenvale" }, { id = 6571, title = "Warsong Supplies" },
+    { header = "The Barrens" }, { id = 850, title = "Kolkar Leaders" },
+    { header = "Stonetalon Mountains" }, { id = 861, title = "Stonetalon Log Quest" },
+  }
   DONE = { 101, 50 }
+  -- Yards to each quest in the log (on this continent): Stonetalon is nearer than the Barrens.
+  DIST = { [6571] = 100, [850] = 5000, [861] = 1200 }
   C_QuestLog = {
     GetNumQuestLogEntries = function() return #LOG end,
     GetInfo = function(i)
@@ -1812,6 +1818,7 @@ const QUESTIE = `
       return { title = e.title, questID = e.id, level = 25 }
     end,
     GetAllCompletedQuestIDs = function() return DONE end,
+    GetDistanceSqToQuest = function(id) local d = DIST[id]; if d then return d * d, true end return nil, false end,
     GetTitleForQuestID = function(id) return ({ [6571] = "Warsong Supplies" })[id] end,
   }
   C_Reputation = { GetFactionDataByID = function(id) return id == 530 and { currentStanding = 3500 } or nil end }
@@ -1846,6 +1853,7 @@ const QUESTIE = `
     [117] = q("Paladin Calling", 331, 25, { requiredClasses = 2, requiredSpell = 7328, startedBy = { {}, { 300 } } }),
     [118] = q("Forgotten Lore", 331, 25, { requiredSpell = -7328 }),
     [119] = q("Pickup Elsewhere", 331, 25, { startedBy = { { 904 } } }),
+    [120] = q("Far Above", 331, 30, { requiredLevel = 20 }), -- red: 5 levels above
     [50] = q("Orgrimmar Errand", 1637, 10),
     [850] = q("Kolkar Leaders", 17, 25),
     [851] = q("Barrens Errand", 17, 23, { startedBy = { { 905 } } }),
@@ -1853,6 +1861,8 @@ const QUESTIE = `
     [853] = q("Barrens Three", 17, 25, { startedBy = { { 905 } } }),
     [854] = q("Barrens Four", 17, 26, { startedBy = { { 905 } } }),
     [860] = q("Stonetalon Task", 406, 24, { startedBy = { { 906 } } }),
+    [861] = q("Stonetalon Log Quest", 406, 25, { startedBy = { { 906 } } }),
+    [870] = q("Desolace Task", 405, 25, { startedBy = { { 907 } } }),
   }
   local npcs = {
     [900] = { name = "Kuray'bin", friendlyToFaction = "H", spawns = { [331] = { { 60, 50 } } } },
@@ -1862,6 +1872,7 @@ const QUESTIE = `
     [904] = { name = "Gryshka", friendlyToFaction = "H", spawns = { [1637] = { { 45.04, 63.37 } } } },
     [905] = { name = "Thork", friendlyToFaction = "H", spawns = { [17] = { { 51.5, 30.3 } } } },
     [906] = { name = "Seereth Stonebreak", friendlyToFaction = "H", spawns = { [406] = { { 70, 70 } } } },
+    [907] = { name = "Takata Steelblade", friendlyToFaction = "H", spawns = { [405] = { { 55, 26 } } } },
   }
   local objects = { [300] = { name = "Altar of the Light", spawns = { [331] = { { 30, 30 } } } } }
   local function entity(rows)
@@ -1891,8 +1902,10 @@ test('quest help: done quests of the zone, quests available now with their giver
     -- Asking about another zone: its quests go along with that question.
     local orig = ns.Core.BuildFrame
     ns.Core.BuildFrame = function(self, req, step, maxBytes, extra) CAPTURED = extra; return orig(self, req, step, maxBytes, extra) end
-    ASK("What can I do in Stonetalon Mountains?")
+    ASK("What can I do in Desolace?")
     r[#r + 1] = ns.Json.Encode(CAPTURED and CAPTURED.availableQuestsAsked)
+    -- A zone asked about with nothing left in it says so.
+    r[#r + 1] = ns.Json.Encode(ns.QuestHelp:ForQuestion("Anything in Orgrimmar?"))
     -- Warsong Supplies turned in: kept with its zone, and the next quest of the chain opens.
     FIRE("QUEST_TURNED_IN", 6571)
     table.remove(LOG, 2)
@@ -1901,9 +1914,14 @@ test('quest help: done quests of the zone, quests available now with their giver
     local snap2 = ns.Collect:Snapshot()
     local rec = ns.Core:CharData().questsDone[6571]
     r[#r + 1] = rec.t .. "|" .. rec.z .. "|" .. ns.Json.Encode(snap2.completedQuests.inZone) .. "|" .. snap2.availableQuests[1].quests[1].name
+    -- In a zone with nothing left to pick up: it says so, first.
+    ZONE = "Orgrimmar"
+    FIRE("ZONE_CHANGED_NEW_AREA")
+    RUN_FRAMES(300)
+    r[#r + 1] = ns.Json.Encode(ns.Collect:Snapshot().availableQuests[1])
     RESULT = table.concat(r, "#")
   `, {}, QUEST_FILES, FAKE_UI + PRELUDE_DRIVE + QUESTIE);
-  const [done, available, log, asked, after] = out.split('#');
+  const [done, available, log, asked, askedNone, after, empty] = out.split('#');
   assert.deepEqual(JSON.parse(done), { total: 2, zone: 'Ashenvale', inZone: ['Done Before'] });
   const g = (giver, zone, x, y) => ({ giver, at: { zone, x, y } });
   assert.deepEqual(JSON.parse(available), [
@@ -1919,7 +1937,8 @@ test('quest help: done quests of the zone, quests available now with their giver
         { id: 112, name: 'Friends of the Horde', level: 26, minLevel: 23, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
       ],
     },
-    // A zone with a quest in the log: a few more to pick up there.
+    // Zones with a quest in the log, nearest first: a few more to pick up there.
+    { zone: 'Stonetalon Mountains', quests: [{ id: 860, name: 'Stonetalon Task', level: 24, minLevel: 21, ...g('Seereth Stonebreak', 'Stonetalon Mountains', 70, 70) }] },
     {
       zone: 'The Barrens', more: 1,
       quests: [
@@ -1930,11 +1949,13 @@ test('quest help: done quests of the zone, quests available now with their giver
       ],
     },
   ]);
-  assert.equal(log, 'Warsong Supplies>Warsong Scout Update,Kolkar Leaders>nil');
+  assert.equal(log, 'Warsong Supplies>Warsong Scout Update,Kolkar Leaders>nil,Stonetalon Log Quest>nil');
   assert.deepEqual(JSON.parse(asked), [
-    { zone: 'Stonetalon Mountains', quests: [{ id: 860, name: 'Stonetalon Task', level: 24, minLevel: 21, ...g('Seereth Stonebreak', 'Stonetalon Mountains', 70, 70) }] },
+    { zone: 'Desolace', quests: [{ id: 870, name: 'Desolace Task', level: 25, minLevel: 22, ...g('Takata Steelblade', 'Desolace', 55, 26) }] },
   ]);
+  assert.deepEqual(JSON.parse(askedNone), [{ zone: 'Orgrimmar', none: true }]);
   assert.equal(after, 'Warsong Supplies|Ashenvale|["Done Before","Warsong Supplies"]|Warsong Scout Update');
+  assert.deepEqual(JSON.parse(empty), { zone: 'Orgrimmar', none: true });
 });
 
 test('quest help without QuestieDB: the total and the quests the addon saw turned in, nothing more', () => {

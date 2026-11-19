@@ -1324,6 +1324,9 @@ end
 
 local FLIGHT_CONTINENTS = { 1414, 1415 } -- Kalimdor, Eastern Kingdoms (uiMapID)
 
+-- Flight points the game keeps but no longer uses ("zzOLDPowderfuse Port").
+local function retiredFlight(name) return name:sub(1, 2):lower() == "zz" end
+
 -- The continent a map is on: its uiMapID and name, or nil.
 function Collect.ContinentOf(mapID)
   if not (C_Map and C_Map.GetMapInfo) then return nil end
@@ -1364,7 +1367,7 @@ function Collect.FlightMapStatus()
   if C_TaxiMap and C_TaxiMap.GetAllTaxiNodes then
     local current, reachable = flightStates()
     for _, node in ipairs(safe(C_TaxiMap.GetAllTaxiNodes, taxiMap or zone) or {}) do
-      if type(node) == "table" and type(node.name) == "string" and not secret(node.name) then
+      if type(node) == "table" and type(node.name) == "string" and not secret(node.name) and not retiredFlight(node.name) then
         local e = { id = num(node.nodeID), name = node.name }
         if node.state == current or node.state == reachable then known[#known + 1] = e
         else notKnown[#notKnown + 1] = e end
@@ -1373,7 +1376,7 @@ function Collect.FlightMapStatus()
   elseif NumTaxiNodes and TaxiNodeName and TaxiNodeGetType then
     for i = 1, num(safe(NumTaxiNodes)) or 0 do
       local kind, name = TaxiNodeGetType(i), TaxiNodeName(i)
-      if type(name) == "string" and not secret(name) then
+      if type(name) == "string" and not secret(name) and not retiredFlight(name) then
         if kind == "CURRENT" or kind == "REACHABLE" then known[#known + 1] = { name = name }
         elseif kind == "DISTANT" then notKnown[#notKnown + 1] = { name = name } end
       end
@@ -1417,7 +1420,8 @@ local function flightPaths(data)
       for _, e in ipairs(type(list) == "table" and list or {}) do
         local n = e.id and byId[e.id]
         local name = (n and n.name) or e.name
-        if type(name) == "string" and not seen[name] and not (skipOther and n and other and n.faction == other) then
+        if type(name) == "string" and not seen[name] and not retiredFlight(name)
+          and not (skipOther and n and other and n.faction == other) then
           seen[name] = true
           res[#res + 1] = name
         end

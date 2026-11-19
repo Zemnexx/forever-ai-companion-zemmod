@@ -637,6 +637,7 @@ test('flight points: per continent, the ones the player can fly to and the ones 
         { nodeID = 8, name = "Thelsamar, Loch Modan", state = 2, slotIndex = 3 },
         { nodeID = 19, name = "Booty Bay, Stranglethorn", state = 2, slotIndex = 4 },
         { nodeID = 10, name = "Undercity, Tirisfal", state = 2, slotIndex = 5 },
+        { nodeID = 99, name = "zzOLDPowderfuse Port, Riverglades", state = 2, slotIndex = 6 }, -- no longer used
       } end,
       -- Every flight point of a continent, both factions (2 Alliance, 1 Horde, 0 neutral),
       -- named in the client's language now.
