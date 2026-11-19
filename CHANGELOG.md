@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.9)
+## 2.1.2 (addon 1.16.10)
 
 ### Added
 
