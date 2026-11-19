@@ -6,7 +6,7 @@
 
 - **The AI knows which quests you've done and which ones you can pick up.** Every quest you turn in is kept with its zone, and the AI gets how many quests you've completed and the ones done in your current zone. With the QuestieDB addon installed (it comes with Questie), it also gets:
   - the names of quests you completed before, in your current zone (the game keeps every completed quest; QuestieDB knows their names and zones);
-  - the quests you can pick up now in your current zone (or that there are none left there) and in the nearest zones where you have quests: right level (not grey or red), race and class, prerequisites done, not done and not in your log, with the quest giver and its coordinates. Name another zone in your question and its quests go along with that question;
+  - the quests you can pick up now in your current zone (or that there are none left there) and in the nearest zones where you have quests, on your continent first: right level (not grey or red), race and class, prerequisites done, not done and not in your log, with the quest giver and its coordinates. With Questie loaded too, Questie's own check is applied on top (the quests it hides, daily and event rules, quests you hid in Questie), so the list matches the "!" Questie shows. Name another zone in your question and its quests go along with that question;
   - for each quest in your log, the next quest of its chain.
 
   It recommends new quests only from that list, never one you've done. The addon reads QuestieDB in the background, a little each frame and never in combat, so the game doesn't stutter. Without QuestieDB everything else works as before.

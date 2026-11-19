@@ -13,6 +13,9 @@
 --     where it stands, in the current zone (saying so when there is none), the
 --     nearest zones of quests in the log and a zone named in the question,
 --   - the next quest of a chain, for quests in the log.
+-- With Questie loaded too, its own check is applied on top (QuestieDB.IsDoable:
+-- the quests it hides or blacklists, daily and event rules, quests the player
+-- hid in Questie), so the list matches the "!" Questie shows.
 -- The database is indexed by zone once per session, a little each frame and
 -- never in combat, so the game doesn't stutter; the lists are worked out again
 -- the same way when the zone, the level or the quest log changes.
@@ -133,6 +136,49 @@ end
 -- the game's bit library handles.
 local function hasBit(mask, bit) return mask % (bit * 2) >= bit end
 
+-- Questie's own check, when Questie is loaded and ready (Questie.API.isReady):
+-- QuestieDB.IsDoable, plus its rune setting where it has one. It only removes
+-- quests; the level rules stay ours (Questie's check has none). Internal to
+-- Questie, so every call is guarded: if it changes, the list goes on without it.
+local function questieGate()
+  local api = type(Questie) == "table" and Questie.API
+  if type(api) ~= "table" or api.isReady ~= true then return nil end
+  if type(QuestieLoader) ~= "table" or type(QuestieLoader.ImportModule) ~= "function" then return nil end
+  local ok, mod = pcall(QuestieLoader.ImportModule, QuestieLoader, "QuestieDB")
+  if not ok or type(mod) ~= "table" or type(mod.IsDoable) ~= "function" then return nil end
+  local doable, rune = mod.IsDoable, mod.IsRuneAndShouldBeHidden
+  return function(id)
+    local okDoable, yes = pcall(doable, id)
+    if okDoable and yes == false then return false end
+    if type(rune) == "function" then
+      local okRune, hidden = pcall(rune, id)
+      if okRune and hidden == true then return false end
+    end
+    return true
+  end
+end
+
+-- Names (lowercase) of the maps on the player's continent: zones, cities and
+-- dungeons, to list the zones of quests in the log on this continent first.
+local function continentNames()
+  local names = {}
+  if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetMapInfo and C_Map.GetMapChildrenInfo) then return names end
+  local continent = Enum and Enum.UIMapType and Enum.UIMapType.Continent or 2
+  local map, found = C_Map.GetBestMapForUnit("player"), false
+  for _ = 1, 8 do
+    local info = map and C_Map.GetMapInfo(map)
+    if type(info) ~= "table" then break end
+    if info.mapType == continent then found = true break end
+    map = info.parentMapID
+  end
+  if not found then return names end
+  local ok, kids = pcall(C_Map.GetMapChildrenInfo, map, nil, true)
+  for _, k in ipairs(ok and type(kids) == "table" and kids or {}) do
+    if type(k) == "table" and type(k.name) == "string" then names[k.name:lower()] = true end
+  end
+  return names
+end
+
 local function player(db)
   local p = { level = UnitLevel("player") or 1 }
   local _, _, raceId = UnitRace("player")
@@ -144,6 +190,8 @@ local function player(db)
   p.faction = (faction == "Alliance" and "A") or (faction == "Horde" and "H") or nil
   p.completed, p.completedCount = completedSet()
   p.log, p.logZones = questLog()
+  p.gate = db and questieGate() or nil
+  p.here = continentNames()
   -- Grey quests (little experience) are left out.
   local green = GetQuestGreenRange and num(GetQuestGreenRange())
   p.minQuestLevel = p.level - (green or 8)
@@ -338,6 +386,7 @@ local function available(db, id, p, area)
     local known = knowsSpell(abs(spell))
     if known == nil or known ~= (spell > 0) then return nil end
   end
+  if p.gate and not p.gate(id) then return nil end
   local name = get(Q, id, "name")
   if type(name) ~= "string" then return nil end
   local giver = questGiver(db, id, p, area)
@@ -397,15 +446,16 @@ local function doneIn(db, area, zone, p, step)
   return #names > 0 and names or nil
 end
 
--- The zones of quests in the log, nearest first (by their nearest quest on
--- this continent), then the others in log order.
+-- The zones of quests in the log: those on the player's continent first, then
+-- nearest (by their nearest quest on this continent), then in log order.
 local function nearestZones(p)
   local best, order = {}, {}
   for _, e in pairs(p.log) do
     if e.zone and e.dist and (not best[e.zone] or e.dist < best[e.zone]) then best[e.zone] = e.dist end
   end
-  for i, zone in ipairs(p.logZones) do order[i] = { zone = zone, i = i } end
+  for i, zone in ipairs(p.logZones) do order[i] = { zone = zone, i = i, here = p.here[zone:lower()] and 0 or 1 } end
   table.sort(order, function(a, b)
+    if a.here ~= b.here then return a.here < b.here end
     local da, dz = best[a.zone] or huge, best[b.zone] or huge
     if da ~= dz then return da < dz end
     return a.i < b.i
@@ -498,6 +548,11 @@ if runner then
   runner:SetScript("OnEvent", function(_, event)
     -- A quest just taken: read the log now, so its zone is known at the turn-in.
     if event == "QUEST_ACCEPTED" then pcall(questLog) end
+    -- Questie finishes starting after login: its check is used from then on.
+    if event == "PLAYER_LOGIN" and type(Questie) == "table" and type(Questie.API) == "table"
+      and type(Questie.API.RegisterOnReady) == "function" then
+      pcall(Questie.API.RegisterOnReady, function() QuestHelp:Refresh() end)
+    end
     QuestHelp:Refresh(event == "PLAYER_LOGIN" and QuestHelp.START_DELAY or nil)
   end)
 end

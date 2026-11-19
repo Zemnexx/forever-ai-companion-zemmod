@@ -1795,12 +1795,26 @@ const QUESTIE = `
   GetRealZoneText = function() return ZONE end
   GetZoneText = function() return ZONE end
   local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [405] = "Desolace", [1637] = "Orgrimmar" }
+  -- The player's map is in Kalimdor; here Stonetalon is on another continent.
   C_Map = {
     GetAreaInfo = function(id) return areas[id] end,
     GetBestMapForUnit = function() return 1440 end,
-    GetMapInfo = function() return { name = ZONE, mapType = 3 } end,
+    GetMapInfo = function(id)
+      if id == 1414 then return { name = "Kalimdor", mapType = 2 } end
+      return { name = ZONE, mapType = 3, parentMapID = 1414 }
+    end,
+    GetMapChildrenInfo = function(id)
+      if id ~= 1414 then return {} end
+      return { { name = "Ashenvale" }, { name = "The Barrens" }, { name = "Desolace" }, { name = "Orgrimmar" } }
+    end,
     GetPlayerMapPosition = function() return { GetXY = function() return 0.5, 0.5 end } end,
   }
+  -- Questie, ready: its own check hides "Pickup Elsewhere" (as if blacklisted).
+  Questie = { API = { isReady = true, RegisterOnReady = function(callback) READY = callback end } }
+  QuestieLoader = { ImportModule = function(_, name)
+    if name == "QuestieDB" then return { IsDoable = function(id) return id ~= 119 end } end
+    return {}
+  end }
   LOG = {
     { header = "Ashenvale" }, { id = 6571, title = "Warsong Supplies" },
     { header = "The Barrens" }, { id = 850, title = "Kolkar Leaders" },
@@ -1899,6 +1913,7 @@ test('quest help: done quests of the zone, quests available now with their giver
     local log = {}
     for _, q in ipairs(snap.quests or {}) do log[#log + 1] = q.title .. ">" .. tostring(q.next) end
     local r = { ns.Json.Encode(snap.completedQuests), ns.Json.Encode(snap.availableQuests), table.concat(log, ",") }
+    assert(type(READY) == "function", "the lists are worked out again when Questie is ready")
     -- Asking about another zone: its quests go along with that question.
     local orig = ns.Core.BuildFrame
     ns.Core.BuildFrame = function(self, req, step, maxBytes, extra) CAPTURED = extra; return orig(self, req, step, maxBytes, extra) end
@@ -1932,13 +1947,13 @@ test('quest help: done quests of the zone, quests available now with their giver
         { id: 100, name: 'Wood for the Front', level: 25, minLevel: 22, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
         { id: 104, name: 'After Done Before', level: 25, minLevel: 22, ...g('Mitsuwa', 'Ashenvale', 40, 40) },
         { id: 117, name: 'Paladin Calling', level: 25, minLevel: 22, ...g('Altar of the Light', 'Ashenvale', 30, 30) },
-        { id: 119, name: 'Pickup Elsewhere', level: 25, minLevel: 22, ...g('Gryshka', 'Orgrimmar', 45, 63.4) },
+        // (Pickup Elsewhere: hidden by Questie's own check.)
         { id: 116, name: 'Skyborne Welcome', level: 24, minLevel: 21, ...g('Skyborne Herald', 'Ashenvale', 50, 52) },
         { id: 112, name: 'Friends of the Horde', level: 26, minLevel: 23, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
       ],
     },
-    // Zones with a quest in the log, nearest first: a few more to pick up there.
-    { zone: 'Stonetalon Mountains', quests: [{ id: 860, name: 'Stonetalon Task', level: 24, minLevel: 21, ...g('Seereth Stonebreak', 'Stonetalon Mountains', 70, 70) }] },
+    // Zones with a quest in the log, this continent's first, then nearest:
+    // a few more to pick up there.
     {
       zone: 'The Barrens', more: 1,
       quests: [
@@ -1948,6 +1963,8 @@ test('quest help: done quests of the zone, quests available now with their giver
         { id: 852, name: 'Barrens Two', level: 24, minLevel: 21, ...g('Thork', 'The Barrens', 51.5, 30.3) },
       ],
     },
+    // Nearer than the Barrens, but on another continent.
+    { zone: 'Stonetalon Mountains', quests: [{ id: 860, name: 'Stonetalon Task', level: 24, minLevel: 21, ...g('Seereth Stonebreak', 'Stonetalon Mountains', 70, 70) }] },
   ]);
   assert.equal(log, 'Warsong Supplies>Warsong Scout Update,Kolkar Leaders>nil,Stonetalon Log Quest>nil');
   assert.deepEqual(JSON.parse(asked), [
