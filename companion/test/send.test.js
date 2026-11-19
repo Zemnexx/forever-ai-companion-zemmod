@@ -1794,18 +1794,19 @@ const QUESTIE = `
   ZONE = "Ashenvale"
   GetRealZoneText = function() return ZONE end
   GetZoneText = function() return ZONE end
-  local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [405] = "Desolace", [1637] = "Orgrimmar" }
+  local areas = { [331] = "Ashenvale", [17] = "The Barrens", [406] = "Stonetalon Mountains", [405] = "Desolace", [400] = "Thousand Needles", [1637] = "Orgrimmar" }
   -- The player's map is in Kalimdor; here Stonetalon is on another continent.
   C_Map = {
     GetAreaInfo = function(id) return areas[id] end,
     GetBestMapForUnit = function() return 1440 end,
     GetMapInfo = function(id)
       if id == 1414 then return { name = "Kalimdor", mapType = 2 } end
+      if id == 1441 then return { name = "Thousand Needles", mapType = 3, parentMapID = 1414 } end
       return { name = ZONE, mapType = 3, parentMapID = 1414 }
     end,
     GetMapChildrenInfo = function(id)
       if id ~= 1414 then return {} end
-      return { { name = "Ashenvale" }, { name = "The Barrens" }, { name = "Desolace" }, { name = "Orgrimmar" } }
+      return { { name = "Ashenvale" }, { name = "The Barrens" }, { name = "Desolace" }, { name = "Thousand Needles" }, { name = "Orgrimmar" } }
     end,
     GetPlayerMapPosition = function() return { GetXY = function() return 0.5, 0.5 end } end,
   }
@@ -1823,6 +1824,8 @@ const QUESTIE = `
   DONE = { 101, 50 }
   -- Yards to each quest in the log (on this continent): Stonetalon is nearer than the Barrens.
   DIST = { [6571] = 100, [850] = 5000, [861] = 1200 }
+  -- Where a quest sends the player (its map): the Stonetalon one, to Thousand Needles.
+  GetQuestUiMapID = function(id) return id == 861 and 1441 or 0 end
   C_QuestLog = {
     GetNumQuestLogEntries = function() return #LOG end,
     GetInfo = function(i)
@@ -1877,6 +1880,7 @@ const QUESTIE = `
     [860] = q("Stonetalon Task", 406, 24, { startedBy = { { 906 } } }),
     [861] = q("Stonetalon Log Quest", 406, 25, { startedBy = { { 906 } } }),
     [870] = q("Desolace Task", 405, 25, { startedBy = { { 907 } } }),
+    [880] = q("Needles Task", 400, 25, { startedBy = { { 908 } } }),
   }
   local npcs = {
     [900] = { name = "Kuray'bin", friendlyToFaction = "H", spawns = { [331] = { { 60, 50 } } } },
@@ -1887,6 +1891,7 @@ const QUESTIE = `
     [905] = { name = "Thork", friendlyToFaction = "H", spawns = { [17] = { { 51.5, 30.3 } } } },
     [906] = { name = "Seereth Stonebreak", friendlyToFaction = "H", spawns = { [406] = { { 70, 70 } } } },
     [907] = { name = "Takata Steelblade", friendlyToFaction = "H", spawns = { [405] = { { 55, 26 } } } },
+    [908] = { name = "Grenka Bloodscreech", friendlyToFaction = "H", spawns = { [400] = { { 30, 50 } } } },
   }
   local objects = { [300] = { name = "Altar of the Light", spawns = { [331] = { { 30, 30 } } } } }
   local function entity(rows)
@@ -1952,8 +1957,10 @@ test('quest help: done quests of the zone, quests available now with their giver
         { id: 112, name: 'Friends of the Horde', level: 26, minLevel: 23, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
       ],
     },
-    // Zones with a quest in the log, this continent's first, then nearest:
-    // a few more to pick up there.
+    // Zones the quests in the log come from or send to, this continent's first,
+    // then nearest: a few more to pick up there. Thousand Needles: where the
+    // Stonetalon quest sends the player.
+    { zone: 'Thousand Needles', quests: [{ id: 880, name: 'Needles Task', level: 25, minLevel: 22, ...g('Grenka Bloodscreech', 'Thousand Needles', 30, 50) }] },
     {
       zone: 'The Barrens', more: 1,
       quests: [

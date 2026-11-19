@@ -165,7 +165,7 @@ test('quests: new ones only from the available list, never one already done', ()
   const s = buildSystem('', 'fizzi');
   assert.match(s, /"next" \(the quest that follows it in its chain\)/);
   assert.match(s, /- completedQuests: "total" = quests this character has completed; "inZone" = the ones done in their current zone/);
-  assert.match(s, /- availableQuests: quests they can pick up now: right level \(not grey or red\), race and class, prerequisites done, not done and not in the log\. Per zone, their current zone first \("none": nothing left to pick up there\), then the nearest zones of quests in their log[^\n]*availableQuestsAsked: the same for a zone named in the question/);
+  assert.match(s, /- availableQuests: quests they can pick up now: right level \(not grey or red\), race and class, prerequisites done, not done and not in the log\. Per zone, their current zone first \("none": nothing left to pick up there\), then the nearest zones the quests in their log come from or send them to[^\n]*availableQuestsAsked: the same for a zone named in the question/);
   assert.match(s, /New quests to pick up: when "availableQuests" or "availableQuestsAsked" is there, only from it[^\n]*Never one in "completedQuests" or "recentlyCompletedQuests"\. A quest in none of these lists is already done or not available yet/);
 });
 test('the AI knows WoW Forever and searches only when it can', () => {

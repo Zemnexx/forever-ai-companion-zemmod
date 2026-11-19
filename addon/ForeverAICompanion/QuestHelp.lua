@@ -11,7 +11,8 @@
 --   - the quests available now: right level (not grey or red), race and class,
 --     prerequisites done, not done and not in the log, with the quest giver and
 --     where it stands, in the current zone (saying so when there is none), the
---     nearest zones of quests in the log and a zone named in the question,
+--     nearest zones the quests in the log come from or send the player to, and a
+--     zone named in the question,
 --   - the next quest of a chain, for quests in the log.
 -- With Questie loaded too, its own check is applied on top (QuestieDB.IsDoable:
 -- the quests it hides or blacklists, daily and event rules, quests the player
@@ -29,7 +30,7 @@ QuestHelp.BUDGET_MS = 2      -- work per frame, in milliseconds
 QuestHelp.START_DELAY = 3    -- seconds after login before the first index
 QuestHelp.MAX_HERE = 10      -- available quests listed for the current zone
 QuestHelp.MAX_ASKED = 10     -- ...for a zone named in the question (2 zones at most)
-QuestHelp.MAX_LOG_ZONES = 3  -- other zones with quests in the log...
+QuestHelp.MAX_LOG_ZONES = 4  -- other zones that quests in the log come from or send to...
 QuestHelp.MAX_LOG_ZONE = 3   -- ...and quests listed for each
 QuestHelp.MAX_DONE = 40      -- completed quests listed for the zone
 QuestHelp.RED = 5            -- quests this many levels above the player are left out (red)
@@ -90,20 +91,44 @@ local function completedSet()
   return set, n
 end
 
--- The quest log: questID -> { title, zone (its header), dist (yards, when it
--- is on this continent) }, and the zones in order.
+local function mapName(map)
+  local info = num(map) and map > 0 and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(map)
+  return type(info) == "table" and type(info.name) == "string" and info.name or nil
+end
+
+-- Where a quest sends the player: its area on the map, or else its next
+-- waypoint (the turn-in, for a finished quest).
+local function destination(id)
+  if GetQuestUiMapID then
+    local ok, map = pcall(GetQuestUiMapID, id)
+    local name = ok and mapName(map)
+    if name then return name end
+  end
+  if C_QuestLog and C_QuestLog.GetNextWaypoint then
+    local ok, map = pcall(C_QuestLog.GetNextWaypoint, id)
+    return ok and mapName(map) or nil
+  end
+end
+
+-- The quest log: questID -> { title, zone (its header: where it came from),
+-- dest (where it sends the player), dist (yards to it, when on this
+-- continent) }, and those zones in order.
 local lastLog = {}
 local function questLog()
   local entries, zones, seen = {}, {}, {}
+  local function zone(name)
+    if name and not seen[name] then seen[name] = true; zones[#zones + 1] = name end
+  end
   local function add(id, title, header)
     if not id then return end
-    local e = { title = title, zone = header }
+    local e = { title = title, zone = header, dest = destination(id) }
     if C_QuestLog and C_QuestLog.GetDistanceSqToQuest then
       local ok, distSq, onContinent = pcall(C_QuestLog.GetDistanceSqToQuest, id)
       if ok and num(distSq) and onContinent then e.dist = sqrt(distSq) end
     end
     entries[id] = e
-    if header and not seen[header] then seen[header] = true; zones[#zones + 1] = header end
+    zone(header)
+    zone(e.dest)
   end
   local header
   if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
@@ -446,12 +471,15 @@ local function doneIn(db, area, zone, p, step)
   return #names > 0 and names or nil
 end
 
--- The zones of quests in the log: those on the player's continent first, then
--- nearest (by their nearest quest on this continent), then in log order.
+-- The zones quests in the log come from or send the player to: those on the
+-- player's continent first, then nearest (by the nearest of their quests on
+-- this continent), then in log order.
 local function nearestZones(p)
   local best, order = {}, {}
   for _, e in pairs(p.log) do
-    if e.zone and e.dist and (not best[e.zone] or e.dist < best[e.zone]) then best[e.zone] = e.dist end
+    for _, z in ipairs({ e.zone or false, e.dest or false }) do
+      if z and e.dist and (not best[z] or e.dist < best[z]) then best[z] = e.dist end
+    end
   end
   for i, zone in ipairs(p.logZones) do order[i] = { zone = zone, i = i, here = p.here[zone:lower()] and 0 or 1 } end
   table.sort(order, function(a, b)
@@ -479,7 +507,7 @@ local function compute(db, step)
   if db and index and p.completed then
     local zones = {}
     if area then zones[#zones + 1] = zoneList(db, area, p, QuestHelp.MAX_HERE, step, true) end
-    -- Zones of quests in the log, nearest first: what else to pick up there.
+    -- Zones quests in the log come from or go to, nearest first: what else to pick up there.
     local others = 0
     for _, header in ipairs(nearestZones(p)) do
       local a = areaFor(header)
