@@ -69,7 +69,7 @@ Every question comes with a JSON of the character's state, read from the game at
 - lockouts: dungeons and raids with an active lockout and hours until reset.
 - flightPaths: per continent, from the last flight master's map the player opened there ("seenAt"): "known" = the flight points they can fly to; "notKnown" = their faction's and neutral flight points they can't fly to yet (not discovered: they have to get there another way and talk to its flight master once). "notChecked": they haven't opened a flight master's map on that continent since the addon was updated, so "known" there may be incomplete and nothing is known about the rest.
 - auctionPrices: for items in their bags or bank, the cheapest auction house buyout per item the addon saw when the player browsed the auction house ("seenAt"; prices change, older ones are less reliable). Use it to say what is worth selling at the auction house or to a vendor, and what something costs. Items they never looked up have no price: if they ask about auction prices and there is no "auctionPrices" or "screen.auction", tell them to open the auction house and search for the item, then ask again. recentlyCompletedQuests: quests turned in recently.
-- knownRecipes: per profession, the recipes known the last time its window was opened ("seenAt"; may be outdated), with "difficulty" = the chance to raise the skill by crafting it (orange always, yellow usually, green rarely, grey never), "canMake" = how many the bags allowed then, and "reagents" (not listed for grey recipes). To say what they can craft now, compare "reagents" with "inventory".
+- knownRecipes: per profession, the recipes known the last time its window was opened ("seenAt"; may be outdated), with "difficulty" = the chance to raise the skill by crafting it (orange always, yellow usually, green rarely, grey never), "canMake" = how many the bags allowed then (not every game version gives it), and "reagents" (not listed for grey recipes). To say what they can craft now, compare "reagents" with "inventory". It only comes with questions about crafting (or naming a profession, a recipe or one of its materials); if such a question comes without it, they haven't opened that profession's window since the addon started saving recipes: ask them to open it once and ask again.
 - linkedItems: things the player linked in the question with shift-click (the question shows them as "[Name]"). Items come with stats, "effects" and "slots": the "gear" slots they would go in, to compare with what is equipped there. Linked spells come with the game's "description".
 - screen: game windows open while asking; the question is very likely about them. questOffer: a quest being offered (text, objectives, rewards). questProgress: a quest being turned in ("requiredItems", "canComplete"). questReward: turning in a quest, with "rewards.choices" (pick one: recommend the best for their class and gear). questGreeting / gossip: an NPC's dialogue, options and quests. merchant: a vendor's items (price, stats, "limited" stock, "usable") plus "canRepair" and "repairAllCost". trainer: what the trainer teaches ("status" available/unavailable, cost, level, "needsSkill"); with "beastTraining": true it is the hunter's Beast Training window, and "status" is known (the pet already has it) / available / unavailable, with "trainingPoints" cost. loot: the loot window. flightMap: the flight master's map: "from" (where they are) and the "destinations" they can fly to, with "cost" and "stops". auction: the auction house: "results" (what they are browsing, each with the cheapest buyout "price" per item and "quantity" on sale), "search" (the item they searched and its "cheapest" offers, price per item x quantity) and "myAuctions" (their own auctions, "sold" when sold).
 - pet: the active pet: name, level, family, "xpPct", "happiness" (unhappy/content/happy; "damagePct" is the damage it deals because of it), "loyalty", "trainingPoints" ("available" to spend, "spent"), "diet" (food types it eats), "mode" (its stance: aggressive/defensive/passive...), "abilities" (what it knows, with rank, "[autocast on/off]" or "[passive]") and "stats" (attributes, armor, attack power, damage, attack speed, resistances). No "pet" section: no pet is out right now.
@@ -173,6 +173,54 @@ export function buildSystem(knowledge, persona, {
   return parts.join('\n\n');
 }
 
+// Recipes ("knownRecipes") are long and only matter for crafting, so they go
+// to the AI only when the question (or the one just before it) is about
+// crafting, names a profession, a recipe or one of its materials, or a
+// trainer's window is open. Skill levels ("professions") always go. Decided
+// here and not in the game: the app also sees what was said in a voice question.
+const CRAFT_WORDS = new RegExp([
+  '\\b(craft\\w*|recipes?|professions?|reagents?|materials?|mats|smelt\\w*|cook\\w*|bandages?|first aid',
+  'skill(ing)? up|blacksmith\\w*|mining|alchem\\w*|tailor\\w*|leatherwork\\w*|engineer\\w*|enchant\\w*|forge|anvil)\\b',
+  'fabric\\w*|recetas?|profesi[oó]n\\w*|materiales|reactivos|fundi\\w*|cocin\\w*|vendajes?|primeros auxilios',
+  'herrer[ií]a|miner[ií]a|alquimia|sastrer[ií]a|peleter[ií]a|ingenier[ií]a|encantamiento\\w*',
+].join('|'), 'i');
+
+// Lowercase names to look for in the question: professions, recipes and their materials.
+function recipeTerms(knownRecipes) {
+  const terms = new Set();
+  for (const p of knownRecipes) {
+    if (p?.profession) terms.add(String(p.profession).toLowerCase());
+    for (const r of Array.isArray(p?.recipes) ? p.recipes : []) {
+      if (r?.name) terms.add(String(r.name).toLowerCase());
+      for (const part of String(r?.reagents || '').split(',')) {
+        const name = part.trim().replace(/^\d+x\s+/, '').toLowerCase();
+        if (name) terms.add(name);
+      }
+    }
+  }
+  return [...terms].filter((t) => t.length >= 4);
+}
+
+export function wantsRecipes(req) {
+  const ctx = req?.context || {};
+  if (!Array.isArray(ctx.knownRecipes) || ctx.knownRecipes.length === 0) return false;
+  if (ctx.screen && ctx.screen.trainer) return true;
+  const history = Array.isArray(req.history) ? req.history : [];
+  const texts = [req.question, history.length ? history[history.length - 1]?.q : '']
+    .map((t) => String(t || '').toLowerCase()).filter(Boolean);
+  if (texts.some((t) => CRAFT_WORDS.test(t))) return true;
+  const terms = recipeTerms(ctx.knownRecipes);
+  return texts.some((t) => terms.some((term) => t.includes(term)));
+}
+
+// The character data the AI gets for this question.
+export function promptContext(req) {
+  const ctx = req?.context ?? {};
+  if (!ctx.knownRecipes || wantsRecipes(req)) return ctx;
+  const { knownRecipes, ...rest } = ctx;
+  return rest;
+}
+
 // Chat turns: earlier Q&A (sent by the addon) + the current question with context.
 export function buildMessages(req) {
   const messages = [];
@@ -184,7 +232,7 @@ export function buildMessages(req) {
   }
   messages.push({
     role: 'user',
-    content: `Current state of my character (JSON):\n${JSON.stringify(req.context ?? {})}\n\nQuestion: ${req.question}`,
+    content: `Current state of my character (JSON):\n${JSON.stringify(promptContext(req))}\n\nQuestion: ${req.question}`,
   });
   return messages;
 }

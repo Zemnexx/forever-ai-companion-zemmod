@@ -1850,11 +1850,25 @@ end
 
 -- Modern window (C_TradeSkillUI).
 local MODERN_DIFFICULTY = { [0] = "orange", "yellow", "green", "grey" }
+
+-- The open window's profession: the first of the child (an expansion's part of
+-- the profession) and the base profession info that has a name. WoW Forever
+-- answers the child one with a blank name and skill 0, and the base one with
+-- the profession and its skill ("Mining", 206, 300).
+local function professionInfo(T)
+  for _, fn in ipairs({ T.GetChildProfessionInfo or false, T.GetBaseProfessionInfo or false }) do
+    if fn then
+      local ok, info = pcall(fn)
+      local name = ok and type(info) == "table" and info.professionName
+      if type(name) == "string" and name ~= "" and not secret(name) then return info, name end
+    end
+  end
+end
+
 local function modernRecipes()
   local T = C_TradeSkillUI
-  local info = (T.GetChildProfessionInfo and T.GetChildProfessionInfo()) or (T.GetBaseProfessionInfo and T.GetBaseProfessionInfo())
-  local profession = info and (info.professionName or info.parentProfessionName)
-  if not profession or profession == "" then return nil end
+  local info, profession = professionInfo(T)
+  if not profession then return nil end
   local list = {}
   for _, id in ipairs(T.GetAllRecipeIDs() or {}) do
     local r = T.GetRecipeInfo(id)

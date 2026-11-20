@@ -569,6 +569,37 @@ test('auras, stances and forms on the stance bar count as on the bars', () => {
   assert.deepEqual(snap.spellsNotOnBars, ['Hammer of Wrath'], 'the auras are on the stance bar');
 });
 
+test('recipes of the modern profession window on WoW Forever: the profession from the base info when the child one is blank', () => {
+  const extra = `
+    -- The game also takes item ids (the reagents come as ids).
+    local byLink = C_Item.GetItemInfo
+    C_Item.GetItemInfo = function(x)
+      if type(x) == "number" then return ({ [2772] = "Iron Ore" })[x] end
+      return byLink(x)
+    end
+    local recipes = {
+      [1] = { name = "Smelt Iron", learned = true, relativeDifficulty = 1 },
+      [2] = { name = "Smelt Mithril", learned = false, relativeDifficulty = 0 },
+      [3] = { name = "Lodestone", learned = true, relativeDifficulty = 3 },
+    }
+    C_TradeSkillUI = {
+      -- Forever: a blank child profession, the real one in the base info.
+      GetChildProfessionInfo = function() return { professionName = "", skillLevel = 0 } end,
+      GetBaseProfessionInfo = function() return { professionName = "Mining", skillLevel = 206, maxSkillLevel = 300 } end,
+      GetAllRecipeIDs = function() return { 1, 2, 3 } end,
+      GetRecipeInfo = function(id) return recipes[id] end,
+      GetRecipeSchematic = function(id)
+        return { reagentSlotSchematics = { { quantityRequired = 1, reagents = { { itemID = 2772 } } } } }
+      end,
+    }
+  `;
+  const out = runLua('RESULT = ns.Json.Encode(ns.Collect:Recipes("trade"))', {}, ['Json.lua', 'Collect.lua'], FAKE_WOW + extra);
+  assert.deepEqual(JSON.parse(out), {
+    profession: 'Mining', rank: 206, max: 300,
+    recipes: [{ name: 'Smelt Iron', difficulty: 'yellow', reagents: '1x Iron Ore' }, { name: 'Lodestone', difficulty: 'grey' }],
+  });
+});
+
 test('recent red error messages and deaths go along for a while', () => {
   const extra = `
     FRAMES = {}

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { loadConfig, wowPaths } from '../src/config.js';
 import { install } from '../src/install.js';
 import { handleRequest, readRequest } from '../src/watcher.js';
-import { cleanAnswer, buildSystem, flattenPrompt } from '../src/prompt.js';
+import { cleanAnswer, buildSystem, buildMessages, flattenPrompt, wantsRecipes } from '../src/prompt.js';
 import { anthropicWebTools, canSearch } from '../src/providers.js';
 import { claudeCodeArgs } from '../src/providers.js';
 import { applyPreset } from '../src/config.js';
@@ -167,6 +167,26 @@ test('quests: new ones only from the available list, never one already done', ()
   assert.match(s, /- completedQuests: "total" = quests this character has completed; "inZone" = the ones done in their current zone/);
   assert.match(s, /- availableQuests: quests they can pick up now: right level \(not grey or red\), race and class, prerequisites done, not done and not in the log\. Per zone, their current zone first \("none": nothing left to pick up there\), then the nearest zones the quests in their log come from or send them to[^\n]*availableQuestsAsked: the same for a zone named in the question/);
   assert.match(s, /New quests to pick up: when "availableQuests" or "availableQuestsAsked" is there, only from it[^\n]*Never one in "completedQuests" or "recentlyCompletedQuests"\. A quest in none of these lists is already done or not available yet/);
+});
+test('recipes go to the AI only with crafting questions; skill levels always', () => {
+  const knownRecipes = [{ profession: 'Mining', recipes: [{ name: 'Smelt Iron', reagents: '1x Iron Ore' }, { name: 'Lodestone' }] }];
+  const professions = [{ name: 'Mining', rank: 206, max: 300 }];
+  const sent = (question, extra = {}) => {
+    const content = buildMessages({ question, context: { professions, knownRecipes, ...extra.context }, history: extra.history }).at(-1).content;
+    return { recipes: content.includes('"knownRecipes"'), skills: content.includes('"professions"') };
+  };
+  assert.deepEqual(sent('What should I do next?'), { recipes: false, skills: true });
+  assert.deepEqual(sent('how do I make money'), { recipes: false, skills: true });
+  for (const q of ['What can I craft?', 'Should I level mining?', 'What do I do with my iron ore?', 'Is Smelt Iron still worth it?',
+    '¿Qué recetas tengo?', '¿Qué puedo fabricar?', 'How do I cook this?']) {
+    assert.equal(sent(q).recipes, true, q);
+  }
+  // A follow-up to a crafting question, and a trainer's window open.
+  assert.equal(sent('And how many?', { history: [{ q: 'What can I craft?', a: 'Iron bars.' }] }).recipes, true);
+  assert.equal(sent('What should I learn?', { context: { screen: { trainer: { services: [] } } } }).recipes, true);
+  assert.equal(wantsRecipes({ question: 'What can I craft?', context: {} }), false, 'nothing saved: nothing to send');
+  const s = buildSystem('', 'fizzi');
+  assert.match(s, /- knownRecipes: [^\n]*It only comes with questions about crafting[^\n]*ask them to open it once and ask again\./);
 });
 test('the AI knows WoW Forever and searches only when it can', () => {
   const withSearch = buildSystem('', 'fizzi', { canSearch: true });

@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.10)
+## 2.1.2 (addon 1.16.11)
 
 ### Added
 
@@ -30,10 +30,12 @@
   - hearthstone and rested XP, only for travel or leveling questions.
 
   A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
+- **Recipes only go with crafting questions.** They are the longest part of your data (about 1,500 tokens for three professions), so the app now sends them only when the question is about crafting, names a profession, a recipe or one of its materials (also in the question just before), or a trainer's window is open. Your profession skill levels still go with every question.
 - **No more reminders about abilities missing from your bars.** They kept naming abilities your spec doesn't use. The AI still knows which abilities are on no bar, and uses that only when you ask about your bars, keybinds, rotation or a spell you can't find.
 
 ### Fixed
 
+- **Recipes are saved on WoW Forever.** Its profession window gives the profession's name through a different game function than the addon used, so no recipe was ever saved and the AI only knew your skill levels. Open each profession window once (Blacksmithing, Mining's smelting, Cooking, First Aid...) to save them.
 - **The bank is remembered as you left it.** The addon saved the bank when you opened it and when its main slots changed, but not when you took things out of the bags inside the bank (or put them in), so the AI could count items you had already taken out. It now saves after every change while the bank is open, an emptied bank included. Open your bank once to refresh what it remembers.
 - **Skills and spells are listed cleanly.** Each profession and secondary skill was listed twice, and the spell list had the spellbook's groups (Blessings, Auras, Utility Blessings) and the auto attack in it, as if they were abilities missing from your bars.
 - **Directions no longer fly you to flight points you haven't discovered.** At each flight master, the addon now keeps both lists for that continent: the flight points you can fly to, and the ones of your faction (or neutral) you haven't discovered yet, which the game's map hides. The AI plans flights only between the ones you have, and for one you're missing it tells you to get there another way and talk to its flight master. A continent where you haven't opened a flight master's map since this update is marked as not checked, and the AI asks you to open one there. Names follow the game's current language, so they no longer show up twice after switching the client between English and Spanish, and flight points the game no longer uses (named "zzOLD...") are left out.
