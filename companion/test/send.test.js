@@ -1940,7 +1940,10 @@ const QUESTIE = `
     GetDistanceSqToQuest = function(id) local d = DIST[id]; if d then return d * d, true end return nil, false end,
     GetTitleForQuestID = function(id) return ({ [6571] = "Warsong Supplies" })[id] end,
   }
-  C_Reputation = { GetFactionDataByID = function(id) return id == 530 and { currentStanding = 3500 } or nil end }
+  -- 530: Friendly enough; 92 (Gelkis): Hated; 93 (Magram): Friendly.
+  local reps = { [530] = { currentStanding = 3500, reaction = 5 }, [92] = { currentStanding = -40000, reaction = 1 },
+                 [93] = { currentStanding = 4000, reaction = 5 } }
+  C_Reputation = { GetFactionDataByID = function(id) return reps[id] end }
   IsPlayerSpell = function(id) return id == 7328 end
   -- Race bits as the game's (Horde: orc 2, undead 16, tauren 32, troll 128); 2^32 = a race beyond 32 bits.
   local H, A = 178, 77
@@ -1973,6 +1976,9 @@ const QUESTIE = `
     [118] = q("Forgotten Lore", 331, 25, { requiredSpell = -7328 }),
     [119] = q("Pickup Elsewhere", 331, 25, { startedBy = { { 904 } } }),
     [120] = q("Far Above", 331, 30, { requiredLevel = 20 }), -- red: 5 levels above
+    -- Reputation to earn: with the Gelkis (Hated) not one to do; with the Magram (Friendly) fine.
+    [121] = q("Gelkis Pact", 331, 25, { objectives = { [4] = { 92, 3000 } } }),
+    [122] = q("Magram Pact", 331, 25, { objectives = { [4] = { { 93, 9000 } } }, startedBy = { { 901 } } }),
     [50] = q("Orgrimmar Errand", 1637, 10),
     [850] = q("Kolkar Leaders", 17, 25),
     [851] = q("Barrens Errand", 17, 23, { startedBy = { { 905 } } }),
@@ -2041,9 +2047,15 @@ test('quest help: done quests of the zone, quests available now with their giver
     FIRE("ZONE_CHANGED_NEW_AREA")
     RUN_FRAMES(300)
     r[#r + 1] = ns.Json.Encode(ns.Collect:Snapshot().availableQuests[1])
+    -- A zone's completed list cut short says how many more there are.
+    ZONE = "Ashenvale"
+    ns.QuestHelp.MAX_DONE = 1
+    FIRE("ZONE_CHANGED_NEW_AREA")
+    RUN_FRAMES(300)
+    r[#r + 1] = ns.Json.Encode(ns.Collect:Snapshot().completedQuests)
     RESULT = table.concat(r, "#")
   `, {}, QUEST_FILES, FAKE_UI + PRELUDE_DRIVE + QUESTIE);
-  const [done, available, log, asked, askedNone, after, empty] = out.split('#');
+  const [done, available, log, asked, askedNone, after, empty, cut] = out.split('#');
   assert.deepEqual(JSON.parse(done), { total: 2, zone: 'Ashenvale', inZone: ['Done Before'] });
   const g = (giver, zone, x, y) => ({ giver, at: { zone, x, y } });
   assert.deepEqual(JSON.parse(available), [
@@ -2053,6 +2065,7 @@ test('quest help: done quests of the zone, quests available now with their giver
         // Closest to the player's level first, then nearest.
         { id: 100, name: 'Wood for the Front', level: 25, minLevel: 22, ...g("Kuray'bin", 'Ashenvale', 60, 50) },
         { id: 104, name: 'After Done Before', level: 25, minLevel: 22, ...g('Mitsuwa', 'Ashenvale', 40, 40) },
+        { id: 122, name: 'Magram Pact', level: 25, minLevel: 22, ...g('Mitsuwa', 'Ashenvale', 40, 40) },
         { id: 117, name: 'Paladin Calling', level: 25, minLevel: 22, ...g('Altar of the Light', 'Ashenvale', 30, 30) },
         // (Pickup Elsewhere: hidden by Questie's own check.)
         { id: 116, name: 'Skyborne Welcome', level: 24, minLevel: 21, ...g('Skyborne Herald', 'Ashenvale', 50, 52) },
@@ -2082,6 +2095,7 @@ test('quest help: done quests of the zone, quests available now with their giver
   assert.deepEqual(JSON.parse(askedNone), [{ zone: 'Orgrimmar', none: true }]);
   assert.equal(after, 'Warsong Supplies|Ashenvale|["Done Before","Warsong Supplies"]|Warsong Scout Update');
   assert.deepEqual(JSON.parse(empty), { zone: 'Orgrimmar', none: true });
+  assert.deepEqual(JSON.parse(cut), { total: 3, zone: 'Ashenvale', inZone: ['Done Before'], more: 1 });
 });
 
 test('quest help without QuestieDB: the total and the quests the addon saw turned in, nothing more', () => {

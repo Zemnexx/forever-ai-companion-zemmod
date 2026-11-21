@@ -314,6 +314,32 @@ local function repValue(factionId)
   end
 end
 
+-- Standing with a faction (1 Hated, 2 Hostile... 8 Exalted), or nil if unknown.
+local function factionStanding(factionId)
+  if C_Reputation and C_Reputation.GetFactionDataByID then
+    local ok, d = pcall(C_Reputation.GetFactionDataByID, factionId)
+    return ok and type(d) == "table" and num(d.reaction) or nil
+  elseif GetFactionInfoByID then
+    local ok, _, _, standing = pcall(GetFactionInfoByID, factionId)
+    return ok and num(standing) or nil
+  end
+end
+
+-- A quest whose objective is reputation with a faction the player is Hostile
+-- or Hated with (Gelkis Alliance after siding with the Magram): not one to do.
+-- QuestieDB's objectives: group 4 = reputation, { factionId, value } (one pair
+-- or a list of them).
+local function needsHostileRep(objectives)
+  local rep = type(objectives) == "table" and objectives[4]
+  if type(rep) ~= "table" then return false end
+  local list = type(rep[1]) == "number" and { rep } or rep
+  for _, pair in ipairs(list) do
+    local standing = type(pair) == "table" and num(pair[1]) and factionStanding(pair[1])
+    if standing and standing <= 2 then return true end
+  end
+  return false
+end
+
 local function knowsSpell(id)
   if IsPlayerSpell then return IsPlayerSpell(id) and true or false end
   if IsSpellKnown then return IsSpellKnown(id) and true or false end
@@ -406,6 +432,7 @@ local function available(db, id, p, area)
     local v = repValue(maxRep[1])
     if not v or v >= (num(maxRep[2]) or 0) then return nil end
   end
+  if needsHostileRep(get(Q, id, "objectives")) then return nil end
   local spell = num(get(Q, id, "requiredSpell")) or 0
   if spell ~= 0 then
     local known = knowsSpell(abs(spell))
@@ -467,8 +494,9 @@ local function doneIn(db, area, zone, p, step)
     if type(rec) == "table" and rec.z and rec.z == zone then add(rec.t) end
   end
   table.sort(names)
+  local more = #names - QuestHelp.MAX_DONE
   while #names > QuestHelp.MAX_DONE do table.remove(names) end
-  return #names > 0 and names or nil
+  return #names > 0 and names or nil, more > 0 and more or nil
 end
 
 -- The zones quests in the log come from or send the player to: those on the
@@ -501,9 +529,8 @@ local function compute(db, step)
   local area = db and index and currentArea(p) or nil
   p.area = area
   local zoneName = (area and index.names[area]) or zone
-  out.completedQuests = {
-    total = p.completedCount, zone = zoneName, inZone = doneIn(db, area, zone, p, step),
-  }
+  local inZone, more = doneIn(db, area, zone, p, step)
+  out.completedQuests = { total = p.completedCount, zone = zoneName, inZone = inZone, more = more }
   if db and index and p.completed then
     local zones = {}
     if area then zones[#zones + 1] = zoneList(db, area, p, QuestHelp.MAX_HERE, step, true) end
