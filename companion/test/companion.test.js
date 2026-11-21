@@ -8,7 +8,7 @@ import path from 'node:path';
 import { loadConfig, wowPaths } from '../src/config.js';
 import { install } from '../src/install.js';
 import { handleRequest, readRequest } from '../src/watcher.js';
-import { cleanAnswer, buildSystem, buildMessages, flattenPrompt, wantsRecipes } from '../src/prompt.js';
+import { cleanAnswer, buildSystem, buildMessages, flattenPrompt, wantsRecipes, wantsQuestDetail, promptContext, DONE_SHOWN } from '../src/prompt.js';
 import { anthropicWebTools, canSearch } from '../src/providers.js';
 import { claudeCodeArgs } from '../src/providers.js';
 import { applyPreset } from '../src/config.js';
@@ -194,6 +194,36 @@ test('recipes go to the AI only with crafting questions; skill levels always', (
     recipes: [{ name: 'Smelt Steel', difficulty: 'yellow', reagents: '1x Iron Bar, 1x Coal' }], greyRecipes: ['Smelt Iron', 'Smelt Tin'] }]);
   const s = buildSystem('', 'fizzi');
   assert.match(s, /- knownRecipes: [^\n]*It only comes with questions about crafting[^\n]*ask them to open it once and ask again\./);
+});
+test('completed quests: 40 and how many more, all of them for questions about quests', () => {
+  const names = Array.from({ length: 60 }, (_, i) => `Quest Number ${String(i).padStart(2, '0')}`);
+  const context = {
+    completedQuests: { total: 300, zone: 'Ashenvale', inZone: names, more: 5 },
+    availableQuestsAsked: [{ zone: 'Desolace', quests: [], done: names, doneMore: 2 }, { zone: 'Orgrimmar', none: true }],
+  };
+  const cut = promptContext({ question: 'What gear should I buy?', context });
+  assert.equal(DONE_SHOWN, 40);
+  assert.deepEqual(cut.completedQuests, { total: 300, zone: 'Ashenvale', inZone: names.slice(0, 40), more: 25 });
+  assert.deepEqual(cut.availableQuestsAsked, [
+    { zone: 'Desolace', quests: [], done: names.slice(0, 40), doneMore: 22 }, { zone: 'Orgrimmar', none: true }]);
+  assert.equal(context.completedQuests.inZone.length, 60, 'the saved context is not changed');
+  // About quests: every one the addon sent.
+  for (const q of ['Did I do the Gelkis quests?', 'Have I done everything here?', 'What should I turn in?', 'Is this a chain?',
+    '¿Qué misiones me quedan?', '¿Ya hice todo aquí?', 'Should I do Quest Number 55 again?']) {
+    assert.equal(wantsQuestDetail({ question: q, context }), true, q);
+    assert.deepEqual(promptContext({ question: q, context }), context, q);
+  }
+  // A follow-up, and quests the addon found named in the question.
+  assert.equal(wantsQuestDetail({ question: 'And there?', history: [{ q: 'Which quests did I finish?', a: '...' }], context }), true);
+  assert.equal(wantsQuestDetail({ question: 'Hmm?', context: { ...context, questsAsked: [{ id: 1, status: 'done' }] } }), true);
+  assert.equal(wantsQuestDetail({ question: 'What should I do next?', context }), false);
+  // Short lists are left as they are.
+  const short = { completedQuests: { total: 3, zone: 'Ashenvale', inZone: ['A', 'B'] } };
+  assert.equal(promptContext({ question: 'Hi', context: short }), short);
+  const s = buildSystem('', 'fizzi');
+  assert.match(s, /- questsAsked: quests named or linked in the question[^\n]*"status" "done"; "inLog"; "available"[^\n]*"notYet" with "why"/);
+  assert.match(s, /availableQuestsAsked: the same for a zone named in the question, with "done" = the quests done there/);
+  assert.match(s, /A quest in "questsAsked": answer with its "status"/);
 });
 test('the AI knows WoW Forever and searches only when it can', () => {
   const withSearch = buildSystem('', 'fizzi', { canSearch: true });

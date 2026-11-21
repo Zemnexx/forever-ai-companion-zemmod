@@ -61,8 +61,9 @@ Every question comes with a JSON of the character's state, read from the game at
 - bank: bank contents as the player left the bank the last time ("seenAt"); may be outdated.
 - position: zone, subzone, continent, x/y coordinates (0-100 on the zone map), facing, whether in an instance, resting, mounted, swimming or flying.
 - quests: quest log with "id", level, zone, tag (elite, dungeon...), suggested group, objectives with progress ("[x]" done), goal, "nextStep", distance in yards, rewards (experience, money, "rewardItems" and "rewardChoices" with stats), "where" (zone and x/y of the quest area from the game map) and "waypoint" (where to go now, e.g. to turn it in), and "next" (the quest that follows it in its chain). Quests with "id" 90000 or higher are new in Forever.
-- completedQuests: "total" = quests this character has completed; "inZone" = the ones done in their current zone ("zone"); "more" = how many others are done there (the list is cut short, so a quest missing from it may be done anyway). Without the QuestieDB addon (see availableQuests), "inZone" only has the quests turned in since the addon started keeping them.
-- availableQuests: quests they can pick up now: right level (not grey or red), race and class, prerequisites done, not done and not in the log, and no reputation to earn with a faction they are Hostile or Hated with. Per zone, their current zone first ("none": nothing left to pick up there), then the nearest zones the quests in their log come from or send them to; each with "level", "minLevel" (to take it), "giver" and where the giver is ("at"); "more" = how many others the zone has. availableQuestsAsked: the same for a zone named in the question. Both come from the quest database of the QuestieDB addon, only when it is installed; a rare one may need something more (a reputation, an item).
+- completedQuests: "total" = quests this character has completed; "inZone" = the ones done in their current zone ("zone"); "more" = how many others are done there and not listed (when there is "more", a quest missing from the list may be done anyway). Without the QuestieDB addon (see availableQuests), "inZone" only has the quests turned in since the addon started keeping them.
+- availableQuests: quests they can pick up now: right level (not grey or red), race and class, prerequisites done, not done and not in the log, and no reputation to earn with a faction they are Hostile or Hated with. Per zone, their current zone first ("none": nothing left to pick up there), then the nearest zones the quests in their log come from or send them to; each with "level", "minLevel" (to take it), "giver" and where the giver is ("at"); "more" = how many others the zone has. availableQuestsAsked: the same for a zone named in the question, with "done" = the quests done there ("doneMore" = how many others). Both come from the quest database of the QuestieDB addon, only when it is installed; a rare one may need something more (a reputation, an item).
+- questsAsked: quests named or linked in the question, with where each stands for this character: "status" "done"; "inLog"; "available" (with "giver", "at", "minLevel"; "color" "grey" = little experience left, "red" = too hard for now; "startsFrom" "an item" when no one gives it); or "notYet" with "why" (what is missing: a level, quests to finish first, a reputation...). "parts" = how many quests share that name (a chain), "doneParts" = how many of them are done. From the QuestieDB addon's quest database; trust it over what you remember.
 - professions: professions with level. spells: known spells and abilities per tab (with rank when the game shows one); "notLearned": spells the book shows but the player has not learned yet, with the level they need.
 - actionBars: what is on the action bars, with its key in brackets. spellsNotOnBars: known abilities that are on no bar (a spell cast from a macro on the bars counts as on them, and so do auras, stances and forms on the stance bar). WoW Forever doesn't put newly learned spells on the bars, so use this when the player asks about their bars, keybinds, rotation or an ability they can't find, to say what to drag from the spellbook. Don't bring it up otherwise.
 - buffs / debuffs: active effects. reputations: reputations. currencies: currencies.
@@ -84,7 +85,7 @@ If a section is missing, the game did not provide it or the player has none: say
 const METHOD = `## How to answer
 1. Understand what the player wants and check their data first: level, class, quests, gear, bags, money, location, group. Answer for THEIR situation, never generically, using the parts of their data that matter to the question. Don't comment on the rest: rule 7 covers the few things worth flagging anyway.
 2. Be concrete and actionable: what to do, in what order and where. For locations use "Zone (x, y)". If the quest has "where" or "waypoint", use them: they are the real in-game coordinates. Flying: only between flight points in "flightPaths.known". Never send them by air to one in "notKnown", or on a "notChecked" continent to one missing from "known": it isn't discovered yet, so they fly to the nearest known one, go on from there by road, boat or zeppelin, and talk to its flight master when they arrive to learn it. On a "notChecked" continent, also suggest they open any flight master's map there once.
-3. Quests: prioritize those close to their level (green/yellow over red), those almost done, those in their current zone (use "distanceYards" and "where") and those with rewards useful for their class. Warn about elite or dungeon quests if they are solo. New quests to pick up: when "availableQuests" or "availableQuestsAsked" is there, only from it, with the "giver" and the "at" coordinates. Never one in "completedQuests" or "recentlyCompletedQuests". A quest in none of these lists is already done or not available yet: say so instead of sending them to it. When a quest in the log has "next", say what to pick up after turning it in when it helps.
+3. Quests: prioritize those close to their level (green/yellow over red), those almost done, those in their current zone (use "distanceYards" and "where") and those with rewards useful for their class. Warn about elite or dungeon quests if they are solo. New quests to pick up: when "availableQuests" or "availableQuestsAsked" is there, only from it, with the "giver" and the "at" coordinates. Never one in "completedQuests" or "recentlyCompletedQuests". A quest in none of these lists is already done or not available yet: say so instead of sending them to it. A quest in "questsAsked": answer with its "status" (and "why" for one not available yet). When a quest in the log has "next", say what to pick up after turning it in when it helps.
 4. Gear: compare stats with what they wear, thinking about what matters for their class and role (e.g. hunter: agility, ranged attack power and ranged weapon DPS). Say which slot improves and by how much. "this item" / "this ring" means the one in "linkedItems" if there is one.
 5. If "screen" has a window open and the question fits it ("should I accept this?", "which reward?", "what should I buy/train?"), answer about that window: the quest offered, the reward choices, the vendor's or trainer's list, and whether they can afford it ("money").
 6. If something depends on Forever-specific content or an exact fact that is not in the JSON or the base guide (an NPC's location, loot, a dungeon's level, a racial's effect, how a new system works, a cost) and you are not sure, do not make it up.
@@ -226,13 +227,65 @@ export function compactRecipes(knownRecipes) {
   });
 }
 
+// Completed quests: the addon sends every one done in the zone (up to 150);
+// the AI gets 40 and how many more, unless the question is about quests (or
+// names one done there, or the addon found quests named in it).
+export const DONE_SHOWN = 40;
+const QUEST_WORDS = new RegExp([
+  '\\b(quest\\w*|completed?|finished|did i|have i (done|finished|completed)|turn(ed)? ?in|chain|breadcrumb)\\b',
+  'misi[oó]n\\w*|\\bhice\\b|he hecho|completad\\w*|terminad\\w*|entregad\\w*|cadena',
+].join('|'), 'i');
+
+function questTexts(req) {
+  const history = Array.isArray(req?.history) ? req.history : [];
+  return [req?.question, history.length ? history[history.length - 1]?.q : '']
+    .map((t) => String(t || '').toLowerCase()).filter(Boolean);
+}
+
+export function wantsQuestDetail(req) {
+  const ctx = req?.context || {};
+  if (Array.isArray(ctx.questsAsked) && ctx.questsAsked.length) return true;
+  const texts = questTexts(req);
+  if (texts.some((t) => QUEST_WORDS.test(t))) return true;
+  const names = [
+    ...(Array.isArray(ctx.completedQuests?.inZone) ? ctx.completedQuests.inZone : []),
+    ...(Array.isArray(ctx.availableQuestsAsked) ? ctx.availableQuestsAsked.flatMap((z) => (Array.isArray(z?.done) ? z.done : [])) : []),
+  ].map((n) => String(n || '').toLowerCase()).filter((n) => n.length >= 6);
+  return texts.some((t) => names.some((n) => t.includes(n)));
+}
+
+// A list cut to DONE_SHOWN; the rest added to its count.
+function cutDone(list, more) {
+  if (!Array.isArray(list) || list.length <= DONE_SHOWN) return null;
+  return { list: list.slice(0, DONE_SHOWN), more: (Number(more) || 0) + list.length - DONE_SHOWN };
+}
+
+export function trimCompleted(ctx) {
+  let out = ctx;
+  const cq = ctx.completedQuests;
+  const cut = cq && cutDone(cq.inZone, cq.more);
+  if (cut) out = { ...out, completedQuests: { ...cq, inZone: cut.list, more: cut.more } };
+  if (Array.isArray(ctx.availableQuestsAsked)) {
+    let changed = false;
+    const zones = ctx.availableQuestsAsked.map((z) => {
+      const c = z && cutDone(z.done, z.doneMore);
+      if (!c) return z;
+      changed = true;
+      return { ...z, done: c.list, doneMore: c.more };
+    });
+    if (changed) out = { ...out, availableQuestsAsked: zones };
+  }
+  return out;
+}
+
 // The character data the AI gets for this question.
 export function promptContext(req) {
-  const ctx = req?.context ?? {};
-  if (!ctx.knownRecipes) return ctx;
-  const { knownRecipes, ...rest } = ctx;
-  if (!wantsRecipes(req)) return rest;
-  return { ...rest, knownRecipes: compactRecipes(knownRecipes) };
+  let ctx = req?.context ?? {};
+  if (ctx.knownRecipes) {
+    const { knownRecipes, ...rest } = ctx;
+    ctx = wantsRecipes(req) ? { ...rest, knownRecipes: compactRecipes(knownRecipes) } : rest;
+  }
+  return wantsQuestDetail(req) ? ctx : trimCompleted(ctx);
 }
 
 // Chat turns: earlier Q&A (sent by the addon) + the current question with context.

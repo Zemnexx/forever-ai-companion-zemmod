@@ -1990,6 +1990,7 @@ const QUESTIE = `
     [870] = q("Desolace Task", 405, 25, { startedBy = { { 907 } } }),
     [880] = q("Needles Task", 400, 25, { startedBy = { { 908 } } }),
   }
+  QUESTS, QUEST_ROW = quests, q -- for a test to add its own
   local npcs = {
     [900] = { name = "Kuray'bin", friendlyToFaction = "H", spawns = { [331] = { { 60, 50 } } } },
     [901] = { name = "Mitsuwa", friendlyToFaction = "H", spawns = { [331] = { { 40, 40 } } } },
@@ -2092,10 +2093,89 @@ test('quest help: done quests of the zone, quests available now with their giver
   assert.deepEqual(JSON.parse(asked), [
     { zone: 'Desolace', quests: [{ id: 870, name: 'Desolace Task', level: 25, minLevel: 22, ...g('Takata Steelblade', 'Desolace', 55, 26) }] },
   ]);
-  assert.deepEqual(JSON.parse(askedNone), [{ zone: 'Orgrimmar', none: true }]);
+  // ...and the quests done there.
+  assert.deepEqual(JSON.parse(askedNone), { zones: [{ zone: 'Orgrimmar', none: true, done: ['Orgrimmar Errand'] }] });
   assert.equal(after, 'Warsong Supplies|Ashenvale|["Done Before","Warsong Supplies"]|Warsong Scout Update');
   assert.deepEqual(JSON.parse(empty), { zone: 'Orgrimmar', none: true });
   assert.deepEqual(JSON.parse(cut), { total: 3, zone: 'Ashenvale', inZone: ['Done Before'], more: 1 });
+});
+
+test('quest help: quests named or linked in a question, with where each stands', () => {
+  const out = runLua(`
+    -- Two parts of a chain sharing a name, the first one done.
+    QUESTS[130] = QUEST_ROW("Twin Trail", 405, 25, { nextQuestInChain = 131, startedBy = { { 907 } } })
+    QUESTS[131] = QUEST_ROW("Twin Trail", 405, 25, { preQuestSingle = { 130 }, startedBy = { { 907 } } })
+    DONE = { 101, 50, 130 }
+    -- 45 more quests done in Desolace.
+    for i = 1, 45 do
+      QUESTS[2000 + i] = QUEST_ROW(string.format("Desolace Deed %02d", i), 405, 20)
+      DONE[#DONE + 1] = 2000 + i
+    end
+    ns.QuestHelp.START_DELAY = 0
+    START()
+    RUN_FRAMES(300)
+    local r = {}
+    local function ask(text) r[#r + 1] = ns.Json.Encode(ns.QuestHelp:ForQuestion(text)) end
+    ask("Did I finish Done Before? And Warsong Supplies, where do I get Wood for the Front?")
+    ask("Can I do Needs Two, Too Soon or Other Path yet?")
+    ask("What about Gelkis Pact, Grey Errand and Far Above?")
+    ask("Is Pickup Elsewhere worth it, and Twin Trail?")
+    -- Part of a word, or a short one-word name, doesn't count.
+    ask("Wood for the Frontier")
+    -- A linked quest, through a question: its status goes along with it.
+    local orig = ns.Core.BuildFrame
+    ns.Core.BuildFrame = function(self, req, step, maxBytes, extra) CAPTURED = extra; return orig(self, req, step, maxBytes, extra) end
+    ASK("Should I do |cffffff00|Hquest:118:25|h[Forgotten Lore]|h|r?")
+    r[#r + 1] = ns.Json.Encode(CAPTURED and CAPTURED.questsAsked)
+    -- A zone asked about: every quest done there; cut to 40 first when the request is too big.
+    local extra = { availableQuestsAsked = ns.QuestHelp:ForQuestion("What did I do in Desolace?").zones }
+    local frame = ns.Uplink.Frame
+    ns.Uplink.Frame = function(json, step) SENT = json; return frame(json, step) end
+    local function build(max) return #ns.Core:BuildFrame({ id = "t", question = "q" }, function() end, max, extra) end
+    local whole = build(1e9)
+    local level0 = ns.Core.lastEncode.level
+    build(whole - 1)
+    ns.Uplink.Frame = frame
+    local z = extra.availableQuestsAsked[1]
+    r[#r + 1] = ns.Json.Encode({ #z.done, z.doneMore or 0, level0, ns.Core.lastEncode.level })
+    r[#r + 1] = SENT
+    RESULT = table.concat(r, string.char(1))
+  `, {}, QUEST_FILES, FAKE_UI + PRELUDE_DRIVE + QUESTIE);
+  const [first, notYet, colors, hidden, partWord, linked, full, sent] = out.split('\x01').map((x) => JSON.parse(x));
+  // All 46 (with Twin Trail) sent when they fit; cut to 40 (the first thing cut) when they don't; the list itself kept.
+  assert.deepEqual(full, [46, 0, 0, 1]);
+  const trimmed = sent.context.availableQuestsAsked[0];
+  assert.deepEqual([trimmed.done.length, trimmed.doneMore, trimmed.done[39]], [40, 6, 'Desolace Deed 40']);
+  const at = (zone, x, y) => ({ zone, x, y });
+  const ash = { zone: 'Ashenvale', level: 25, minLevel: 22 };
+  // The longest name first; done, in the log, available with its giver.
+  assert.deepEqual(first, { quests: [
+    { id: 100, name: 'Wood for the Front', ...ash, status: 'available', giver: "Kuray'bin", at: at('Ashenvale', 60, 50) },
+    { id: 6571, name: 'Warsong Supplies', zone: 'Ashenvale', level: 25, status: 'inLog' },
+    { id: 101, name: 'Done Before', zone: 'Ashenvale', level: 24, status: 'done' },
+  ] });
+  // Not yet: why.
+  assert.deepEqual(notYet, { quests: [
+    { id: 108, name: 'Other Path', ...ash, status: 'notYet', why: ['closed: you did or took Done Before'] },
+    { id: 105, name: 'Needs Two', ...ash, status: 'notYet', why: ['first: quest 999'] },
+    { id: 106, name: 'Too Soon', zone: 'Ashenvale', level: 33, minLevel: 30, status: 'notYet', why: ['level 30'] },
+  ] });
+  // Grey and red ones can be taken (and say so); one needing a hostile reputation can't.
+  assert.deepEqual(colors, { quests: [
+    { id: 107, name: 'Grey Errand', zone: 'Ashenvale', level: 12, minLevel: 9, status: 'available', color: 'grey', giver: "Kuray'bin", at: at('Ashenvale', 60, 50) },
+    { id: 121, name: 'Gelkis Pact', ...ash, status: 'notYet', why: ['needs reputation with a faction you are Hostile or Hated with'] },
+    { id: 120, name: 'Far Above', zone: 'Ashenvale', level: 30, minLevel: 20, status: 'available', color: 'red', giver: "Kuray'bin", at: at('Ashenvale', 60, 50) },
+  ] });
+  // Hidden by Questie; a chain's parts sharing a name: the one to do now, and how many are done.
+  assert.deepEqual(hidden, { quests: [
+    { id: 119, name: 'Pickup Elsewhere', ...ash, status: 'notYet', why: ['Questie hides it (not on this server, or you hid it)'] },
+    { id: 131, name: 'Twin Trail', zone: 'Desolace', level: 25, minLevel: 22, status: 'available', giver: 'Takata Steelblade', at: at('Desolace', 55, 26), parts: 2, doneParts: 1 },
+  ] });
+  assert.equal(partWord, null);
+  // Linked (and named): once.
+  assert.deepEqual(linked, [
+    { id: 118, name: 'Forgotten Lore', ...ash, status: 'notYet', why: ['not once you know a certain spell'] },
+  ]);
 });
 
 test('quest help without QuestieDB: the total and the quests the addon saw turned in, nothing more', () => {

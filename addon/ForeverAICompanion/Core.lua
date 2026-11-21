@@ -245,7 +245,30 @@ local function slimScreen(screen)
   return out
 end
 
+-- Completed quests cut to 40 per zone (what the companion shows unless the
+-- question is about quests), with how many more. Copies: the lists are cached.
+local DONE_SHOWN = 40
+local function fewerDone(t, listKey, moreKey)
+  local l = type(t) == "table" and t[listKey]
+  if type(l) ~= "table" or #l <= DONE_SHOWN then return t end
+  local copy = {}
+  for k, v in pairs(t) do copy[k] = v end
+  local cut = {}
+  for i = 1, DONE_SHOWN do cut[i] = l[i] end
+  copy[listKey] = cut
+  copy[moreKey] = (tonumber(t[moreKey]) or 0) + #l - DONE_SHOWN
+  return copy
+end
+
 local TRIMS = {
+  function(ctx)
+    ctx.completedQuests = fewerDone(ctx.completedQuests, "inZone", "more")
+    if type(ctx.availableQuestsAsked) == "table" then
+      local zones = {}
+      for i, z in ipairs(ctx.availableQuestsAsked) do zones[i] = fewerDone(z, "done", "doneMore") end
+      ctx.availableQuestsAsked = zones
+    end
+  end,
   function(ctx) ctx.bank = nil end,
   function(ctx) ctx.knownRecipes = slimRecipes(ctx.knownRecipes) end,
   function(ctx) ctx.screen = slimScreen(ctx.screen) end,
@@ -632,7 +655,7 @@ function Core:Ask(question, extra, chatId, listen, again)
     -- In a coroutine of its own: it pauses with the preparation, and if it
     -- fails, the question still goes without it.
     if not listen and ns.QuestHelp then
-      local sub = coroutine.create(function() return ns.QuestHelp:ForQuestion(question, Core.step) end)
+      local sub = coroutine.create(function() return ns.QuestHelp:ForQuestion(question, Core.step, linked) end)
       local asked
       while true do
         local ok, res = coroutine.resume(sub)
@@ -642,7 +665,8 @@ function Core:Ask(question, extra, chatId, listen, again)
       end
       if asked then
         context = context or {}
-        context.availableQuestsAsked = asked
+        context.availableQuestsAsked = asked.zones
+        context.questsAsked = asked.quests
       end
     end
     if not again and ns.Voice:Available() then

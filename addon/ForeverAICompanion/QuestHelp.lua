@@ -32,7 +32,8 @@ QuestHelp.MAX_HERE = 10      -- available quests listed for the current zone
 QuestHelp.MAX_ASKED = 10     -- ...for a zone named in the question (2 zones at most)
 QuestHelp.MAX_LOG_ZONES = 4  -- other zones that quests in the log come from or send to...
 QuestHelp.MAX_LOG_ZONE = 3   -- ...and quests listed for each
-QuestHelp.MAX_DONE = 40      -- completed quests listed for the zone
+QuestHelp.MAX_DONE = 150     -- completed quests sent for a zone (the app shows 40 unless the question is about quests)
+QuestHelp.MAX_NAMED = 3      -- quests named in a question that get their status
 QuestHelp.RED = 5            -- quests this many levels above the player are left out (red)
 
 local floor, abs, sqrt, huge = math.floor, math.abs, math.sqrt, math.huge
@@ -245,13 +246,21 @@ local ARTICLES = { "the ", "el ", "la ", "los ", "las " }
 local function buildIndex(db, step)
   local ok, ids = pcall(db.quest.GetAllIds)
   if not ok or type(ids) ~= "table" then return nil end
-  local byArea, names, byName = {}, {}, {}
+  local byArea, names, byName, byQuest = {}, {}, {}, {}
   for i, id in ipairs(ids) do
     local zone = num(get(db.quest, id, "zoneOrSort"))
     if zone and zone > 0 then
       local list = byArea[zone]
       if not list then list = {}; byArea[zone] = list end
       list[#list + 1] = id
+    end
+    -- Quests by name (lowercase), to find the ones named in a question.
+    local qname = get(db.quest, id, "name")
+    if type(qname) == "string" and #qname >= 6 then
+      local key = qname:lower()
+      local same = byQuest[key]
+      if not same then same = {}; byQuest[key] = same end
+      same[#same + 1] = id
     end
     if i % 25 == 0 then step() end
   end
@@ -273,7 +282,7 @@ local function buildIndex(db, step)
     n = n + 1
     if n % 25 == 0 then step() end
   end
-  return { byArea = byArea, names = names, byName = byName }
+  return { byArea = byArea, names = names, byName = byName, byQuest = byQuest }
 end
 
 local function areaFor(name)
@@ -475,6 +484,144 @@ local function zoneList(db, area, p, max, step, keepEmpty)
   return { zone = index.names[area], quests = quests, more = #rows > max and (#rows - max) or nil }
 end
 
+-- Where a quest named in a question stands: "done", "inLog", "available"
+-- (with its giver and where; "color" grey or red when it is), or "notYet"
+-- with "why" (what is missing).
+local function questStatus(db, id, p)
+  local Q = db.quest
+  local function nameOf(qid)
+    local n = get(Q, qid, "name")
+    return type(n) == "string" and n or ("quest " .. tostring(qid))
+  end
+  local s = { id = id, name = nameOf(id) }
+  local zone = num(get(Q, id, "zoneOrSort"))
+  if zone and zone > 0 and index then s.zone = index.names[zone] end
+  local level = num(get(Q, id, "questLevel")) or 0
+  if level > 0 then s.level = level end
+  if p.completed[id] then s.status = "done" return s end
+  if p.log[id] then s.status = "inLog" return s end
+  local why = {}
+  local function add(text) why[#why + 1] = text end
+  local minLevel = num(get(Q, id, "requiredLevel")) or 0
+  if minLevel > 1 then s.minLevel = minLevel end
+  if minLevel > p.level then add("level " .. minLevel) end
+  local maxLevel = num(get(Q, id, "requiredMaxLevel")) or 0
+  if maxLevel > 0 and p.level > maxLevel then add("only up to level " .. maxLevel) end
+  local races = num(get(Q, id, "requiredRaces")) or 0
+  if races ~= 0 and not (p.raceBit and hasBit(races, p.raceBit)) then add("not for your race or faction") end
+  local classes = num(get(Q, id, "requiredClasses")) or 0
+  if classes ~= 0 and not (p.classBit and hasBit(classes, p.classBit)) then add("not for your class") end
+  local single = list(get(Q, id, "preQuestSingle"))
+  if #single > 0 and not anyDone(single, p) then
+    local options = {}
+    for _, q in ipairs(single) do options[#options + 1] = nameOf(q) end
+    add("first one of: " .. table.concat(options, ", "))
+  end
+  local missing = {}
+  for _, q in ipairs(list(get(Q, id, "preQuestGroup"))) do
+    if not p.completed[q] then missing[#missing + 1] = nameOf(q) end
+  end
+  if #missing > 0 then add("first: " .. table.concat(missing, ", ")) end
+  for _, q in ipairs(list(get(Q, id, "exclusiveTo"))) do
+    if p.completed[q] or p.log[q] then add("closed: you did or took " .. nameOf(q)) break end
+  end
+  local nextQuest = num(get(Q, id, "nextQuestInChain")) or 0
+  if nextQuest ~= 0 and (p.completed[nextQuest] or p.log[nextQuest]) then
+    add("a later part (" .. nameOf(nextQuest) .. ") is done or taken")
+  end
+  local parent = num(get(Q, id, "parentQuest")) or 0
+  if parent ~= 0 and not p.log[parent] then add("needs " .. nameOf(parent) .. " in your quest log") end
+  local leadsTo = num(get(Q, id, "breadcrumbForQuestId")) or 0
+  if leadsTo ~= 0 and (p.completed[leadsTo] or p.log[leadsTo]) then
+    add("it leads to " .. nameOf(leadsTo) .. ", already done or taken")
+  end
+  for _, key in ipairs({ "disabledByQuest", "availableUntilCompleted" }) do
+    local q = num(get(Q, id, key)) or 0
+    if q ~= 0 and p.completed[q] then add("closed by " .. nameOf(q)) end
+  end
+  local minRep, maxRep = get(Q, id, "requiredMinRep"), get(Q, id, "requiredMaxRep")
+  if pairSet(minRep) then
+    local v = repValue(minRep[1])
+    if not v or v < (num(minRep[2]) or 0) then add("needs more reputation") end
+  end
+  if pairSet(maxRep) then
+    local v = repValue(maxRep[1])
+    if not v or v >= (num(maxRep[2]) or 0) then add("your reputation is too high for it") end
+  end
+  if needsHostileRep(get(Q, id, "objectives")) then add("needs reputation with a faction you are Hostile or Hated with") end
+  if pairSet(get(Q, id, "requiredSkill")) then add("needs a profession skill") end
+  if (num(get(Q, id, "requiredSpecialization")) or 0) ~= 0 then add("needs a profession specialization") end
+  local spell = num(get(Q, id, "requiredSpell")) or 0
+  if spell ~= 0 then
+    local known = knowsSpell(abs(spell))
+    if known ~= nil and known ~= (spell > 0) then add(spell > 0 and "needs a spell you don't know" or "not once you know a certain spell") end
+  end
+  if #why == 0 and p.gate and not p.gate(id) then add("Questie hides it (not on this server, or you hid it)") end
+  if #why > 0 then s.status, s.why = "notYet", why return s end
+  s.status = "available"
+  if level > 0 and level < p.minQuestLevel then s.color = "grey"
+  elseif level > 0 and level - p.level >= QuestHelp.RED then s.color = "red" end
+  local giver = questGiver(db, id, p, zone)
+  if giver then
+    s.giver, s.at = giver.name, giver.at
+  elseif list(list(get(Q, id, "startedBy"))[3])[1] then
+    s.startsFrom = "an item"
+  end
+  return s
+end
+
+-- Several quests can share a name (the parts of a chain): the one in the log,
+-- else the one available, else the first not done; "parts" and "doneParts".
+local STATUS_ORDER = { inLog = 1, available = 2, notYet = 3, done = 4 }
+local function statusFor(db, ids, p)
+  local best, done = nil, 0
+  for _, id in ipairs(ids) do
+    local s = questStatus(db, id, p)
+    if s.status == "done" then done = done + 1 end
+    if not best or STATUS_ORDER[s.status] < STATUS_ORDER[best.status] then best = s end
+  end
+  if best and #ids > 1 then
+    best.parts = #ids
+    if done > 0 and best.status ~= "done" then best.doneParts = done end
+  end
+  return best
+end
+
+-- The text has the key as words of its own (not inside a longer word).
+local WORD = "[%w\128-\255]"
+local function hasWords(text, key)
+  local from = 1
+  while true do
+    local s, e = text:find(key, from, true)
+    if not s then return false end
+    if not text:sub(s - 1, s - 1):find(WORD) and not text:sub(e + 1, e + 1):find(WORD) then return true end
+    from = s + 1
+  end
+end
+
+-- Quest names in a question (lowercase text): the longest first, not one
+-- inside a longer one found, nor a zone's name. A name of one word only
+-- when it is long (8 letters or more), so common words don't count.
+local function namedQuests(lower, yield)
+  local found, n = {}, 0
+  for key, ids in pairs(index.byQuest) do
+    n = n + 1
+    if n % 300 == 0 then yield() end
+    if not index.byName[key] and (#key >= 8 or key:find(" ", 1, true)) and hasWords(lower, key) then
+      found[#found + 1] = { key = key, ids = ids }
+    end
+  end
+  table.sort(found, function(a, b) return #a.key > #b.key end)
+  local out = {}
+  for _, f in ipairs(found) do
+    local inside = false
+    for _, o in ipairs(out) do if o.key:find(f.key, 1, true) then inside = true break end end
+    if not inside then out[#out + 1] = f end
+    if #out >= QuestHelp.MAX_NAMED then break end
+  end
+  return out
+end
+
 -- Completed quests of a zone: from the database (every completed quest) and
 -- from the addon's own record (quests the database doesn't know, or no database).
 local function doneIn(db, area, zone, p, step)
@@ -633,25 +780,55 @@ end
 
 -- Zones named in a question (not the current one): their available quests,
 -- for that question only. Runs in the question's preparation (step yields).
-function QuestHelp:ForQuestion(text, yield)
+-- For one question: { zones = the zones it names (not the current one) with
+-- their available quests and the ones done there ("done", "doneMore"),
+-- quests = the quests it names or links, with their status }. Runs in the
+-- question's preparation (yield pauses it).
+function QuestHelp:ForQuestion(text, yield, linked)
   local db = index and database()
-  if not db or type(text) ~= "string" or text == "" then return nil end
+  if not db then return nil end
+  yield = yield or function() end
   local p = player(db)
   if not p.completed then return nil end
   p.area = currentArea(p)
-  local lower = text:lower()
-  local found, seen = {}, {}
-  for key, area in pairs(index.byName) do
-    if #key >= 4 and area ~= p.area and not seen[area] and lower:find(key, 1, true) then
-      seen[area] = true
-      found[#found + 1] = { area = area, len = #key }
+  local lower = type(text) == "string" and text:lower() or ""
+  local zones = {}
+  if lower ~= "" then
+    local found, seen = {}, {}
+    for key, area in pairs(index.byName) do
+      if #key >= 4 and area ~= p.area and not seen[area] and lower:find(key, 1, true) then
+        seen[area] = true
+        found[#found + 1] = { area = area, len = #key }
+      end
+    end
+    table.sort(found, function(a, b) return a.len > b.len end)
+    for i = 1, math.min(2, #found) do
+      local area = found[i].area
+      local z = zoneList(db, area, p, self.MAX_ASKED, yield, true)
+      if z then
+        z.done, z.doneMore = doneIn(db, area, index.names[area], p, yield)
+        zones[#zones + 1] = z
+      end
     end
   end
-  table.sort(found, function(a, b) return a.len > b.len end)
-  local out = {}
-  for i = 1, math.min(2, #found) do
-    local z = zoneList(db, found[i].area, p, self.MAX_ASKED, yield or function() end, true)
-    if z then out[#out + 1] = z end
+  local quests, seenIds = {}, {}
+  for _, l in ipairs(type(linked) == "table" and linked or {}) do
+    if type(l) == "table" and l.kind == "quest" and num(l.id) and not seenIds[l.id] and #quests < self.MAX_NAMED then
+      seenIds[l.id] = true
+      quests[#quests + 1] = statusFor(db, { l.id }, p)
+    end
   end
-  return #out > 0 and out or nil
+  if lower ~= "" and index.byQuest and #quests < self.MAX_NAMED then
+    for _, f in ipairs(namedQuests(lower, yield)) do
+      if #quests >= self.MAX_NAMED then break end
+      local linkedHere = false
+      for _, id in ipairs(f.ids) do if seenIds[id] then linkedHere = true end end
+      if not linkedHere then
+        for _, id in ipairs(f.ids) do seenIds[id] = true end
+        quests[#quests + 1] = statusFor(db, f.ids, p)
+      end
+    end
+  end
+  if #zones == 0 and #quests == 0 then return nil end
+  return { zones = #zones > 0 and zones or nil, quests = #quests > 0 and quests or nil }
 end

@@ -58,7 +58,7 @@ With every question the AI receives, without you having to explain anything:
 - your **pet**: its abilities with rank and autocast, stance, loyalty, training points, diet and stats, plus what **Beast Training** can teach it;
 - your **spells**, which ones are not on your **action bars** yet (a spell in a macro or on the stance bar counts), and your weapon skills;
 - **where you are**: zone and coordinates, and on each continent the flight paths you know and the ones you haven't discovered yet;
-- your **quests** with progress, rewards and the real coordinates of where to do them, the ones you've completed and, with Questie's **QuestieDB** installed, the quests you can pick up now and who gives them;
+- your **quests** with progress, rewards and the real coordinates of where to do them, the ones you've completed and, with Questie's **QuestieDB** installed, the quests you can pick up now and who gives them, and where any quest you name stands (done, in your log, available, or not yet and why);
 - your **target** (family, whether it counts for a quest, its tooltip), recent error messages and deaths;
 - **professions**, reputations, dungeon lockouts and group;
 - the **items you link** in the question, the **window you have open** (a quest, a vendor, a trainer, Beast Training, the flight map, the auction house, loot), your **recipes** and the **auction prices** you have seen for the items you own.
