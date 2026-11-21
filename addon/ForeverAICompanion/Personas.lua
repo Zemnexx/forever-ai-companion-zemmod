@@ -150,13 +150,28 @@ function Personas.PortraitName(p)
   return img.atlas and ("atlas " .. img.atlas) or (L.PORTRAIT_FILE .. tostring(img.file))
 end
 
-local function charKey()
-  return (UnitName and UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
-end
-
 local function store()
   ns.db.personas = ns.db.personas or {}
   return ns.db.personas
+end
+
+-- The character's key (Core.CharKey: its GUID). A choice kept under the old
+-- "Name-Realm" keys is moved to it the first time (the newest realm first).
+local function charKey()
+  local key = ns.Core and ns.Core.CharKey and ns.Core.CharKey()
+    or ((UnitName and UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?"))
+  local s = store()
+  if s[key] == nil and key:match("^Player%-") and ns.Core.CharData then
+    local data = ns.Core:CharData()
+    local name = UnitName and UnitName("player") or "?"
+    local realms = type(data and data.oldRealms) == "table" and data.oldRealms or {}
+    for i = #realms, 1, -1 do
+      local old = name .. "-" .. realms[i]
+      if s[key] == nil and s[old] ~= nil then s[key] = s[old] end
+      s[old] = nil
+    end
+  end
+  return key
 end
 
 -- The one matching the character's faction.

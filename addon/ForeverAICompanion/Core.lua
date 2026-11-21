@@ -336,10 +336,89 @@ end
 
 
 -- Per-character data remembered between sessions.
+-- The character's key in the saved data: its unique id (the player GUID,
+-- "Player-6932-005792F1"), which doesn't depend on the realm's name: WoW
+-- Forever's build 71037 gives a blank one. Before the game knows the GUID, or
+-- on a client without it: "Name-Realm", as it used to be.
+function Core.CharKey()
+  local guid = UnitGUID and UnitGUID("player")
+  if type(guid) == "string" and guid:match("^Player%-") then return guid end
+  return (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
+end
+
+-- The latest date a store saw something (its "seenAt" and turn-in dates).
+local function newestSeen(data)
+  local newest = ""
+  local function see(d) if type(d) == "string" and d > newest then newest = d end end
+  for _, k in ipairs({ "bank", "beastTraining", "stable" }) do see(type(data[k]) == "table" and data[k].seenAt) end
+  for _, k in ipairs({ "flights", "recipes" }) do
+    for _, v in pairs(type(data[k]) == "table" and data[k] or {}) do see(type(v) == "table" and v.seenAt) end
+  end
+  for _, v in pairs(type(data.questsDone) == "table" and data.questsDone or {}) do see(type(v) == "table" and v.d) end
+  return newest
+end
+
+-- Adds a store to the merged one, src being the newer: what has a date keeps
+-- the newer copy, lists add up, the 10 last turn-ins keep the newer first.
+local function mergeStore(dst, src)
+  local function newer(a, b) return type(b) == "table" and (type(a) ~= "table" or (b.seenAt or "") >= (a.seenAt or "")) end
+  for k, v in pairs(src) do
+    if k == "bank" or k == "beastTraining" or k == "stable" then
+      if newer(dst[k], v) then dst[k] = v end
+    elseif k == "flights" or k == "recipes" then
+      dst[k] = dst[k] or {}
+      for sub, e in pairs(type(v) == "table" and v or {}) do
+        if newer(dst[k][sub], e) then dst[k][sub] = e end
+      end
+    elseif k == "questsDone" or k == "flightPaths" then
+      dst[k] = dst[k] or {}
+      for id, e in pairs(type(v) == "table" and v or {}) do dst[k][id] = e end
+    elseif k == "turnedIn" then
+      local list = {}
+      for _, t in ipairs(type(v) == "table" and v or {}) do list[#list + 1] = t end
+      for _, t in ipairs(type(dst.turnedIn) == "table" and dst.turnedIn or {}) do list[#list + 1] = t end
+      while #list > 10 do table.remove(list) end
+      dst.turnedIn = list
+    elseif k ~= "acked" and k ~= "resyncSeen" then
+      dst[k] = v
+    end
+  end
+end
+
+-- First time a character is seen by its GUID: its stores under "Name-Realm"
+-- (the old realm name, and the blank one since Forever's build 71037) are
+-- merged into it, oldest first, and removed. The realms they came from are
+-- kept in "oldRealms" (for the auction prices and the chosen assistant).
+-- What the companion had cached ("acked") starts over: everything is sent once.
+local function migrateCharacter(guid)
+  local name = UnitName("player")
+  local found = {}
+  for key, data in pairs(ns.db.chars) do
+    if type(key) == "string" and type(data) == "table" and name and not key:match("^Player%-")
+      and key:sub(1, #name + 1) == name .. "-" and not data.guid then
+      found[#found + 1] = { key = key, realm = key:sub(#name + 2), data = data, newest = newestSeen(data) }
+    end
+  end
+  table.sort(found, function(a, b)
+    if a.newest ~= b.newest then return a.newest < b.newest end
+    return a.key < b.key
+  end)
+  local merged, realms = { guid = guid }, {}
+  for _, f in ipairs(found) do
+    mergeStore(merged, f.data)
+    realms[#realms + 1] = f.realm
+    ns.db.chars[f.key] = nil
+  end
+  merged.guid = guid
+  merged.oldRealms = #realms > 0 and realms or nil
+  ns.db.chars[guid] = merged
+end
+
 function Core:CharData()
   if not ns.db then return nil end
-  local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
+  local key = Core.CharKey()
   ns.db.chars = ns.db.chars or {}
+  if not ns.db.chars[key] and key:match("^Player%-") then pcall(migrateCharacter, key) end
   ns.db.chars[key] = ns.db.chars[key] or {}
   return ns.db.chars[key]
 end
@@ -392,10 +471,30 @@ end
 -- Auction prices seen, per realm and faction (each has its own auction house):
 -- itemId -> { name, unit = cheapest buyout per item in copper, seenAt }.
 local MAX_PRICES = 1000
+-- Per server (the number in the player GUID, as the realm's name can be blank)
+-- and faction. The first time, the prices kept under the realm names this
+-- character's data came from are merged in (the newer price per item wins).
 function Core:Prices()
   if not ns.db then return nil end
-  local key = (GetRealmName and GetRealmName() or "?") .. "-" .. (UnitFactionGroup and UnitFactionGroup("player") or "?")
+  local faction = UnitFactionGroup and UnitFactionGroup("player") or "?"
+  local server = Core.CharKey():match("^Player%-(%d+)%-")
+  local key = (server or (GetRealmName and GetRealmName() or "?")) .. "-" .. faction
   ns.db.prices = ns.db.prices or {}
+  if not ns.db.prices[key] and server then
+    local merged = {}
+    local data = self:CharData()
+    local realms = {}
+    for _, r in ipairs(type(data.oldRealms) == "table" and data.oldRealms or {}) do realms[#realms + 1] = r end
+    realms[#realms + 1] = GetRealmName and GetRealmName() or ""
+    for _, realm in ipairs(realms) do
+      local old = ns.db.prices[realm .. "-" .. faction]
+      for id, p in pairs(type(old) == "table" and old or {}) do
+        if type(p) == "table" and (not merged[id] or (p.seenAt or "") >= (merged[id].seenAt or "")) then merged[id] = p end
+      end
+      ns.db.prices[realm .. "-" .. faction] = nil
+    end
+    ns.db.prices[key] = merged
+  end
   ns.db.prices[key] = ns.db.prices[key] or {}
   return ns.db.prices[key]
 end
@@ -497,7 +596,7 @@ function Core:Ask(question, extra, chatId, listen, again)
     question = question,
     sig = sig,
     resetSignals = resetSignals,
-    charKey = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?"),
+    charKey = Core.CharKey(),
     assistant = ns.Personas:Current().id,
     lang = L.code,                  -- the app writes its error messages in this language
     history = self:RecentTurns(chatData, HISTORY_TURNS_SENT),

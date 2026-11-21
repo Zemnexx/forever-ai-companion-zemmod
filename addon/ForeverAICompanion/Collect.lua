@@ -234,7 +234,7 @@ end
 local function character()
   local c = {}
   put(c, "name", function() return UnitName("player") end)
-  put(c, "realm", function() return GetRealmName() end)
+  put(c, "realm", function() local r = GetRealmName(); return r ~= "" and r or nil end) -- blank on Forever's build 71037
   put(c, "level", function() return UnitLevel("player") end)
   put(c, "race", function() return UnitRace("player") end)
   put(c, "raceToken", function() return select(2, UnitRace("player")) end)

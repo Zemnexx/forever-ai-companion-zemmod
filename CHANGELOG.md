@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.11)
+## 2.1.2 (addon 1.16.12)
 
 ### Added
 
@@ -30,11 +30,12 @@
   - hearthstone and rested XP, only for travel or leveling questions.
 
   A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
-- **Recipes only go with crafting questions.** They are the longest part of your data (about 1,500 tokens for three professions), so the app now sends them only when the question is about crafting, names a profession, a recipe or one of its materials (also in the question just before), or a trainer's window is open. Your profession skill levels still go with every question.
+- **Recipes only go with crafting questions.** They are the longest part of your data (about 1,500 tokens for three professions), so the app now sends them only when the question is about crafting, names a profession, a recipe or one of its materials (also in the question just before), or a trainer's window is open. Your profession skill levels still go with every question. Recipes that no longer give skill go as a plain list of names, a third of the size.
 - **No more reminders about abilities missing from your bars.** They kept naming abilities your spec doesn't use. The AI still knows which abilities are on no bar, and uses that only when you ask about your bars, keybinds, rotation or a spell you can't find.
 
 ### Fixed
 
+- **Your saved data survives Forever's blank realm name.** Since the game's build 71037 the realm's name comes back blank, so the addon started a new, empty store for your character and lost track of what it had saved before (Eastern Kingdoms flight points, quest turn-ins, auction prices, the assistant you chose). Each character's data is now kept by the character's own game id, which doesn't depend on the realm's name, and the first time the old stores are merged into it (the newer copy wins). Auction prices are kept per server and faction. A blank realm is no longer sent to the AI.
 - **Recipes are saved on WoW Forever.** Its profession window gives the profession's name through a different game function than the addon used, so no recipe was ever saved and the AI only knew your skill levels. Open each profession window once (Blacksmithing, Mining's smelting, Cooking, First Aid...) to save them.
 - **The bank is remembered as you left it.** The addon saved the bank when you opened it and when its main slots changed, but not when you took things out of the bags inside the bank (or put them in), so the AI could count items you had already taken out. It now saves after every change while the bank is open, an emptied bank included. Open your bank once to refresh what it remembers.
 - **Skills and spells are listed cleanly.** Each profession and secondary skill was listed twice, and the spell list had the spellbook's groups (Blessings, Auras, Utility Blessings) and the auto attack in it, as if they were abilities missing from your bars.

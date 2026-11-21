@@ -1783,6 +1783,65 @@ test('at a flight master the addon keeps which flight points the player has, and
   assert.deepEqual(second, [{ continent: 'Eastern Kingdoms', known: ['Menethil Harbor, Wetlands', 'Thelsamar, Loch Modan'] }]);
 });
 
+test('a blank realm name (Forever build 71037): data kept by character GUID, the old stores merged in once', () => {
+  const out = runLua(`
+    -- Before: "Name-Realm" keys; since the patch the realm is blank ("Sharp-").
+    ForeverAICompanion_DB = {
+      chars = {
+        ["Sharp-Forever"] = {
+          bank = { seenAt = "2026-11-18 16:40", items = { { name = "Silk Cloth", count = 73 } } },
+          flights = { [1415] = { seenAt = "2026-11-18 16:55", known = { { name = "Tarren Mill" } } } },
+          questsDone = { [100] = { t = "Old Quest" } }, turnedIn = { "Old Quest" }, acked = { gear = "h1" },
+        },
+        ["Sharp-"] = {
+          bank = { seenAt = "2026-11-21 11:07", items = { { name = "Silk Cloth", count = 89 } } },
+          flights = { [1414] = { seenAt = "2026-11-21 11:26", known = { { name = "Thunder Bluff" } } } },
+          questsDone = { [200] = { t = "New Quest", d = "2026-11-21" } }, turnedIn = { "New Quest" }, acked = { gear = "h2" },
+        },
+        ["Other-Forever"] = { bank = { seenAt = "2026-11-10 10:00", items = {} } },
+      },
+      prices = {
+        ["Forever-Horde"] = { [4306] = { name = "Silk Cloth", unit = 100, seenAt = "2026-11-16 12:00" },
+                              [2772] = { name = "Iron Ore", unit = 238, seenAt = "2026-11-17 18:52" } },
+        ["-Horde"] = { [4306] = { name = "Silk Cloth", unit = 175, seenAt = "2026-11-20 17:57" } },
+        ["Forever-Alliance"] = { [858] = { name = "Lesser Healing Potion", unit = 25, seenAt = "2026-11-16 12:00" } },
+      },
+      personas = { ["Sharp-Forever"] = "fizzi" },
+    }
+    GetRealmName = function() return "" end
+    UnitGUID = function(unit) if unit == "player" then return "Player-6932-005792F1" end end
+    UnitFactionGroup = function() return "Horde" end
+    START()
+    local d = ns.Core:CharData()
+    local chars, prices = ns.db.chars, ns.Core:Prices()
+    local r = {
+      ns.Core.CharKey(), tostring(d.guid), tostring(d.bank.items[1].count),
+      tostring(d.flights[1414] ~= nil) .. "/" .. tostring(d.flights[1415] ~= nil),
+      d.questsDone[100].t .. "/" .. d.questsDone[200].t, table.concat(d.turnedIn, ","), tostring(d.acked),
+      table.concat(d.oldRealms, ","),
+      tostring(chars["Sharp-Forever"]) .. "/" .. tostring(chars["Sharp-"]) .. "/" .. tostring(chars["Other-Forever"] ~= nil),
+      prices[4306].unit .. "/" .. prices[2772].unit,
+      tostring(ns.db.prices["Forever-Horde"]) .. "/" .. tostring(ns.db.prices["-Horde"]) .. "/" .. tostring(ns.db.prices["Forever-Alliance"] ~= nil),
+      tostring(ns.Personas:Current() == ns.Personas.list.fizzi) .. "/" .. tostring(ns.db.personas["Sharp-Forever"]),
+      tostring(ns.Collect:Snapshot().character.realm),
+    }
+    RESULT = table.concat(r, " | ")
+  `, {}, FILES, FAKE_UI + PRELUDE_DRIVE);
+  assert.equal(out, [
+    'Player-6932-005792F1', 'Player-6932-005792F1',
+    '89', // the newer bank copy
+    'true/true', // both continents' flight points
+    'Old Quest/New Quest', 'New Quest,Old Quest', // turn-ins: all of them; the last ones, newer first
+    'nil', // everything sent once to the app
+    'Forever,', // where they came from (the old realm, then the blank one)
+    'nil/nil/true', // the old stores are gone; another character's stays
+    '175/238', // prices: the newer one per item
+    'nil/nil/true', // old price keys gone; the other faction's stays
+    'true/nil', // the chosen assistant moved over
+    'nil', // no blank realm in the data
+  ].join(' | '));
+});
+
 test('the bank is remembered as it is left: changes in its bags count, and closing it keeps what was seen', () => {
   const out = runLua(`
     START()

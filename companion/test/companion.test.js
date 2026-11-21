@@ -185,6 +185,13 @@ test('recipes go to the AI only with crafting questions; skill levels always', (
   assert.equal(sent('And how many?', { history: [{ q: 'What can I craft?', a: 'Iron bars.' }] }).recipes, true);
   assert.equal(sent('What should I learn?', { context: { screen: { trainer: { services: [] } } } }).recipes, true);
   assert.equal(wantsRecipes({ question: 'What can I craft?', context: {} }), false, 'nothing saved: nothing to send');
+  // Grey recipes go as a list of names.
+  const sentRecipes = JSON.parse(buildMessages({ question: 'What can I craft?', context: { knownRecipes: [{
+    profession: 'Mining', rank: 211, recipes: [{ name: 'Smelt Steel', difficulty: 'yellow', reagents: '1x Iron Bar, 1x Coal' },
+      { name: 'Smelt Iron', difficulty: 'grey' }, { name: 'Smelt Tin', difficulty: 'grey' }] }] } })
+    .at(-1).content.match(/JSON\):\n(.*)\n\nQuestion/s)[1]).knownRecipes;
+  assert.deepEqual(sentRecipes, [{ profession: 'Mining', rank: 211,
+    recipes: [{ name: 'Smelt Steel', difficulty: 'yellow', reagents: '1x Iron Bar, 1x Coal' }], greyRecipes: ['Smelt Iron', 'Smelt Tin'] }]);
   const s = buildSystem('', 'fizzi');
   assert.match(s, /- knownRecipes: [^\n]*It only comes with questions about crafting[^\n]*ask them to open it once and ask again\./);
 });

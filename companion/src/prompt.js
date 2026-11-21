@@ -69,7 +69,7 @@ Every question comes with a JSON of the character's state, read from the game at
 - lockouts: dungeons and raids with an active lockout and hours until reset.
 - flightPaths: per continent, from the last flight master's map the player opened there ("seenAt"): "known" = the flight points they can fly to; "notKnown" = their faction's and neutral flight points they can't fly to yet (not discovered: they have to get there another way and talk to its flight master once). "notChecked": they haven't opened a flight master's map on that continent since the addon was updated, so "known" there may be incomplete and nothing is known about the rest.
 - auctionPrices: for items in their bags or bank, the cheapest auction house buyout per item the addon saw when the player browsed the auction house ("seenAt"; prices change, older ones are less reliable). Use it to say what is worth selling at the auction house or to a vendor, and what something costs. Items they never looked up have no price: if they ask about auction prices and there is no "auctionPrices" or "screen.auction", tell them to open the auction house and search for the item, then ask again. recentlyCompletedQuests: quests turned in recently.
-- knownRecipes: per profession, the recipes known the last time its window was opened ("seenAt"; may be outdated), with "difficulty" = the chance to raise the skill by crafting it (orange always, yellow usually, green rarely, grey never), "canMake" = how many the bags allowed then (not every game version gives it), and "reagents" (not listed for grey recipes). To say what they can craft now, compare "reagents" with "inventory". It only comes with questions about crafting (or naming a profession, a recipe or one of its materials); if such a question comes without it, they haven't opened that profession's window since the addon started saving recipes: ask them to open it once and ask again.
+- knownRecipes: per profession, the recipes known the last time its window was opened ("seenAt"; may be outdated), with "difficulty" = the chance to raise the skill by crafting it (orange always, yellow usually, green rarely, grey never), "canMake" = how many the bags allowed then (not every game version gives it), and "reagents"; "greyRecipes" = the names of the ones that no longer give skill (their materials aren't listed). To say what they can craft now, compare "reagents" with "inventory". It only comes with questions about crafting (or naming a profession, a recipe or one of its materials); if such a question comes without it, they haven't opened that profession's window since the addon started saving recipes: ask them to open it once and ask again.
 - linkedItems: things the player linked in the question with shift-click (the question shows them as "[Name]"). Items come with stats, "effects" and "slots": the "gear" slots they would go in, to compare with what is equipped there. Linked spells come with the game's "description".
 - screen: game windows open while asking; the question is very likely about them. questOffer: a quest being offered (text, objectives, rewards). questProgress: a quest being turned in ("requiredItems", "canComplete"). questReward: turning in a quest, with "rewards.choices" (pick one: recommend the best for their class and gear). questGreeting / gossip: an NPC's dialogue, options and quests. merchant: a vendor's items (price, stats, "limited" stock, "usable") plus "canRepair" and "repairAllCost". trainer: what the trainer teaches ("status" available/unavailable, cost, level, "needsSkill"); with "beastTraining": true it is the hunter's Beast Training window, and "status" is known (the pet already has it) / available / unavailable, with "trainingPoints" cost. loot: the loot window. flightMap: the flight master's map: "from" (where they are) and the "destinations" they can fly to, with "cost" and "stops". auction: the auction house: "results" (what they are browsing, each with the cheapest buyout "price" per item and "quantity" on sale), "search" (the item they searched and its "cheapest" offers, price per item x quantity) and "myAuctions" (their own auctions, "sold" when sold).
 - pet: the active pet: name, level, family, "xpPct", "happiness" (unhappy/content/happy; "damagePct" is the damage it deals because of it), "loyalty", "trainingPoints" ("available" to spend, "spent"), "diet" (food types it eats), "mode" (its stance: aggressive/defensive/passive...), "abilities" (what it knows, with rank, "[autocast on/off]" or "[passive]") and "stats" (attributes, armor, attack power, damage, attack speed, resistances). No "pet" section: no pet is out right now.
@@ -213,12 +213,26 @@ export function wantsRecipes(req) {
   return texts.some((t) => terms.some((term) => t.includes(term)));
 }
 
+// Grey recipes (no skill any more, no materials listed) as a plain list of
+// names per profession: most of a profession's recipes, at a third of the size.
+export function compactRecipes(knownRecipes) {
+  return knownRecipes.map((p) => {
+    if (!p || !Array.isArray(p.recipes)) return p;
+    const recipes = p.recipes.filter((r) => r?.difficulty !== 'grey');
+    const grey = p.recipes.filter((r) => r?.difficulty === 'grey' && r.name).map((r) => r.name);
+    const out = { ...p, recipes };
+    if (grey.length) out.greyRecipes = grey;
+    return out;
+  });
+}
+
 // The character data the AI gets for this question.
 export function promptContext(req) {
   const ctx = req?.context ?? {};
-  if (!ctx.knownRecipes || wantsRecipes(req)) return ctx;
+  if (!ctx.knownRecipes) return ctx;
   const { knownRecipes, ...rest } = ctx;
-  return rest;
+  if (!wantsRecipes(req)) return rest;
+  return { ...rest, knownRecipes: compactRecipes(knownRecipes) };
 }
 
 // Chat turns: earlier Q&A (sent by the addon) + the current question with context.
