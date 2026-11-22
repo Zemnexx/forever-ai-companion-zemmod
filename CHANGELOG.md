@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.2.0 (addon 1.17.0)
+
+### Added
+
+- **Other addons can ask the app through this one.** The addon now has a small public API (`ForeverAICompanionAPI`, in `Plugins.lua`) that a second addon can use to send the app a request and get data back, over the same channels and with the same per-PC request code as a question. The app answers such a request only when it has a plugin of that name (`companion/src/plugins.js`), and what a plugin tells the AI is written in the app, never taken from the request. This version carries no plugin yet: it is the groundwork for one. See [Plugins](README.md#plugins-other-addons-asking-through-this-one) in the README.
+  - A plugin's own data is sent only when it changed, like your character's.
+  - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in. An answer that is only late is still picked up.
+  - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
+  - Mailboxes are opened less often while waiting for a plugin's answer, which can take minutes, so they last as long as before.
+
+### Fixed
+
+- **Answers with certain field names no longer break the mailbox.** A table key that is a Lua keyword (`for`, `end`...) was written bare into the mailbox file, which the game could not load. No answer had such a key until now.
+
 ## 2.1.2 (addon 1.16.14)
 
 ### Added
