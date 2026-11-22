@@ -446,6 +446,36 @@ companion/
   test/                     Tests (they run the addon's real Lua)
 ```
 
+### Plugins: other addons asking through this one
+
+A second addon cannot reach the app by itself: only this addon has the channels out of the game and the mailboxes back in. A plugin is a pair: an addon in the game that lists `ForeverAICompanion` as a dependency, and a handler in the app that answers its requests with data.
+
+**In the game** (`Plugins.lua`), through the global `ForeverAICompanionAPI`:
+
+```lua
+ForeverAICompanionAPI.Register("myplugin", {
+  onResult = function(result) end,   -- { id, kind, ok, text, data, model, tokens, timedOut, late }
+  onAppState = function(state) end,  -- "ready", "closed", "need-ai"...
+})
+
+local id, why = ForeverAICompanionAPI.Request("myplugin", {
+  kind = "report",              -- which of the things the app's side knows how to do
+  input = { ... },              -- small parameters of this request
+  sections = { list = { ... } },-- bigger data, sent only when it changed (arrives as context.myplugin_list)
+  context = true,               -- also send the character's data (the default)...
+  only = { "character", "gear" },   -- ...but just these sections of it
+  summary = "What the app's list of questions shows",
+  timeout = 300,                -- seconds to wait for the answer
+  onStatus = function(state, detail) end,  -- "preparing", "sent", "failed"
+})
+```
+
+`Busy()`, `Pending(name)`, `Cancel(name, id)`, `AppState()`, `WatchApp(name, on)`, `CanSendLarge()`, `DescribeItem(link, full)` and `AuctionPrice(itemId)` complete it. Requests waiting for an answer are kept in the saved data, so an answer still reaches the plugin after `/reload` or the next login. Big requests need invisible sending: the on-screen line only fits small ones.
+
+**In the app** (`src/plugins.js`): a plugin is `{ name, handle(req, env) }` listed in `BUILT_IN`. `req.ext` holds `kind` and `input`, `req.context` the sections that were sent, and `handle` returns `{ text, data, model, usage }`: `data` is a plain object that arrives in the game as a Lua table. Only plugins listed there run; a request for any other name is answered with an error. Plugin requests are answered in a line of their own, so they never hold up a question.
+
+The Armory (`src/armory`) is the first plugin. What a plugin tells the AI belongs in the app, not in the request: any addon in the game can call the API, so a request should only be able to choose among the things the plugin's handler knows how to do.
+
 ### Build and test
 
 Requirements: Windows and Node.js 25.5 or later (for `--build-sea`; Node 22 is enough for development).

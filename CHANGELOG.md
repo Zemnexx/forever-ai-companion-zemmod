@@ -1,14 +1,11 @@
 # Changelog
 
-## 2.2.0 (addon 1.17.0)
+## 2.3.0 (addon 1.17.0)
+
+The Armory: a second addon for your character's build, on top of the plugins of 2.2.0.
 
 ### Added
 
-- **Other addons can ask the app through this one, starting with the Armory.** The addon now has a small public API (`ForeverAICompanionAPI`, in `Plugins.lua`) that a second addon can use to send the app a request and get data back, over the same channels and with the same per-PC request code as a question. The app answers such a request only when it has a plugin of that name (`companion/src/plugins.js`), and what a plugin tells the AI is written in the app, never taken from the request.
-  - A plugin's own data is sent only when it changed, like your character's.
-  - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in.
-  - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
-  - Mailboxes are opened less often while waiting for a plugin's answer, which takes minutes, so they last as long as before.
 - **The app installs the Armory and keeps it up to date.** The dashboard has a new section, **The Armory**: click **Set up**, then **Install the Armory**, and the addon is copied next to the main one. From then on the app updates it whenever it carries a newer version, the same way it updates the main addon. It is never installed unless you ask, **Remove** takes it out again, and uninstalling the app removes it too. Restart WoW after installing.
 - **Your own settings for the Armory's analyses**, on the same screen:
   - **How thorough**: Quick, Balanced or Thorough (the default). More gives better builds and uses more of your plan or key.
@@ -20,6 +17,16 @@
   - **Interactions.** The AI looks for combinations of your talents, spells and item effects that are stronger than they look. An idea that changes your numbers comes with a change to your combat model, and the simulator measures it against your last rotation.
   - **Test mode answers too.** With no AI chosen, every kind of request gets a placeholder made from your own data through the same checks and the same simulator, so the connection can be tried for free.
   - Not yet: pets are not simulated. Hunters and warlocks are told so under each rotation's assumptions.
+
+## 2.2.0 (addon 1.17.0)
+
+### Added
+
+- **Other addons can ask the app through this one.** The addon now has a small public API (`ForeverAICompanionAPI`, in `Plugins.lua`) that a second addon can use to send the app a request and get data back, over the same channels and with the same per-PC request code as a question. The app answers such a request only when it has a plugin of that name (`companion/src/plugins.js`), and what a plugin tells the AI is written in the app, never taken from the request. This version carries no plugin yet: it is the groundwork for the Armory of 2.3.0. See [Plugins](README.md#plugins-other-addons-asking-through-this-one) in the README.
+  - A plugin's own data is sent only when it changed, like your character's.
+  - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in. An answer that is only late is still picked up.
+  - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
+  - Mailboxes are opened less often while waiting for a plugin's answer, which can take minutes, so they last as long as before.
 
 ### Fixed
 

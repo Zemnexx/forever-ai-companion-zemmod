@@ -33,7 +33,7 @@ import { createMic, ensureMicExe } from '../mic.js';
 import { createTalk, talkSettings } from '../talk.js';
 import { TRUSTED_KEYS } from '../signing.js';
 
-export const VERSION = '2.2.0';
+export const VERSION = '2.3.0';
 
 // Where the silent voice's DLL lives (it is loaded by the game while in use).
 // Only programs running as the player load this copy (per-user registration);

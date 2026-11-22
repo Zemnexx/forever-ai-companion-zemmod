@@ -1,16 +1,16 @@
 -- Other addons asking the companion app through this one ("plugins").
 --
--- Only this addon can reach the app: it holds this PC's request key, the
--- silent voice, the on-screen line and the mailboxes the answers come back
--- through. A plugin (the Armory, for one) lists this addon as a dependency and
--- uses the global ForeverAICompanionAPI:
+-- Only this addon can reach the app: it holds the silent voice, the
+-- on-screen line and the mailboxes the answers come back through. A plugin
+-- lists this addon as a dependency in its .toc and uses the global
+-- ForeverAICompanionAPI:
 --
---   ForeverAICompanionAPI.Register("armory", {
+--   ForeverAICompanionAPI.Register("myplugin", {
 --     onResult = function(result) ... end,     -- every answer, also after /reload
 --     onAppState = function(state) ... end,    -- "ready", "closed"... (Live:AppState)
 --   })
---   local id, err = ForeverAICompanionAPI.Request("armory", {
---     kind = "talents",            -- what the app's side of the plugin should do
+--   local id, err = ForeverAICompanionAPI.Request("myplugin", {
+--     kind = "report",             -- what the app's side of the plugin should do
 --     input = { ... },             -- small parameters of this request
 --     sections = { name = value }, -- bigger data: sent only when it changed
 --     context = true,              -- also send the character's data (default true)
@@ -102,7 +102,7 @@ local function sectionsOf(name, opts)
   for k, v in pairs(type(opts.sections) == "table" and opts.sections or {}) do
     if type(k) == "string" and k:match("^[%w_]+$") and v ~= nil then
       out = out or {}
-      out[name .. "_" .. k] = v -- "armory_talents": never one of this addon's own sections
+      out[name .. "_" .. k] = v -- "myplugin_list": never one of this addon's own sections
     end
   end
   return out
@@ -133,9 +133,11 @@ function Plugins:Request(name, opts)
     question = summaryOf(name, opts),
     sig = sig,
     resetSignals = resetSignals,
-    charKey = Core.CharKey(),
+    -- The character's key, as questions send it.
+    charKey = Core.CharKey and Core.CharKey() or ((UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")),
     lang = L.code,
-    auth = Core:AuthCode(id),
+    -- This PC's code for the request, where the addon has one (see Core:AuthCode).
+    auth = Core.AuthCode and Core:AuthCode(id) or nil,
     ext = { name = name, kind = opts.kind, v = tonumber(opts.version) or 1, input = type(opts.input) == "table" and opts.input or nil },
   }
   local plugin = { sections = sectionsOf(name, opts), context = opts.context ~= false, only = onlyOf(opts) }
@@ -319,7 +321,7 @@ function Plugins:AppStateChanged(state)
 end
 
 -- The public face ---------------------------------------------------------------
--- Functions, not methods: ForeverAICompanionAPI.Request("armory", { ... }).
+-- Functions, not methods: ForeverAICompanionAPI.Request("myplugin", { ... }).
 
 ForeverAICompanionAPI = {
   VERSION = Plugins.VERSION,

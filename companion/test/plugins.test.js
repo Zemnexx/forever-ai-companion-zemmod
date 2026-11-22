@@ -15,7 +15,6 @@ import { createAssembler } from '../src/voice-inbox.js';
 import { hasRequestKey } from '../src/request-key.js';
 import { KEEP_DATA, inboxSource, withoutOldData } from '../src/inbox.js';
 import { createPlugins } from '../src/plugins.js';
-import { openArmoryStore } from '../src/armory/store.js';
 import { runLua } from './helpers.js';
 
 const KEY = 'ab'.repeat(32);
@@ -76,11 +75,8 @@ const ADDON = `
   }
   ns.Chats = { EachEntry = function() end, FindEntry = function() end }
   ns.UI = { SetStatus = function() end, Refresh = function() end, IsShown = function() return false end }
-  TREES = { api = "classic", rowPoints = 5, spent = 0, available = 5, level = 14, pointsAtCap = 6, trees = {
-    { id = 1, name = "Arms", points = 0, talents = {
-      { id = 101, name = "Improved Heroic Strike", row = 1, col = 1, rank = 0, max = 3, desc = "Cheaper Heroic Strike." },
-      { id = 102, name = "Deflection", row = 1, col = 2, rank = 0, max = 5, desc = "Parry." },
-    } } } }
+  -- A plugin's own data: something bigger than a parameter.
+  LIST = { title = "Shopping", items = { { name = "Linen Cloth", count = 20 }, { name = "Copper Bar", count = 6 } } }
   RESULTS = {}
   local API = ForeverAICompanionAPI
 `;
@@ -102,6 +98,22 @@ function heard(spoken) {
   return parseRequest(payload);
 }
 
+// The app's side of a plugin: counts what its addon sent.
+const demo = {
+  name: 'demo',
+  async handle(req, env) {
+    if (req.ext.kind === 'fail') throw new Error('No list arrived.');
+    const list = req.context.demo_list;
+    if (!list) throw new Error('No list arrived.');
+    return {
+      text: `**${list.title}**: ${list.items.length} items.`,
+      data: { kind: req.ext.kind, title: list.title, names: list.items.map((i) => i.name), asked: req.ext.input, lang: env.lang },
+      model: 'demo',
+      usage: { input: 40, cached: 10, output: 5 },
+    };
+  },
+};
+
 test('the public API is there, and bad requests are refused before anything is sent', () => {
   const out = JSON.parse(lua(`
     local r = {}
@@ -114,20 +126,20 @@ test('the public API is there, and bad requests are refused before anything is s
       local id, why = API.Request(...)
       return { id = id, why = why }
     end
-    r.badName = refused("Armory!", { kind = "talents" })
-    r.badKind = refused("armory", { kind = "has space" })
-    r.noKind = refused("armory", {})
+    r.badName = refused("Demo!", { kind = "count" })
+    r.badKind = refused("demo", { kind = "has space" })
+    r.noKind = refused("demo", {})
     ns.Core.working = true
-    r.busy = refused("armory", { kind = "talents" })
+    r.busy = refused("demo", { kind = "count" })
     r.isBusy = API.Busy()
     ns.Core.working = false
     r.state = API.AppState()
     r.large = API.CanSendLarge()
-    r.registered = API.Register("armory", { onResult = function() end })
+    r.registered = API.Register("demo", { onResult = function() end })
     r.badRegister = API.Register("Bad Name", {})
-    API.WatchApp("armory", true)
+    API.WatchApp("demo", true)
     r.watching = { ns.Plugins:Watching(), CHECKED }
-    API.WatchApp("armory", false)
+    API.WatchApp("demo", false)
     r.stopped = ns.Plugins:Watching()
     r.spoken = #SPOKEN
     RESULT = ns.Json.Encode(r)`));
@@ -148,96 +160,103 @@ test('the public API is there, and bad requests are refused before anything is s
   assert.equal(out.spoken, 0);
 });
 
-test('a plugin request travels like a question: coded, with its own sections, only the data it asked for', () => {
+test('a plugin request travels like a question: with its own sections, and only the data it asked for', () => {
   const out = JSON.parse(lua(`
     local states = {}
-    local id = API.Request("armory", {
-      kind = "talents", input = { spec = "Arms", goal = "raids" }, summary = "  Talent build: |cffffffffArms|r  ",
-      sections = { talents = TREES, ["bad key!"] = 1 }, only = { "character", "client" },
+    local id = API.Request("demo", {
+      kind = "count", input = { sort = "name", limit = 5 }, summary = "  Count my |cffffffffshopping|r list  ",
+      sections = { list = LIST, ["bad key!"] = 1 }, only = { "character", "client" },
       onStatus = function(state, detail) states[#states + 1] = { state, type(detail) == "table" and detail.channel or detail } end,
     })
     PUMP()
     RESULT = ns.Json.Encode({ id = id, spoken = SPOKEN, states = states, sent = SENT, working = ns.Core.working,
-      pending = API.Pending("armory"), stored = ns.db.plugins.pending[id] })`));
+      pending = API.Pending("demo"), stored = ns.db.plugins.pending[id] })`));
   assert.match(out.id, /^\d{14}$/);
   assert.deepEqual(out.states, [['preparing'], ['sent', 'voice']]);
   assert.deepEqual(out.sent, ['slow'], 'the mailboxes are checked on the slow schedule');
   assert.equal(out.working, false);
-  assert.equal(out.pending[out.id].kind, 'talents');
+  assert.equal(out.pending[out.id].kind, 'count');
   assert.equal(out.stored.viaVoice, true);
-  assert.equal(typeof out.stored.sent.armory_talents, 'number', 'the hash of what was sent is kept until the answer');
+  assert.equal(typeof out.stored.sent.demo_list, 'number', 'the hash of what was sent is kept until the answer');
 
   const req = heard(out.spoken);
   assert.equal(req.id, out.id);
-  assert.equal(req.question, 'Talent build: Arms');
-  assert.deepEqual(req.ext, { name: 'armory', kind: 'talents', v: 1, input: { spec: 'Arms', goal: 'raids' } });
+  assert.equal(req.question, 'Count my shopping list');
+  assert.deepEqual(req.ext, { name: 'demo', kind: 'count', v: 1, input: { sort: 'name', limit: 5 } });
   assert.equal(req.charKey, 'Player-1-00ABCDEF');
   assert.equal(req.sig, 3);
   assert.equal(req.lang, 'en');
-  assert.ok(hasRequestKey(req, KEY, { now: 1700000000 * 1000 }), 'carries this PC\'s code');
-  assert.equal(req.auth, crypto.createHmac('sha256', KEY).update(out.id).digest('hex'));
   // Its own section under its own name, and only the sections asked for.
-  assert.equal(req.context.armory_talents.trees[0].talents[1].name, 'Deflection');
+  assert.equal(req.context.demo_list.items[1].name, 'Copper Bar');
   assert.equal(req.context.character.name, 'Thora');
   assert.equal(req.context.position, undefined);
   assert.equal(req.context.gear, undefined);
-  assert.deepEqual(Object.keys(req.context).filter((k) => k.startsWith('armory_')), ['armory_talents']);
-  assert.equal(typeof req.hashes.armory_talents, 'number');
+  assert.deepEqual(Object.keys(req.context).filter((k) => k.startsWith('demo_')), ['demo_list']);
+  assert.equal(typeof req.hashes.demo_list, 'number');
+});
+
+test('a plugin request carries this PC\'s request code, like a question', () => {
+  const out = JSON.parse(lua(`
+    local id = API.Request("demo", { kind = "count", context = false })
+    PUMP()
+    RESULT = ns.Json.Encode({ id = id, spoken = SPOKEN })`));
+  const req = heard(out.spoken);
+  assert.ok(hasRequestKey(req, KEY, { now: 1700000000 * 1000 }));
+  assert.equal(req.auth, crypto.createHmac('sha256', KEY).update(out.id).digest('hex'));
 });
 
 test('context = false sends just the plugin\'s data, and what the app has is not sent twice', () => {
   const out = JSON.parse(lua(`
-    local first = API.Request("armory", { kind = "talents", sections = { talents = TREES }, context = false })
+    local first = API.Request("demo", { kind = "count", sections = { list = LIST }, context = false })
     PUMP()
     local a = SPOKEN
     SPOKEN = {}
     -- The app answered the first one: it has the section now.
-    ns.Core:ApplyInbox({ answers = { { id = first, ok = true, answer = "ok", data = { order = { 101 } } } } })
+    ns.Core:ApplyInbox({ answers = { { id = first, ok = true, answer = "ok", data = { count = 2 } } } })
     NOW = NOW + 5
-    local second = API.Request("armory", { kind = "talents", sections = { talents = TREES }, context = false })
+    local second = API.Request("demo", { kind = "count", sections = { list = LIST }, context = false })
     PUMP()
     RESULT = ns.Json.Encode({ a = a, b = SPOKEN, answered = ANSWERED })`));
   const first = heard(out.a);
-  assert.deepEqual(Object.keys(first.context).sort(), ['armory_talents', 'diagnostics'].filter((k) => k in first.context).sort());
-  assert.ok(first.context.armory_talents);
+  assert.deepEqual(Object.keys(first.context).filter((k) => k !== 'diagnostics'), ['demo_list']);
   const second = heard(out.b);
-  assert.equal(second.context.armory_talents, undefined);
-  assert.equal(second.same.armory_talents, first.hashes.armory_talents);
+  assert.equal(second.context.demo_list, undefined);
+  assert.equal(second.same.demo_list, first.hashes.demo_list);
   assert.equal(out.answered, 1);
 });
 
 test('the answer reaches the plugin with its data; a late one too; an unregistered plugin gets it when it loads', () => {
   const out = JSON.parse(lua(`
-    API.Register("armory", { onResult = function(r) RESULTS[#RESULTS + 1] = r end })
-    local id = API.Request("armory", { kind = "gear", context = false, timeout = 60 })
+    API.Register("demo", { onResult = function(r) RESULTS[#RESULTS + 1] = r end })
+    local id = API.Request("demo", { kind = "count", context = false, timeout = 60 })
     PUMP()
     local r = { pendingBefore = ns.Core:HasPending() }
     -- An answer for someone else changes nothing.
     ns.Core:ApplyInbox({ answers = { { id = "other", ok = true, answer = "x" } } })
     r.afterOther = #RESULTS
-    ns.Core:ApplyInbox({ answers = { { id = id, ok = true, answer = "A plan.", model = "fake", tokens = { i = 10, c = 2, o = 3 },
-      data = { kind = "gear", slots = { { slot = "head" } } } } } })
+    ns.Core:ApplyInbox({ answers = { { id = id, ok = true, answer = "Two items.", model = "demo", tokens = { i = 10, c = 2, o = 3 },
+      data = { kind = "count", names = { "Linen Cloth", "Copper Bar" } } } } })
     r.first = RESULTS[1]
     r.pendingAfter = ns.Core:HasPending()
     -- The same mailbox read again: delivered once.
-    ns.Core:ApplyInbox({ answers = { { id = id, ok = true, answer = "A plan." } } })
+    ns.Core:ApplyInbox({ answers = { { id = id, ok = true, answer = "Two items." } } })
     r.count = #RESULTS
 
     -- No answer in time: the plugin is told, and the late answer still arrives.
     NOW = NOW + 10
-    local slow = API.Request("armory", { kind = "rotation", context = false, timeout = 60 })
+    local slow = API.Request("demo", { kind = "report", context = false, timeout = 60 })
     PUMP()
     NOW = NOW + 61
     r.stillPending = ns.Core:HasPending()
     r.timedOut = RESULTS[2]
     r.awaitingLate = ns.Plugins:AwaitingLate()
     r.listening = { ns.Plugins:ListeningLate(), ns.Plugins:ListeningLate(NOW + 1000) }
-    ns.Core:ApplyInbox({ answers = { { id = slow, ok = true, answer = "late", data = { kind = "rotation" } } } })
+    ns.Core:ApplyInbox({ answers = { { id = slow, ok = true, answer = "late", data = { kind = "report" } } } })
     r.late = RESULTS[3]
 
     -- An answer whose data the app no longer keeps.
     NOW = NOW + 10
-    local old = API.Request("armory", { kind = "discover", context = false })
+    local old = API.Request("demo", { kind = "report", context = false })
     PUMP()
     ns.Core:ApplyInbox({ answers = { { id = old, ok = true, answer = "x", dataDropped = true } } })
     r.dropped = RESULTS[4]
@@ -259,27 +278,27 @@ test('the answer reaches the plugin with its data; a late one too; an unregister
     ns.Uplink.Fits = function() return true end
     ns.Uplink.Prepare = function() return true end
     ns.Uplink.Reveal = function(_, cb) cb(true) end
-    local strip = API.Request("armory", { kind = "talents", context = false })
+    local strip = API.Request("demo", { kind = "count", context = false })
     PUMP()
     ns.Core:ApplyInbox({ answers = {}, failedAt = NOW + 1, failMessage = "Unreadable." })
     r.unread = RESULTS[5]
 
     -- Cancelled: the answer is dropped.
     NOW = NOW + 10
-    local gone = API.Request("armory", { kind = "talents", context = false })
+    local gone = API.Request("demo", { kind = "count", context = false })
     PUMP()
-    API.Cancel("armory", gone)
+    API.Cancel("demo", gone)
     ns.Core:ApplyInbox({ answers = { { id = gone, ok = true, answer = "x" } } })
     r.total = #RESULTS
     RESULT = ns.Json.Encode(r)`));
   assert.equal(out.pendingBefore, true);
   assert.equal(out.afterOther, 0);
   assert.equal(out.first.ok, true);
-  assert.equal(out.first.kind, 'gear');
-  assert.equal(out.first.text, 'A plan.');
-  assert.equal(out.first.model, 'fake');
+  assert.equal(out.first.kind, 'count');
+  assert.equal(out.first.text, 'Two items.');
+  assert.equal(out.first.model, 'demo');
   assert.deepEqual(out.first.tokens, { i: 10, c: 2, o: 3 });
-  assert.equal(out.first.data.slots[0].slot, 'head');
+  assert.deepEqual(out.first.data.names, ['Linen Cloth', 'Copper Bar']);
   assert.equal(out.pendingAfter, false);
   assert.equal(out.count, 1);
   assert.equal(out.stillPending, false);
@@ -290,7 +309,7 @@ test('the answer reaches the plugin with its data; a late one too; an unregister
   assert.deepEqual(out.listening, [true, false], 'the bell is listened for a while longer, not forever');
   assert.equal(out.late.ok, true);
   assert.equal(out.late.late, true);
-  assert.equal(out.late.data.kind, 'rotation');
+  assert.equal(out.late.data.kind, 'report');
   assert.equal(out.dropped.ok, false);
   assert.match(out.dropped.text, /no longer kept/);
   assert.equal(out.heldCount, 1);
@@ -306,7 +325,7 @@ test('without the invisible voice a request that does not fit says so', () => {
     C_VoiceChat = nil
     ns.Uplink.Fits = function() return false end
     local failure
-    local id = API.Request("armory", { kind = "talents", context = false, sections = { talents = TREES },
+    local id = API.Request("demo", { kind = "count", context = false, sections = { list = LIST },
       onStatus = function(state, detail) if state == "failed" then failure = detail end end })
     PUMP()
     RESULT = ns.Json.Encode({ failure = failure, pending = ns.db.plugins.pending[id] == nil, working = ns.Core.working })`));
@@ -315,32 +334,32 @@ test('without the invisible voice a request that does not fit says so', () => {
   assert.equal(out.working, false);
 });
 
-test('game to app and back: a talent request answered in test mode', async (t) => {
+test('game to app and back: the plugin\'s request is answered with data its addon receives', async (t) => {
   const wow = tempWow();
   t.after(() => fs.rmSync(wow, { recursive: true, force: true }));
   const cfg = { ...loadConfig(path.join(os.tmpdir(), 'no-config.json')), wowDir: wow, slots: 2, signals: 5, provider: 'echo' };
   const p = install(cfg, { log: () => {}, resetState: false });
 
   const asked = JSON.parse(lua(`
-    local id = API.Request("armory", { kind = "talents", input = { spec = "Arms" }, sections = { talents = TREES }, only = { "character" } })
+    local id = API.Request("demo", { kind = "count", input = { sort = "name" }, sections = { list = LIST }, only = { "character" } })
     PUMP()
-    RESULT = ns.Json.Encode({ id = id, spoken = SPOKEN, entry = ns.db.plugins.pending[id] })`));
+    RESULT = ns.Json.Encode({ id = id, spoken = SPOKEN })`));
   const req = heard(asked.spoken);
 
   const state = { nextSig: 1, answers: [], processed: [] };
   const events = [];
   const logs = [];
-  const store = openArmoryStore(path.join(wow, 'armory.json'));
-  const env = { cfg, paths: wowPaths(wow), state, plugins: createPlugins({ armory: { store } }), save: () => {}, onEvent: (e) => events.push(e), log: (m) => logs.push(m) };
+  const env = { cfg, paths: wowPaths(wow), state, plugins: { demo }, save: () => {}, onEvent: (e) => events.push(e), log: (m) => logs.push(m) };
   const answer = await handlePluginRequest(req, env);
   assert.equal(answer.ok, true);
-  assert.equal(answer.ext, 'armory');
-  assert.equal(answer.kind, 'talents');
-  assert.equal(answer.data.order.length, 6);
-  assert.match(answer.answer, /^Test mode/);
+  assert.equal(answer.ext, 'demo');
+  assert.equal(answer.kind, 'count');
+  assert.equal(answer.answer, 'Shopping: 2 items.', 'the text is cleaned like an answer');
+  assert.deepEqual(answer.data, { kind: 'count', title: 'Shopping', names: ['Linen Cloth', 'Copper Bar'], asked: { sort: 'name' }, lang: 'en' });
+  assert.deepEqual(answer.tokens, { i: 40, c: 10, o: 5 });
   assert.deepEqual(events.map((e) => e.type), ['question', 'answer']);
   assert.match(events[0].who, /Thora \(Warrior 14\)/);
-  assert.ok(logs.some((m) => m.includes('Request for armory (talents)')));
+  assert.ok(logs.some((m) => m.includes('Request for demo (count)')));
   assert.equal(await handlePluginRequest(req, env), null, 'answered once per id');
   assert.ok(fs.statSync(p.signal(3)).size > 44, 'the bell the addon is listening for');
   assert.equal(state.nextSig, 4);
@@ -349,36 +368,42 @@ test('game to app and back: a talent request answered in test mode', async (t) =
   const inbox = fs.readFileSync(path.join(p.slotDir(1), 'Inbox.lua'), 'utf8');
   const got = JSON.parse(lua(`
     assert(load(INBOX))()
-    ns.db.plugins = { pending = { [ID] = { name = "armory", kind = "talents", t = NOW, timeout = 300, sent = { armory_talents = 42 } } }, held = {} }
-    API.Register("armory", { onResult = function(r) RESULTS[#RESULTS + 1] = r end })
+    ns.db.plugins = { pending = { [ID] = { name = "demo", kind = "count", t = NOW, timeout = 300, sent = { demo_list = 42 } } }, held = {} }
+    API.Register("demo", { onResult = function(r) RESULTS[#RESULTS + 1] = r end })
     ns.Core:ApplyInbox(ForeverAICompanion_Inbox)
     RESULT = ns.Json.Encode({ result = RESULTS[1], acked = ns.Core:CharData().acked })`, { INBOX: inbox, ID: asked.id }));
   assert.equal(got.result.ok, true);
-  assert.equal(got.result.kind, 'talents');
-  assert.deepEqual(got.result.data.order, [101, 101, 101, 102, 102, 102]);
-  assert.equal(got.result.data.spec, '6');
-  assert.equal(got.result.data.test, true);
-  assert.equal(got.acked.armory_talents, 42);
+  assert.equal(got.result.kind, 'count');
+  assert.equal(got.result.text, 'Shopping: 2 items.');
+  assert.deepEqual(got.result.data.names, ['Linen Cloth', 'Copper Bar']);
+  assert.deepEqual(got.result.tokens, { i: 40, c: 10, o: 5 });
+  assert.equal(got.acked.demo_list, 42);
 });
 
-test('a plugin the app does not have is answered with an error, in the game\'s language', async (t) => {
+test('a plugin the app does not have, and a plugin that fails, are answered with an error', async (t) => {
   const wow = tempWow();
   t.after(() => fs.rmSync(wow, { recursive: true, force: true }));
   const cfg = { ...loadConfig(path.join(os.tmpdir(), 'no-config.json')), wowDir: wow, slots: 2, signals: 5, provider: 'echo' };
   install(cfg, { log: () => {}, resetState: false });
-  const base = { cfg, paths: wowPaths(wow), plugins: createPlugins({ armory: { store: openArmoryStore(path.join(wow, 'a.json')) } }), save: () => {} };
-  const unknown = await handlePluginRequest({ id: '1', question: 'x', lang: 'es', ext: { name: 'nope', kind: 'k' } }, { ...base, state: { nextSig: 1, answers: [], processed: [] } });
+  const fresh = () => ({ nextSig: 1, answers: [], processed: [] });
+  const base = { cfg, paths: wowPaths(wow), plugins: { demo }, save: () => {} };
+  // The plugins this app carries.
+  assert.deepEqual(Object.keys(createPlugins()), ['armory']);
+  const unknown = await handlePluginRequest({ id: '1', question: 'x', lang: 'es', ext: { name: 'nope', kind: 'k' } }, { ...base, state: fresh() });
   assert.equal(unknown.ok, false);
-  assert.match(unknown.answer, /no tiene el plugin "nope"/);
+  assert.match(unknown.answer, /no tiene el plugin "nope"/, 'in the game\'s language');
   assert.equal(unknown.data, undefined);
   // A name that is not a plugin but is a property of every object.
-  const proto = await handlePluginRequest({ id: '2', question: 'x', ext: { name: 'constructor', kind: 'k' } }, { ...base, state: { nextSig: 1, answers: [], processed: [] } });
+  const proto = await handlePluginRequest({ id: '2', question: 'x', ext: { name: 'constructor', kind: 'k' } }, { ...base, state: fresh() });
   assert.equal(proto.ok, false);
+  const failed = await handlePluginRequest({ id: '3', question: 'x', ext: { name: 'demo', kind: 'fail' } }, { ...base, state: fresh() });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.answer, 'Error: No list arrived.');
+  assert.equal(failed.ext, 'demo');
   // Sections the app no longer has: the error says to ask again, and the addon is told to resend.
-  const state = { nextSig: 1, answers: [], processed: [] };
-  const missing = await handlePluginRequest({ id: '3', question: 'x', charKey: 'c', same: { armory_talents: 5 }, ext: { name: 'armory', kind: 'talents' } }, { ...base, state });
+  const missing = await handlePluginRequest({ id: '4', question: 'x', charKey: 'c', same: { demo_list: 5 }, ext: { name: 'demo', kind: 'count' } }, { ...base, state: fresh() });
   assert.equal(missing.ok, false);
-  assert.match(missing.answer, /No talent data arrived.*ask once more/);
+  assert.match(missing.answer, /No list arrived\. .*ask once more/);
   const inbox = fs.readFileSync(path.join(wowPaths(wow).slotDir(1), 'Inbox.lua'), 'utf8');
   assert.match(inbox, /resync = \d+/);
 });
@@ -395,8 +420,7 @@ test('only the newest answers keep their data in the mailboxes', () => {
   assert.deepEqual(out.filter((a) => a.dataDropped).map((a) => a.id), ['p1', 'p2']);
   assert.equal(answers[0].data.n, 1, 'the stored answers are not changed');
   assert.deepEqual(out.map((a) => a.id), answers.map((a) => a.id));
-  // Nested data becomes a Lua table the game can load.
-  // Keys that are Lua keywords included.
+  // Nested data becomes a Lua table the game can load, keys that are Lua keywords included.
   const src = inboxSource([{ id: 'p', ok: true, answer: 'x', data: { order: [101, 102], 'odd key': { a: true, b: null }, text: 'line\n"quoted"', for: 1, end: { nil: 2 } } }]);
   const back = JSON.parse(runLua('assert(load(SRC))(); RESULT = ns.Json.Encode(ForeverAICompanion_Inbox.answers[1].data)', { SRC: src }, ['Json.lua']));
   assert.deepEqual(back, { order: [101, 102], 'odd key': { a: true }, text: 'line\n"quoted"', for: 1, end: { nil: 2 } });

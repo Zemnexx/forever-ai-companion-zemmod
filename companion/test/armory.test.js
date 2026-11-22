@@ -15,7 +15,10 @@ import { buildArmorySystem, buildArmoryMessage } from '../src/armory/prompts.js'
 import { MODEL_SPEC } from '../src/armory/model-spec.js';
 import { armoryConfig, createArmory, KINDS } from '../src/armory/index.js';
 import { openArmoryStore } from '../src/armory/store.js';
-import { DEFAULTS } from '../src/config.js';
+import { DEFAULTS, loadConfig, wowPaths } from '../src/config.js';
+import { install } from '../src/install.js';
+import { handlePluginRequest } from '../src/watcher.js';
+import { createPlugins } from '../src/plugins.js';
 
 // Two small trees: Arms (ids 1xx) and Fury (2xx).
 const TREES = {
@@ -367,4 +370,33 @@ test('test mode answers every kind without an AI, through the same checks', asyn
   assert.equal(caster.data.rotations[0].name, 'Bolt');
   const ideas = await armory.handle(request('discover'), { cfg: echo });
   assert.equal(ideas.data.ideas.length, 1);
+});
+
+test('the Armory answers through the app\'s plugin route, and what it returns loads in the game', async (t) => {
+  const wow = fs.mkdtempSync(path.join(os.tmpdir(), 'faic-armory-route-'));
+  t.after(() => fs.rmSync(wow, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(wow, 'Interface', 'AddOns'), { recursive: true });
+  const echo = { ...loadConfig(path.join(os.tmpdir(), 'no-config.json')), wowDir: wow, slots: 2, signals: 5, provider: 'echo' };
+  const p = install(echo, { log: () => {}, resetState: false });
+  const plugins = createPlugins({ armory: { store: tmpStore() } });
+  assert.deepEqual(Object.keys(plugins), ['armory']);
+  const env = () => ({ cfg: echo, paths: wowPaths(wow), state: { nextSig: 1, answers: [], processed: [] }, plugins, save: () => {} });
+
+  const answer = await handlePluginRequest(request('talents'), env());
+  assert.equal(answer.ok, true);
+  assert.equal(answer.ext, 'armory');
+  assert.equal(answer.kind, 'talents');
+  assert.match(answer.answer, /^Test mode/);
+  assert.equal(answer.data.order.length, 12);
+  // The mailbox file is Lua the game can load, "asked" and all.
+  const inbox = fs.readFileSync(path.join(p.slotDir(1), 'Inbox.lua'), 'utf8');
+  assert.match(inbox, /asked = \{/);
+  assert.match(inbox, /order = \{\n\s+101,/);
+
+  // Talent trees the app no longer has: the error says to ask again.
+  const missing = { ...request('talents'), id: '17000000005678', same: { armory_talents: 5 } };
+  delete missing.context.armory_talents;
+  const again = await handlePluginRequest(missing, env());
+  assert.equal(again.ok, false);
+  assert.match(again.answer, /No talent data arrived.*ask once more/);
 });
