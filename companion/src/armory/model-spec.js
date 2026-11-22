@@ -29,7 +29,9 @@ export const MODEL_SPEC = `### Combat model format (JSON)
       "hitPct": 0, "spellHitPct": 0,
       "hastePct": 0           // weapon swing speed only; faster casting is a "castHastePct" modifier
     },
-    "weapons": {              // null when not used
+    "weapons": {              // null when not used. The weapon's OWN damage range, as on the item's tooltip:
+                              // the simulator adds attackPower / 14 * speed to every weapon hit itself,
+                              // and halves off-hand hits itself
       "mainHand": { "min": 0, "max": 0, "speed": 0 },
       "offHand": null,
       "ranged": null

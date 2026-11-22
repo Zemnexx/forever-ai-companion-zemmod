@@ -66,12 +66,16 @@ function sampleModel(ctx) {
   const weapon = combat.mainHand && num(combat.mainHand.max) ? combat.mainHand : null;
   const fight = { duration: 60, targets: 1, targetLevel: level, targetArmor: weapon ? level * 60 : 0 };
   if (weapon) {
+    // The sheet's damage includes attack power; the simulator adds it itself.
+    const attackPower = num(combat.attackPower) || 0;
+    const speed = num(weapon.speed) || 2;
+    const own = (v) => Math.max(1, Math.round(((num(v) || 1) - (attackPower / 14) * speed) * 10) / 10);
     return {
       version: 1, kind: 'damage', fight,
       player: {
         level, autoAttack: 'melee',
-        stats: { attackPower: num(combat.attackPower) || 0, critPct: num(combat.critPct) || 5, hitPct: num(combat.hitPct) || 0 },
-        weapons: { mainHand: { min: num(weapon.min) || 1, max: num(weapon.max) || 2, speed: num(weapon.speed) || 2 } },
+        stats: { attackPower, critPct: num(combat.critPct) || 5, hitPct: num(combat.hitPct) || 0 },
+        weapons: { mainHand: { min: own(weapon.min), max: Math.max(own(weapon.max), own(weapon.min) + 1), speed } },
         resource: { type: 'none', max: 0, start: 0 },
       },
       abilities: [{ id: 'strike', name: 'Test strike', type: 'melee', school: 'physical', cost: 0, gcd: 1.5, cooldown: 6, damage: { weaponPct: 100 } }],
