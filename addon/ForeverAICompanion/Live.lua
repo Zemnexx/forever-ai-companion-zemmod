@@ -110,15 +110,30 @@ function Live:Init()
       end
     end
   end
+  -- Nothing that goes wrong below may stop the timers: a ticker whose
+  -- function fails once is not called again by the game, and without them
+  -- no answer is picked up for the rest of the session. What failed is kept
+  -- for Live:Diagnose.
+  local function guarded(what, fn)
+    return function()
+      local ok, err = pcall(fn)
+      if not ok then Live.lastError = what .. ": " .. tostring(err) end
+    end
+  end
   -- Pick up anything answered while we were away (a plugin's answer may have
   -- taken long enough to arrive after the game was closed).
-  if ns.Core:HasPending() or (ns.Plugins and ns.Plugins:AwaitingLate()) then self:LoadNextSlot() end
-  C_Timer.NewTicker(TICK, function() Live:Tick() end)
+  guarded("first mailbox", function()
+    if ns.Core:HasPending() or (ns.Plugins and ns.Plugins:AwaitingLate()) then Live:LoadNextSlot() end
+  end)()
+  C_Timer.NewTicker(TICK, guarded("tick", function()
+    Live.tickedAt = GetTime()
+    Live:Tick()
+  end))
   -- Is the app open and ready? Checked while the window is open (it opening
   -- checks right away, see UI.lua), or while a plugin's window asks for it.
-  C_Timer.NewTicker(APP_TICK, function()
+  C_Timer.NewTicker(APP_TICK, guarded("app check", function()
     if ns.UI:IsShown() or (ns.Plugins and ns.Plugins:Watching()) then Live:CheckApp() end
-  end)
+  end))
 end
 
 -- The same skip, one signal per check (deferred checks take a frame each).
@@ -166,10 +181,15 @@ function Live:CheckApp()
   local paths = {}
   for i, name in ipairs(STATUS_FILES) do paths[i] = name == "ok" and OK_PATH or STATUS_PATH:format(name) end
   self.checkingApp = true
-  self:Probe(paths, function(r)
+  local ok, err = pcall(self.Probe, self, paths, function(r)
     self.checkingApp = false
     self:ApplyAppCheck(function(name) return r[name == "ok" and OK_PATH or STATUS_PATH:format(name)] == true end)
   end)
+  if not ok then
+    -- A check that failed is not one still under way: the next one runs.
+    self.checkingApp = false
+    self.lastError = "app check: " .. tostring(err)
+  end
   return self:AppState()
 end
 
@@ -336,6 +356,28 @@ function Live:OfferReload()
     preferredIndex = 3,
   }
   StaticPopup_Show("FOREVERAICOMPANION_RELOAD")
+end
+
+-- How the way back from the app stands right now, line by line: for a
+-- plugin's own "what is wrong" command (ForeverAICompanionAPI.Diagnose).
+function Live:Diagnose()
+  local db = ns.db or {}
+  local now = GetTime()
+  local function ago(t) return t and string.format("%.0fs ago", now - t) or "never" end
+  local sig = db.nextSig or 0
+  local lines = {
+    string.format("answers: sound %s, waiting for bell %d of %d (%s), mailboxes opened %d of %d",
+      playable(OK_PATH) and "on" or "OFF", sig, self.SIGNALS,
+      (sig >= 1 and sig <= self.SIGNALS and playable(SIG_PATH:format(sig))) and "it has rung" or "not rung yet",
+      self.usedSlots or 0, self.SLOTS),
+    string.format("timers: last tick %s%s", ago(self.tickedAt), self.tickedAt and "" or " (NOT RUNNING)"),
+  }
+  local app = self.app
+  lines[#lines + 1] = string.format("app: %s, beat %s, seen switching %s, last check %s", self:AppState(),
+    tostring(app and app.pattern), tostring(app and app.switched or false), ago(app and app.lastCheck))
+  if db.sigWait then lines[#lines + 1] = "bells: waiting for the app to start them over" end
+  if self.lastError then lines[#lines + 1] = "transport error: " .. self.lastError end
+  return lines
 end
 
 function Live:Status()

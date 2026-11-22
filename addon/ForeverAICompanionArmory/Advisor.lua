@@ -27,25 +27,31 @@ local function with(...)
   return out
 end
 
+-- How long an answer is waited for. The app gives the AI up to 10 minutes,
+-- and once more when its first answer could not be used, so anything shorter
+-- gives up while the app is still at work (seen on the live client: a gear
+-- plan that took longer than the 7 minutes this used to be).
+local WAIT = 1260
+
 -- only: sections of the main addon's snapshot to send. sections: the
 -- Armory's own data. timeout: seconds to wait for the answer.
 local REQUESTS = {
   talents = {
-    only = with("gear"), timeout = 300,
+    only = with("gear"), timeout = WAIT,
     sections = function() return { talents = ns.Scan.Talents() } end,
     needs = "talents",
   },
   gear = {
-    only = with("gear", "emptySlots", "inventory", "bank", "professions", "reputations", "lockouts", "auctionPrices"), timeout = 420,
+    only = with("gear", "emptySlots", "inventory", "bank", "professions", "reputations", "lockouts", "auctionPrices"), timeout = WAIT,
     sections = function() return { talents = ns.Scan.Talents(), seen = ns.Scan.Seen() } end,
   },
   rotation = {
-    only = with("gear", "buffs", "pet"), timeout = 480,
+    only = with("gear", "buffs", "pet"), timeout = WAIT,
     sections = function() return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat() } end,
     needs = "spells",
   },
   discover = {
-    only = with("gear", "inventory", "bank", "buffs", "pet"), timeout = 600,
+    only = with("gear", "inventory", "bank", "buffs", "pet"), timeout = WAIT,
     sections = function()
       return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), seen = ns.Scan.Seen() }
     end,
@@ -150,9 +156,22 @@ function Advisor:OnResult(result)
   if type(result) ~= "table" or not REQUESTS[result.kind] then return end
   local kind = result.kind
   local asking = ns.Store:Asking(kind)
-  -- An answer to an older request than the one being asked now is dropped,
-  -- unless it brings a result and nothing newer is on its way.
-  if asking and asking.id and result.id and asking.id ~= result.id and self:IsAsking(kind) then return end
+  -- An answer to an older request than the one being asked now: the newer
+  -- one is still waited for. A result it brings is kept all the same (it is
+  -- a real analysis, paid for, and newer than what is shown); its failure is
+  -- not news any more.
+  if asking and asking.id and result.id and asking.id ~= result.id and self:IsAsking(kind) then
+    if result.ok and type(result.data) == "table" then
+      ns.Store:SaveResult(kind, result)
+      if kind == "gear" then
+        ns.Items.Forget()
+        self:PrimeItems()
+      end
+      Util.chat(string.format(L.READY_EARLIER, L["KIND_" .. kind:upper()]))
+      refresh()
+    end
+    return
+  end
   if result.ok and type(result.data) == "table" then
     ns.Store:SaveResult(kind, result)
     ns.Store:SetAsking(kind, nil)
@@ -163,7 +182,9 @@ function Advisor:OnResult(result)
     Util.chat(string.format(L.READY, L["KIND_" .. kind:upper()]))
     if ns.Button and ns.Button.Notify then ns.Button:Notify() end
   else
-    ns.Store:SetAsking(kind, { state = "error", t = time(), message = result.text or L.FAILED, timedOut = result.timedOut })
+    -- Given up waiting: said in the Armory's own words (the app may still be at work).
+    local message = result.timedOut and string.format(L.TIMED_OUT, math.floor(REQUESTS[kind].timeout / 60)) or result.text or L.FAILED
+    ns.Store:SetAsking(kind, { state = "error", t = time(), message = message, timedOut = result.timedOut })
   end
   if ns.UI and ns.UI.OnAnalysisDone then ns.UI:OnAnalysisDone(kind) end
   refresh()

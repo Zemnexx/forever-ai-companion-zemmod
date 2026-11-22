@@ -36,7 +36,7 @@ ns.Plugins = Plugins
 
 Plugins.VERSION = 1
 local DEFAULT_TIMEOUT = 300  -- seconds: an analysis takes longer than a chat answer
-local MAX_TIMEOUT = 900
+local MAX_TIMEOUT = 1800
 local KEEP_LATE = 3600       -- how long an answer that arrives after the timeout is still delivered
 local LISTEN_LATE = 900      -- ...and how long the bell is still listened for after it (Live:Tick)
 local MAX_HELD = 5
@@ -314,6 +314,21 @@ function Plugins:Watching()
   return next(watching) ~= nil
 end
 
+-- What is being waited for and how the way back stands: lines of text for a
+-- plugin's own diagnosis command.
+function Plugins:Diagnose()
+  local lines = ns.Live.Diagnose and ns.Live:Diagnose() or {}
+  local s = store()
+  local at = now()
+  for id, e in pairs(s and s.pending or {}) do
+    lines[#lines + 1] = string.format("waiting for %s %s: sent %ds ago, waits %ds%s", tostring(e.name), tostring(e.kind),
+      at - (e.t or at), e.timeout or DEFAULT_TIMEOUT, e.timedOut and ", given up (still listening)" or "")
+  end
+  if s and next(s.pending) == nil then lines[#lines + 1] = "waiting for: nothing" end
+  if Plugins.lastError then lines[#lines + 1] = "plugin error: " .. Plugins.lastError end
+  return lines
+end
+
 function Plugins:AppStateChanged(state)
   for _, h in pairs(handlers) do
     if h.onAppState then pcall(h.onAppState, state) end
@@ -334,6 +349,8 @@ ForeverAICompanionAPI = {
   -- "ready" | "checking" | "closed" | "stuck" | "need-ai" | "need-login" | "problem" | "restart" | "nosound" | "unknown"
   AppState = function() return ns.Live:AppState() end,
   WatchApp = function(name, on) return Plugins:Watch(name, on) end,
+  -- Lines of text: what is being waited for and whether answers can get back.
+  Diagnose = function() return Plugins:Diagnose() end,
   -- The invisible channel is there: requests of any size fit (the on-screen line only takes small ones).
   CanSendLarge = function() return ns.Voice:Available() and true or false end,
   -- An item link as this addon describes it to the AI (name, itemId, quality,

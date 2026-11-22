@@ -25,6 +25,30 @@ test('the installer creates every status file: only the marker plays', () => {
   }
 });
 
+test('the addon follows the app\'s files even while its version stays the same', () => {
+  const dir = tmp();
+  try {
+    const cfg = { slots: 2, signals: 3 };
+    install(cfg, { wowDir: dir, log: () => {}, resetState: false, wowRunning: false });
+    const p = wowPaths(dir);
+    const file = path.join(p.addonDir, 'Live.lua');
+    const original = fs.readFileSync(file, 'utf8');
+    const key = fs.readFileSync(path.join(p.addonDir, 'RequestKey.lua'), 'utf8');
+    fs.writeFileSync(file, `${original}\n-- from an earlier test build`);
+    const logs = [];
+    assert.equal(ensureAddon(cfg, { wowDir: dir, wowRunning: false, log: (m) => logs.push(m) }), true);
+    assert.equal(fs.readFileSync(file, 'utf8'), original, 'a version being tested keeps its number: the files follow the app all the same');
+    assert.equal(fs.readFileSync(path.join(p.addonDir, 'RequestKey.lua'), 'utf8'), key, 'this PC\'s request key is left alone');
+    assert.equal(logs.filter((m) => /replaced: its files were not the ones this app carries/.test(m)).length, 1);
+    // Already the app's files: nothing is written again.
+    logs.length = 0;
+    assert.equal(ensureAddon(cfg, { wowDir: dir, wowRunning: false, log: (m) => logs.push(m) }), true);
+    assert.equal(logs.filter((m) => /replaced|updated/.test(m)).length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('updating an older install adds the missing status files and keeps the rest', () => {
   const dir = tmp();
   try {

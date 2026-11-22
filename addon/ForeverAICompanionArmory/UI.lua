@@ -702,6 +702,11 @@ function UI:Refresh()
   local name, level, class = UnitName and UnitName("player"), UnitLevel and UnitLevel("player"), UnitClass and UnitClass("player")
   self.who:SetText(string.format("%s · %s %s", tostring(name or "?"), tostring(level or "?"), tostring(class or "")))
 
+  -- The line about the app before anything else on the page.
+  local state = ns.Advisor:AppState()
+  self.app:SetText(L.APP .. ": " .. (state and L[APP_TEXT[state] or "APP_UNKNOWN"] or L.APP_MISSING))
+  color(self.app, state == "ready" and "good" or (state == "checking" and "muted" or "warn"))
+
   local blocked = ns.Advisor:Blocked()
   if tab == "build" then
     self.heading:SetText(L.TAB_BUILD)
@@ -734,13 +739,14 @@ function UI:Refresh()
     self.analyze:SetText(asking and L.ANALYZING or (ns.Store:Result(tab) and L.ANALYZE_AGAIN or L.ANALYZE))
     if asking or blocked then self.analyze:Disable() else self.analyze:Enable() end
     local ok, blocks = pcall(ns.Panels.BY_KIND[tab])
-    if not ok then blocks = { { t = "p", text = tostring(blocks), color = "warn" } } end
-    self:Render(blocks)
+    if not ok then
+      UI.lastError = tab .. " tab: " .. tostring(blocks)
+      blocks = { { t = "p", text = tostring(blocks), color = "warn" } }
+    end
+    -- A block that cannot be drawn must not leave the rest of the window as it was.
+    local drawn, why = pcall(self.Render, self, blocks)
+    if not drawn then UI.lastError = tab .. " tab, drawing: " .. tostring(why) end
   end
-
-  local state = ns.Advisor:AppState()
-  self.app:SetText(L.APP .. ": " .. (state and L[APP_TEXT[state] or "APP_UNKNOWN"] or L.APP_MISSING))
-  color(self.app, state == "ready" and "good" or (state == "checking" and "muted" or "warn"))
 end
 
 function UI:Analyze()
@@ -810,11 +816,17 @@ function UI:OnShow()
     -- Keeps the waiting time and the item checks moving while the window is open.
     self.ticker = C_Timer.NewTicker(1, function()
       if not UI:IsShown() then return end
-      ns.Items.Expire(20)
-      if ns.Advisor:AnyAsking() or UI.dirty then
-        UI.dirty = nil
-        UI:Refresh()
-      end
+      -- Guarded: the game stops calling a ticker whose function failed once.
+      local ok, err = pcall(function()
+        ns.Items.Expire(20)
+        -- The app's state is redrawn while it is still being worked out, too.
+        if ns.Advisor:AnyAsking() or UI.dirty or ns.Advisor:AppState() ~= UI.shownAppState then
+          UI.dirty = nil
+          UI.shownAppState = ns.Advisor:AppState()
+          UI:Refresh()
+        end
+      end)
+      if not ok then UI.lastError = "window timer: " .. tostring(err) end
     end)
   end
   self:Refresh()

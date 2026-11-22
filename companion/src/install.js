@@ -89,6 +89,20 @@ export function writeAddonFiles(wowDir, files = addonFiles()) {
   ensureRequestKey(wowDir);
 }
 
+// True when every file of the addon this app carries is installed as it is
+// here. The request key is this PC's own and is not compared.
+export function sameAddonFiles(wowDir, files = addonFiles()) {
+  const p = wowPaths(wowDir);
+  return Object.entries(files).every(([name, content]) => {
+    if (name === KEY_FILE) return true;
+    try {
+      return fs.readFileSync(path.join(p.addonDir, name), 'utf8') === content;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function install(cfg, { wowDir = cfg.wowDir, files = addonFiles(), log = console.log, resetState = true, wowRunning } = {}) {
   const p = wowPaths(wowDir);
   fs.mkdirSync(p.addons, { recursive: true });
@@ -152,6 +166,11 @@ export function ensureAddon(cfg, { wowDir = cfg.wowDir, files = addonFiles(), lo
   if (installedAddonVersion(wowDir) !== bundled) {
     writeAddonFiles(wowDir, files);
     log(`Addon updated to ${bundled}`);
+  } else if (!sameAddonFiles(wowDir, files)) {
+    // The same version with other contents: a version keeps its number
+    // while it is being tested, and the files still have to follow the app.
+    writeAddonFiles(wowDir, files);
+    log(`Addon ${bundled} replaced: its files were not the ones this app carries`);
   }
   // Installs from before the app status in the game (addon 1.9.0) lack them.
   createStatusFiles(wowPaths(wowDir));

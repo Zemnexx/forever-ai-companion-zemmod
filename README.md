@@ -470,7 +470,7 @@ local id, why = ForeverAICompanionAPI.Request("myplugin", {
 })
 ```
 
-`Busy()`, `Pending(name)`, `Cancel(name, id)`, `AppState()`, `WatchApp(name, on)`, `CanSendLarge()`, `DescribeItem(link, full)` and `AuctionPrice(itemId)` complete it. Requests waiting for an answer are kept in the saved data, so an answer still reaches the plugin after `/reload` or the next login. Big requests need invisible sending: the on-screen line only fits small ones.
+`Busy()`, `Pending(name)`, `Cancel(name, id)`, `AppState()`, `WatchApp(name, on)`, `Diagnose()` (lines of text: what is being waited for and whether answers can get back), `CanSendLarge()`, `DescribeItem(link, full)` and `AuctionPrice(itemId)` complete it. Requests waiting for an answer are kept in the saved data, so an answer still reaches the plugin after `/reload` or the next login. Big requests need invisible sending: the on-screen line only fits small ones.
 
 **In the app** (`src/plugins.js`): a plugin is `{ name, handle(req, env) }` listed in `BUILT_IN`. `req.ext` holds `kind` and `input`, `req.context` the sections that were sent, and `handle` returns `{ text, data, model, usage }`: `data` is a plain object that arrives in the game as a Lua table. Only plugins listed there run; a request for any other name is answered with an error. Plugin requests are answered in a line of their own, so they never hold up a question.
 

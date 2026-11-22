@@ -93,7 +93,12 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     -- What this client let the addon read: the first thing to share when a tab stays empty.
     for _, line in ipairs(ns.Scan.Diagnose()) do Util.chat(line) end
     Util.chat("companion: " .. tostring(ns.Advisor:Blocked() or ("ready, app " .. tostring(ns.Advisor:AppState()))))
+    -- Whether answers can get back, as the main addon sees it (its newer versions tell).
+    local api = ns.Advisor.API()
+    local ok, lines = pcall(function() return api and api.Diagnose and api.Diagnose() or nil end)
+    for _, line in ipairs(ok and type(lines) == "table" and lines or {}) do Util.chat(tostring(line)) end
     if Core.lastError then Util.chat("last error: " .. Core.lastError) end
+    if ns.UI and ns.UI.lastError then Util.chat("window error: " .. ns.UI.lastError) end
   elseif word == "dump" then
     -- The game's own talent data, saved for the addon's author to read.
     local ok, nodes = pcall(ns.Dump.Run)
