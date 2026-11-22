@@ -250,7 +250,10 @@ function Live:OnAnswer()
 end
 
 function Live:Tick()
-  if not ns.Core:HasPending() then return end
+  local waiting = ns.Core:HasPending()
+  -- A plugin's answer that is only late: the bell is still listened for, but
+  -- no mailbox is opened on the timer for it.
+  if not waiting and not (ns.Plugins and ns.Plugins:ListeningLate()) then return end
   local db = ns.db
   self.soundOK = playable(OK_PATH) and not self.noSignals
   local useSignals = self.soundOK and not db.sigWait and db.nextSig <= self.SIGNALS and not self.scanning
@@ -276,7 +279,7 @@ function Live:Tick()
     end
   end
 
-  if self.sentAt then
+  if self.sentAt and waiting then
     local schedule
     if self.slow then schedule = useSignals and SCHEDULE_SLOW_SAFETY or SCHEDULE_SLOW_NO_SOUND
     else schedule = useSignals and SCHEDULE_SAFETY or SCHEDULE_NO_SOUND end

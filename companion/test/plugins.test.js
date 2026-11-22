@@ -231,6 +231,7 @@ test('the answer reaches the plugin with its data; a late one too; an unregister
     r.stillPending = ns.Core:HasPending()
     r.timedOut = RESULTS[2]
     r.awaitingLate = ns.Plugins:AwaitingLate()
+    r.listening = { ns.Plugins:ListeningLate(), ns.Plugins:ListeningLate(NOW + 1000) }
     ns.Core:ApplyInbox({ answers = { { id = slow, ok = true, answer = "late", data = { kind = "rotation" } } } })
     r.late = RESULTS[3]
 
@@ -286,6 +287,7 @@ test('the answer reaches the plugin with its data; a late one too; an unregister
   assert.equal(out.timedOut.timedOut, true);
   assert.match(out.timedOut.text, /No answer arrived/);
   assert.equal(out.awaitingLate, true);
+  assert.deepEqual(out.listening, [true, false], 'the bell is listened for a while longer, not forever');
   assert.equal(out.late.ok, true);
   assert.equal(out.late.late, true);
   assert.equal(out.late.data.kind, 'rotation');

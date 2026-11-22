@@ -38,6 +38,7 @@ Plugins.VERSION = 1
 local DEFAULT_TIMEOUT = 300  -- seconds: an analysis takes longer than a chat answer
 local MAX_TIMEOUT = 900
 local KEEP_LATE = 3600       -- how long an answer that arrives after the timeout is still delivered
+local LISTEN_LATE = 900      -- ...and how long the bell is still listened for after it (Live:Tick)
 local MAX_HELD = 5
 local NAME = "^[a-z][a-z0-9]*$"
 
@@ -234,6 +235,20 @@ function Plugins:HasPending(at)
     end
   end
   return any
+end
+
+-- A request gave up waiting a short while ago: its answer may only be late
+-- (two rounds with the AI can take longer than the plugin said it would
+-- wait). Live keeps listening for the bell, without opening mailboxes on the
+-- timer, so the answer is picked up when it comes.
+function Plugins:ListeningLate(at)
+  local s = store()
+  if not s then return false end
+  at = at or now()
+  for _, e in pairs(s.pending) do
+    if e.timedOut and at - (e.t or at) <= (e.timeout or DEFAULT_TIMEOUT) + LISTEN_LATE then return true end
+  end
+  return false
 end
 
 -- Something may have been answered while the game was closed or after the
