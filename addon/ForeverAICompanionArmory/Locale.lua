@@ -165,6 +165,7 @@ local L = {
   TOOLTIP_SCORE = "Armory score: %s",
   TOOLTIP_DELTA = "(%s vs equipped)",
   TOOLTIP_EFFECTS = "+ %d effects not counted",
+  TOOLTIP_EFFECT = "+ 1 effect not counted",
 
   -- Rotation
   DPS = "damage per second",
@@ -185,7 +186,8 @@ local L = {
   PER_USE = "%s per use",
   PER_SECOND = "%s per second of casting",
   PER_RESOURCE = "%s per point of resource",
-  FIGHT = "Simulated: %s second fights against a level %s target with %s armor, %s in reach.",
+  FIGHT = "Simulated: %s second fights against one level %s target with %s armor.",
+  FIGHT_MANY = "Simulated: %s second fights against %s level %s targets with %s armor each.",
   MODEL_ISSUES = "%d parts of the combat model could not be simulated and were left out.",
   ASSUMPTIONS = "Assumptions",
   STAT_ATTACK_POWER = "Attack power",

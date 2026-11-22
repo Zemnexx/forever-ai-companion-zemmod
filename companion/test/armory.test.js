@@ -224,6 +224,22 @@ test('a spell the model holds twice is one line in the breakdown', () => {
   assert.ok(data.assumptions[0].length <= 400 && /\b(A|long|assumption)\.\.\.$/.test(data.assumptions[0]), 'cut at a word, with the dots');
 });
 
+test('stats with no measured worth are left out, and one spell held twice is told apart in the table', () => {
+  const run = runModel(MELEE_MODEL, { iterations: 20, seed: 3 });
+  run.weights = { metric: 'dps', reference: 'attackPower', perPoint: { attackPower: 0.09, hitPct: 0.85, intellect: 0.0036, hastePct: -0.05 },
+    normalized: { attackPower: 1, hitPct: 9.27, intellect: 0.04, hastePct: -0.55 } };
+  run.table = [
+    { id: 'judgement_stunned', name: 'Judgement', perUse: 184, perSecond: 122.5, perResource: 3.67, castTime: 0 },
+    { id: 'judgement', name: 'Judgement', perUse: 92, perSecond: 61.2, perResource: 1.84, castTime: 0 },
+    { id: 'holy_strike', name: 'Holy Strike', perUse: 53, perSecond: 35, perResource: 10.51, castTime: 0 },
+  ];
+  const data = shapeRotation({ model: MELEE_MODEL }, run);
+  assert.deepEqual(data.weights.perPoint, { attackPower: 0.09, hitPct: 0.85 }, 'nothing, and less than nothing, is the dice of the simulation');
+  assert.deepEqual(data.weights.normalized, { attackPower: 1, hitPct: 9.27 });
+  assert.deepEqual(data.table.map((r) => r.name), ['Judgement (stunned)', 'Judgement', 'Holy Strike']);
+  assert.deepEqual(keepFromRun(run).weights.perPoint, { attackPower: 0.09, hitPct: 0.85 }, 'the gear plan is not handed them either');
+});
+
 test('a model that cannot run says what to fix', () => {
   const run = runModel({ abilities: [], rotations: [] });
   assert.equal(run.fatal, true);

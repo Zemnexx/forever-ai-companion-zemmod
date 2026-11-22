@@ -390,7 +390,11 @@ function Panels.Rotation()
 
   local f = data.fight
   if type(f) == "table" then
-    add(blocks, { t = "p", text = string.format(L.FIGHT, tostring(f.duration or "?"), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0), tostring(f.targets or 1)), color = "muted" })
+    local targets = tonumber(f.targets) or 1
+    local line = targets > 1
+      and string.format(L.FIGHT_MANY, tostring(f.duration or "?"), tostring(targets), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
+      or string.format(L.FIGHT, tostring(f.duration or "?"), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
+    add(blocks, { t = "p", text = line, color = "muted" })
   end
   if data.modelIssues then add(blocks, { t = "p", text = string.format(L.MODEL_ISSUES, data.modelIssues), color = "warn" }) end
   notes(blocks, data.assumptions, L.ASSUMPTIONS)

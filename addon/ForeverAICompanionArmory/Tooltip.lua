@@ -30,7 +30,9 @@ function Tooltip.Line(link)
     text = text .. "  " .. string.format(L.TOOLTIP_DELTA, (cmp.delta > 0 and "+" or "") .. Util.fmt(cmp.delta, 1))
     if cmp.delta > 0 then r, g, b = 0.45, 0.9, 0.55 else r, g, b = 1, 0.62, 0.3 end
   end
-  if stats.effects and stats.effects > 0 then text = text .. "  " .. string.format(L.TOOLTIP_EFFECTS, stats.effects) end
+  if stats.effects and stats.effects > 0 then
+    text = text .. "  " .. (stats.effects == 1 and L.TOOLTIP_EFFECT or string.format(L.TOOLTIP_EFFECTS, stats.effects))
+  end
   return text, r, g, b
 end
 

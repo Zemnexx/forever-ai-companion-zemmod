@@ -85,6 +85,36 @@ function breakdownOf(breakdown) {
     .map((b) => ({ name: b.name, share: round(b.share, 1), perMinute: round(b.perMinute, 1) }));
 }
 
+// A stat whose measured worth is nothing, or less than nothing, was not
+// measured: it is the dice of the simulation (haste "-0.05" on a 25 second
+// fight). Such stats are left out instead of shown as findings.
+const WORTH_SHOWING = 0.005;
+function measured(perPoint) {
+  const out = {};
+  for (const [stat, v] of Object.entries(perPoint || {})) if (Number(v) >= WORTH_SHOWING) out[stat] = v;
+  return out;
+}
+
+// One spell under two conditions is two abilities of the model with one
+// name (Judgement, and Judgement on a stunned target). In a table of each
+// ability on its own they are told apart by what their ids add to the name.
+function tableNames(rows) {
+  const count = new Map();
+  for (const row of rows) count.set(row.name, (count.get(row.name) || 0) + 1);
+  const plain = new Map();
+  return rows.map((row) => {
+    const name = str(row.name, 60);
+    if (count.get(row.name) < 2) return name;
+    const words = new Set(name.toLowerCase().split(/[^a-z0-9]+/));
+    const extra = String(row.id ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !words.has(w)).join(' ');
+    if (extra) return `${name} (${extra})`;
+    // The one whose id says nothing more is the spell as such; a second such one is numbered.
+    const n = (plain.get(row.name) || 0) + 1;
+    plain.set(row.name, n);
+    return n > 1 ? `${name} (${n})` : name;
+  });
+}
+
 // The data the addon gets. raw: the AI's parsed answer ({ summary,
 // assumptions, notes, model }); run: runModel()'s result for raw.model.
 export function shapeRotation(raw, run) {
@@ -122,17 +152,20 @@ export function shapeRotation(raw, run) {
     notes: texts(raw?.notes, { max: 5, len: 400 }),
   };
   if (run.problems.length) data.modelIssues = run.problems.length;
-  if (run.weights && Object.keys(run.weights.perPoint || {}).length) {
+  const worth = measured(run.weights?.perPoint);
+  if (Object.keys(worth).length) {
     const perPoint = {};
     const normalized = {};
-    for (const [stat, v] of Object.entries(run.weights.perPoint)) perPoint[stat] = round(v, 3);
-    for (const [stat, v] of Object.entries(run.weights.normalized || {})) normalized[stat] = round(v, 2);
+    for (const [stat, v] of Object.entries(worth)) perPoint[stat] = round(v, 3);
+    for (const [stat, v] of Object.entries(run.weights.normalized || {})) if (stat in worth) normalized[stat] = round(v, 2);
     data.weights = { reference: run.weights.reference, perPoint, normalized };
   }
-  const table = list(run.table).filter((row) => row.perUse > 0)
-    .sort((a, b) => b.perSecond - a.perSecond).slice(0, MAX_TABLE)
-    .map((row) => ({
-      name: str(row.name, 60), perUse: round(row.perUse, 0), perSecond: round(row.perSecond, 1),
+  const rows = list(run.table).filter((row) => row.perUse > 0)
+    .sort((a, b) => b.perSecond - a.perSecond).slice(0, MAX_TABLE);
+  const names = tableNames(rows);
+  const table = rows
+    .map((row, i) => ({
+      name: names[i], perUse: round(row.perUse, 0), perSecond: round(row.perSecond, 1),
       perResource: num(row.perResource) !== null ? round(row.perResource, 2) : undefined,
       castTime: num(row.castTime) ? round(row.castTime, 2) : undefined,
     }));
@@ -146,7 +179,7 @@ export function keepFromRun(run) {
   const best = run.model.rotations?.[run.sim.rotations[run.sim.best]?.index ?? run.sim.best];
   return {
     model: { ...run.model, rotations: best ? [best] : [] },
-    weights: run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: run.weights.perPoint } : null,
+    weights: run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: measured(run.weights.perPoint) } : null,
     value: run.sim.rotations[run.sim.best]?.value ?? null,
   };
 }
