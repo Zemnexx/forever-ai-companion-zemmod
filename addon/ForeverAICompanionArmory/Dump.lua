@@ -201,7 +201,13 @@ local function traits()
   for _, treeID in ipairs(numbers(type(config) == "table" and config.treeIDs)) do
     local info = safe(T.GetTreeInfo, configID, treeID)
     local currencies = safe(T.GetTreeCurrencyInfo, configID, treeID, false)
-    local tree = { id = treeID, info = plain(info) or "<nil>", currencies = plain(currencies) or "<nil>", nodes = {} }
+    local tree = {
+      id = treeID, info = plain(info) or "<nil>", currencies = plain(currencies) or "<nil>", nodes = {},
+      -- Forever's own additions, whose answers this addon has not seen yet.
+      groupDisplay = call(T.GetGroupDisplayInfoByTreeID, treeID),
+      groupDisplayWithConfig = call(T.GetGroupDisplayInfoByTreeID, configID, treeID),
+      systemID = call(T.GetSystemIDByTreeID, treeID),
+    }
     for _, gate in ipairs(type(info) == "table" and type(info.gates) == "table" and info.gates or {}) do
       note("conditions", type(gate) == "table" and gate.conditionID)
     end
@@ -245,7 +251,7 @@ local function traits()
   for id in pairs(want.conditions) do out.conditions[tostring(id)] = call(T.GetConditionInfo, configID, id) end
   for id in pairs(want.subTrees) do out.subTrees[tostring(id)] = call(T.GetSubTreeInfo, configID, id) end
   for id in pairs(want.currencies) do out.currencies[tostring(id)] = call(T.GetTraitCurrencyInfo, id) end
-  for id in pairs(want.groups) do out.groups[tostring(id)] = call(T.GetGroupCost, configID, id) end
+  for id in pairs(want.groups) do out.groups[tostring(id)] = call(T.GetGroupCurrencyInfo, configID, id) end
   return out
 end
 

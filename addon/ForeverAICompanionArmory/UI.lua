@@ -473,6 +473,17 @@ function UI:FillSpecs()
     end
   end
   local spec = ns.Store:Profile().spec
+  -- An earlier test build offered the class's own name as the only choice on
+  -- Forever's client. It is not a specialization: the choice is open again.
+  local class = UnitClass and Util.clean((UnitClass("player")))
+  if spec and class and spec == class and #names > 0 then
+    local listed = false
+    for _, name in ipairs(names) do listed = listed or name == spec end
+    if not listed then
+      ns.Store:SetProfile("spec", nil)
+      spec = nil
+    end
+  end
   self.specDrop:SetValue(spec)
   if not self.specBox:HasFocus() then self.specBox:SetText(spec or "") end
 end
@@ -530,11 +541,17 @@ local function newRow(body)
   r.sub:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
   color(r.sub, "muted")
   r:SetScript("OnEnter", function(self)
-    if not GameTooltip or not (self.link or self.spell) then return end
+    if not GameTooltip or not (self.link or self.spell or self.hint) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     local ok
     if self.link then ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.link)
-    else ok = pcall(GameTooltip.SetSpellByID, GameTooltip, self.spell) end
+    elseif self.spell then ok = pcall(GameTooltip.SetSpellByID, GameTooltip, self.spell)
+    else
+      -- No item behind this row for the game to show: why, in a tooltip of our own.
+      ok = true
+      GameTooltip:SetText(self.title:GetText() or "", 1, 1, 1)
+      GameTooltip:AddLine(self.hint, 0.8, 0.8, 0.8, true)
+    end
     if ok then GameTooltip:Show() else GameTooltip:Hide() end
   end)
   r:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -590,7 +607,7 @@ function UI:Render(blocks)
       y = y + (fs:GetStringHeight() or 14) + (kind == "h" and 6 or 7)
     elseif kind == "row" then
       local r = take(self, "row", function() return newRow(body) end)
-      r.link, r.spell = block.link, block.spell
+      r.link, r.spell, r.hint = block.link, block.spell, block.hint
       if block.icon then
         r.icon:SetTexture(block.icon)
         r.icon:Show()

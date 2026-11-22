@@ -164,6 +164,21 @@ end
 
 -- Talents --------------------------------------------------------------------------
 
+-- The classic names of each class's trees, in the order they stand from left
+-- to right. Forever reworked the classes, so the game's own names are used
+-- wherever it gives them; these are for where it gives none.
+local CLASS_SPECS = {
+  WARRIOR = { "Arms", "Fury", "Protection" },
+  PALADIN = { "Holy", "Protection", "Retribution" },
+  HUNTER = { "Beast Mastery", "Marksmanship", "Survival" },
+  ROGUE = { "Assassination", "Combat", "Subtlety" },
+  PRIEST = { "Discipline", "Holy", "Shadow" },
+  SHAMAN = { "Elemental", "Enhancement", "Restoration" },
+  MAGE = { "Arcane", "Fire", "Frost" },
+  WARLOCK = { "Affliction", "Demonology", "Destruction" },
+  DRUID = { "Balance", "Feral Combat", "Restoration" },
+}
+
 local function maxLevel()
   local cap = num(safe(GetMaxPlayerLevel)) or num(MAX_PLAYER_LEVEL)
   return cap and cap >= 10 and cap or 60
@@ -242,9 +257,59 @@ local function classicTalents(light)
   }
 end
 
--- Modern talent trees (C_Traits): one tree of nodes placed by coordinates.
--- Rows are the nodes' heights, top first; a node's prerequisite is the node
--- with an edge into it.
+-- Forever keeps a class's three talent trees inside ONE tree of the modern
+-- system, drawn side by side. What the live client says about it (/armory
+-- dump): every talent belongs to a handful of groups, and the largest of
+-- them is its tree; rows are evenly spaced from the top and columns from
+-- each tree's left edge; a row needs 5 points in its own tree for every row
+-- above it; and an arrow between two talents is an edge from the one that
+-- is required to the one it unlocks.
+
+-- The trees' names by group, where the client tells (a function Forever
+-- added, whose answer this addon has not seen yet: anything that pairs a
+-- group with a name is taken).
+local function groupNames(treeID)
+  local names = {}
+  local function walk(t, depth, key)
+    if type(t) ~= "table" or depth > 3 then return end
+    local id, name = (type(key) == "number") and key or nil, nil
+    for k, v in pairs(t) do
+      if type(k) == "string" then
+        local lower = k:lower()
+        if lower:find("group", 1, true) and num(v) then id = num(v) end
+        if lower:find("name", 1, true) and clean(v) and v ~= "" then name = name or clean(v) end
+      end
+    end
+    if id and name then names[id] = name end
+    for k, v in pairs(t) do walk(v, depth + 1, k) end
+  end
+  walk(safe(C_Traits.GetGroupDisplayInfoByTreeID, treeID), 0)
+  return names
+end
+
+-- The smallest gap between two different positions: one row, or one column.
+local function step(values)
+  local sorted, seen = {}, {}
+  for _, v in ipairs(values) do
+    if not seen[v] then
+      seen[v] = true
+      sorted[#sorted + 1] = v
+    end
+  end
+  table.sort(sorted)
+  local gap
+  for i = 2, #sorted do
+    local d = sorted[i] - sorted[i - 1]
+    if d > 0 and (not gap or d < gap) then gap = d end
+  end
+  return gap, sorted[1]
+end
+
+local function place(value, first, gap)
+  if not gap or gap <= 0 then return 1 end
+  return math.floor((value - first) / gap + 0.5) + 1
+end
+
 local function traitTalents(light)
   if not (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_Traits and C_Traits.GetConfigInfo) then return nil end
   local configID = safe(C_ClassTalents.GetActiveConfigID)
@@ -252,10 +317,13 @@ local function traitTalents(light)
   if type(config) ~= "table" or type(config.treeIDs) ~= "table" then return nil end
   local getName = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
   local getIcon = (C_Spell and C_Spell.GetSpellTexture) or GetSpellTexture
-  local trees, spent, total, available = {}, 0, 0, 0
-  for ti, treeID in ipairs(config.treeIDs) do
-    local tree = { id = ti, name = clean(safe(UnitClass, "player")) or ("Tree " .. ti), talents = {} }
-    local heights, requires = {}, {}
+  local className, classToken = safe(UnitClass, "player")
+  className = clean(className)
+  local trees, spent, total, available, named = {}, 0, 0, 0, nil
+
+  for _, treeID in ipairs(config.treeIDs) do
+    -- Every talent of this tree of the game's, with where it is drawn.
+    local nodes, requires, inGroup = {}, {}, {}
     for _, nodeID in ipairs(safe(C_Traits.GetTreeNodes, treeID) or {}) do
       local node = safe(C_Traits.GetNodeInfo, configID, nodeID)
       local max = type(node) == "table" and num(node.maxRanks)
@@ -268,12 +336,20 @@ local function traitTalents(light)
         local name = spellID and clean(safe(getName, spellID))
         if name then
           local talent = {
-            id = nodeID, name = name, y = num(node.posY) or 0, x = num(node.posX) or 0,
+            id = nodeID, name = name, y = num(node.posY) or 0, x = num(node.posX) or 0, groups = {},
             rank = math.min(num(node.activeRank) or num(node.ranksPurchased) or 0, max), max = max,
           }
+          for _, group in ipairs(type(node.groupIDs) == "table" and node.groupIDs or {}) do
+            if num(group) then
+              talent.groups[#talent.groups + 1] = group
+              inGroup[group] = (inGroup[group] or 0) + 1
+            end
+          end
           Scan.icons[nodeID] = safe(getIcon, spellID)
           if not light then
+            -- At the rank the player has; and what it becomes with every point in it.
             local desc = traitDescription(entryID, talent.rank, name)
+            local full = max > 1 and talent.rank < max and traitDescription(entryID, max, name) or nil
             if not desc then
               desc = C_Spell and C_Spell.GetSpellDescription and clean(safe(C_Spell.GetSpellDescription, spellID))
             end
@@ -282,39 +358,89 @@ local function traitTalents(light)
               desc = lines and description(lines)
             end
             talent.desc = desc and desc ~= "" and oneLine(desc):sub(1, MAX_DESC) or nil
+            full = full and oneLine(full):sub(1, MAX_DESC) or nil
+            if full and full ~= talent.desc then talent.descMax = full end
           end
-          heights[talent.y] = true
           for _, edge in ipairs(type(node.visibleEdges) == "table" and node.visibleEdges or {}) do
             if type(edge) == "table" and edge.targetNode and not requires[edge.targetNode] then requires[edge.targetNode] = nodeID end
           end
-          tree.talents[#tree.talents + 1] = talent
+          nodes[#nodes + 1] = talent
           spent = spent + talent.rank
           total = total + 1
         end
       end
     end
-    local ys = {}
-    for y in pairs(heights) do ys[#ys + 1] = y end
-    table.sort(ys)
-    local rowOf = {}
-    for i, y in ipairs(ys) do rowOf[y] = i end
-    local points = 0
-    for _, talent in ipairs(tree.talents) do
-      talent.row, talent.col = rowOf[talent.y] or 1, math.floor(talent.x / 600) + 1
-      talent.requires = requires[talent.id]
-      talent.x, talent.y = nil, nil
-      points = points + talent.rank
+
+    -- A talent's tree: the largest group it belongs to.
+    local byHome, homes = {}, {}
+    for _, talent in ipairs(nodes) do
+      local home, size = 0, 0
+      for _, group in ipairs(talent.groups) do
+        local n = inGroup[group]
+        if n > size or (n == size and group < home) then home, size = group, n end
+      end
+      talent.groups = nil
+      if not byHome[home] then
+        byHome[home] = { group = home, talents = {}, left = talent.x }
+        homes[#homes + 1] = byHome[home]
+      end
+      local tree = byHome[home]
+      tree.talents[#tree.talents + 1] = talent
+      if talent.x < tree.left then tree.left = talent.x end
     end
-    tree.points = points
+    -- Anything but a few trees of some size is not that layout: one tree then, as the game has it.
+    local split = #homes >= 2 and #homes <= 4
+    for _, tree in ipairs(homes) do
+      if tree.group == 0 or #tree.talents < 3 then split = false end
+    end
+    if not split then
+      local left
+      for _, talent in ipairs(nodes) do
+        if not left or talent.x < left then left = talent.x end
+      end
+      homes = { { group = 0, talents = nodes, left = left or 0 } }
+    end
+    table.sort(homes, function(a, b) return a.left < b.left end)
+
+    local xs, ys = {}, {}
+    for _, talent in ipairs(nodes) do
+      xs[#xs + 1], ys[#ys + 1] = talent.x, talent.y
+    end
+    local column = step(xs)
+    local row, top = step(ys)
+    local names = split and groupNames(treeID) or {}
+    local known = split and CLASS_SPECS[clean(classToken) or ""] or nil
+    if known and #known ~= #homes then known = nil end
+    for i, home in ipairs(homes) do
+      local tree = { id = #trees + 1, talents = home.talents, points = 0 }
+      if not split then
+        tree.name = className or ("Tree " .. tree.id)
+      elseif names[home.group] then
+        tree.name, named = names[home.group], "named by the game"
+      else
+        -- Not named by the game: the class's trees as they have always stood, left to right.
+        tree.name, named = known and known[i] or ("Tree " .. tree.id), named or "named by their place"
+      end
+      for _, talent in ipairs(tree.talents) do
+        talent.row = place(talent.y, top or talent.y, row)
+        talent.col = place(talent.x, home.left, column)
+        talent.requires = requires[talent.id]
+        talent.x, talent.y = nil, nil
+        tree.points = tree.points + talent.rank
+      end
+      trees[#trees + 1] = tree
+    end
     for _, c in ipairs(safe(C_Traits.GetTreeCurrencyInfo, configID, treeID, false) or {}) do
       available = available + (type(c) == "table" and num(c.quantity) or 0)
     end
-    trees[#trees + 1] = tree
   end
   if total == 0 then return nil end
+  local parts = {}
+  for _, tree in ipairs(trees) do parts[#parts + 1] = string.format("%s %d", tree.name, #tree.talents) end
   Scan.how.talents = string.format("modern (C_Traits): %d talents in %d trees", total, #trees)
+    .. (#trees > 1 and string.format(" (%s; %s)", table.concat(parts, ", "), named or "") or "")
   return {
-    api = "traits", rowPoints = 0, trees = trees, spent = spent, available = available,
+    api = "traits", rowPoints = 5, trees = trees, spent = spent, available = available,
     -- Forever gives one point per level from 10 here too (28 points at level
     -- 37 on the live client), so the build is planned to the level cap.
     level = num(safe(UnitLevel, "player")), pointsAtCap = math.max(maxLevel() - 9, spent + available),
@@ -343,20 +469,6 @@ end
 
 -- Specializations --------------------------------------------------------------------
 
--- The classic names, for a client that gives neither named talent trees nor
--- a list of specializations. Forever reworked the classes, so the game's own
--- names are used whenever it gives them.
-local CLASS_SPECS = {
-  WARRIOR = { "Arms", "Fury", "Protection" },
-  PALADIN = { "Holy", "Protection", "Retribution" },
-  HUNTER = { "Beast Mastery", "Marksmanship", "Survival" },
-  ROGUE = { "Assassination", "Combat", "Subtlety" },
-  PRIEST = { "Discipline", "Holy", "Shadow" },
-  SHAMAN = { "Elemental", "Enhancement", "Restoration" },
-  MAGE = { "Arcane", "Fire", "Frost" },
-  WARLOCK = { "Affliction", "Demonology", "Destruction" },
-  DRUID = { "Balance", "Feral Combat", "Restoration" },
-}
 local MAX_SPECS = 6
 
 -- Names read from the game: no empty or repeated ones.
@@ -371,16 +483,17 @@ local function nameList()
   end
 end
 
--- The trees of a classic-style client are the specializations.
+-- The class's talent trees are its specializations, however the client
+-- hands them over. One tree alone is the whole class, not a choice.
 local function treeSpecs()
   local section = Scan.Talents()
-  if not section or section.api ~= "classic" then return nil end
+  if not section or #section.trees < 2 then return nil end
   local names, add = nameList()
   for _, tree in ipairs(section.trees) do
     -- "Tree 2" is what a tree is called when the game gave no name for it.
     if not tostring(tree.name):match("^Tree %d+$") then add(tree.name) end
   end
-  return #names > 0 and names or nil
+  return #names > 1 and names or nil
 end
 
 -- A modern client's own list: for the character, or else for its class.
@@ -406,7 +519,9 @@ local function listedSpecs()
         function(i) return results(forClass, classID, i) end)
     end
   end
-  return #names > 0 and names or nil
+  -- Forever's client lists one specialization per class, named after the
+  -- class ("Paladin"): that is nothing to choose from.
+  return #names > 1 and names or nil
 end
 
 -- The specializations the player can choose from in the Build tab: from the

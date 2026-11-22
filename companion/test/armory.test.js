@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { extractJson, text, texts } from '../src/armory/json.js';
-import { talentIndex, validateOrder, shapeBuild, takenTalents } from '../src/armory/talents.js';
+import { talentIndex, validateOrder, shapeBuild, takenTalents, distribution } from '../src/armory/talents.js';
 import { shapeGear, slotName, cleanWeights, equippable, leftOut } from '../src/armory/gear.js';
 import { runModel, shapeRotation, describeCondition, keepFromRun } from '../src/armory/rotation.js';
 import { applyIdea, measureIdea, shapeIdeas } from '../src/armory/discover.js';
@@ -113,6 +113,18 @@ test('illegal talent points are dropped and explained', () => {
   // More points than a character has.
   const many = validateOrder(index, Array(30).fill(102).concat(Array(30).fill(201)), { limit: 6 });
   assert.equal(many.order.length, 6);
+});
+
+test('points in one tree do not open the rows of another', () => {
+  // As the addon now sends Forever's talents: the class's three trees, not the game's single one.
+  const index = talentIndex({ pointsAtCap: 12, trees: [
+    { id: 1, name: 'Holy', talents: [{ id: 1, name: 'Spiritual Focus', row: 1, max: 5 }, { id: 2, name: 'Healing Light', row: 2, max: 3 }] },
+    { id: 3, name: 'Retribution', talents: [{ id: 10, name: 'Benediction', row: 1, max: 5 }, { id: 11, name: 'Conviction', row: 2, max: 3 }] },
+  ] });
+  const checked = validateOrder(index, [10, 10, 10, 10, 10, 2, 11, 11, 11, 1, 1, 1]);
+  assert.deepEqual(checked.order, [10, 10, 10, 10, 10, 11, 11, 11, 1, 1, 1], 'five points in Retribution open its second row, not Holy\'s');
+  assert.ok(checked.problems.some((p) => /"Healing Light" \(row 2\) needs 5 points in Holy first/.test(p)), checked.problems.join(' | '));
+  assert.equal(distribution(index, checked.treePoints), '3/8');
 });
 
 test('talents taken are summarized for the other requests', () => {

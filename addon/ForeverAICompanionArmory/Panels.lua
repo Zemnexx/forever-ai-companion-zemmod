@@ -195,12 +195,18 @@ local function pickRow(pick, weights)
       sub[#sub + 1] = L.AH_CHECK
     end
   else
-    -- Not confirmed by the game: the name as plain text, and why.
+    -- Not confirmed by the game: the name as plain text, and why. Without
+    -- the item there is no tooltip of the game's to show; the row says so.
     row.right = L["CONFIDENCE_" .. tostring(pick.confidence or "low"):upper()]
     row.rightColor = "muted"
     if state == "wait" then sub[#sub + 1] = L.ITEM_CHECKING
-    elseif state == "mismatch" or state == "unknown" then sub[#sub + 1] = L.ITEM_UNCONFIRMED
-    elseif pick.auction then sub[#sub + 1] = L.AH_CHECK end
+    elseif state == "mismatch" or state == "unknown" then
+      sub[#sub + 1] = L.ITEM_UNCONFIRMED
+      row.hint = L.ITEM_WRONG_ID
+    else
+      row.hint = L.ITEM_NO_ID
+      if pick.auction then sub[#sub + 1] = L.AH_CHECK end
+    end
   end
   if pick.why and pick.why ~= "" then sub[#sub + 1] = pick.why end
   row.sub = table.concat(sub, " · ")
