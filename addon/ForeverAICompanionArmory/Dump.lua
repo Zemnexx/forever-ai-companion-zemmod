@@ -162,6 +162,20 @@ local function specs()
   return out
 end
 
+-- A tooltip the game hands over as data, down to its lines.
+local function tip(fn, ...)
+  if type(fn) ~= "function" then return "<no such function>" end
+  local ok, data = pcall(fn, ...)
+  if not ok then return { error = tostring(data) } end
+  if type(data) ~= "table" then return "<" .. type(data) .. ">" end
+  local out = { type = plain(data.type), lines = {} }
+  for i, line in ipairs(type(data.lines) == "table" and data.lines or {}) do
+    if i > 14 or type(line) ~= "table" then break end
+    out.lines[i] = { left = plain(line.leftText), right = plain(line.rightText), type = plain(line.type) }
+  end
+  return out
+end
+
 local function spellName(spellID)
   local get = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
   return plain((safe(get, spellID)))
@@ -210,9 +224,15 @@ local function traits()
           local def = type(e) == "table" and e.definitionID and safe(T.GetDefinitionInfo, e.definitionID)
           local spellID = type(def) == "table" and def.spellID
           note("subTrees", type(e) == "table" and e.subTreeID)
+          -- How the game words the talent at its first and its last rank.
+          local tips = type(C_TooltipInfo) == "table" and C_TooltipInfo or {}
+          local ranks = type(node.maxRanks) == "number" and not Util.secret(node.maxRanks) and node.maxRanks or 1
           entry.entries[#entry.entries + 1] = {
             id = entryID, info = plain(e) or "<nil>", definition = plain(def) or "<nil>",
             spell = spellID and spellName(spellID) or nil,
+            description = spellID and call(C_Spell and C_Spell.GetSpellDescription, spellID) or nil,
+            tip = tip(tips.GetTraitEntry, entryID, 1),
+            tipAtMax = ranks > 1 and tip(tips.GetTraitEntry, entryID, ranks) or nil,
           }
         end
       end

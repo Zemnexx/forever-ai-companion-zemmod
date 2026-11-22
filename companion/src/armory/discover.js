@@ -3,7 +3,7 @@
 // numbers can carry a patch to the character's combat model, and the
 // simulator measures it against the baseline: a claim with a number the AI
 // did not make up.
-import { num, round, str, strings, list } from './json.js';
+import { num, round, str, strings, text, list } from './json.js';
 import { runModel } from './rotation.js';
 
 const MAX_IDEAS = 5;
@@ -66,7 +66,7 @@ export function shapeIdeas(raw, base, opts = {}) {
   const ideas = [];
   for (const idea of list(raw?.ideas)) {
     const title = str(idea?.title, 100);
-    const mechanism = str(idea?.mechanism, 900);
+    const mechanism = text(idea?.mechanism, 900);
     if (!title || !mechanism) continue;
     const confidence = str(idea.confidence, 10).toLowerCase();
     const out = {
@@ -77,9 +77,9 @@ export function shapeIdeas(raw, base, opts = {}) {
         items: strings(idea.needs?.items, { max: 8, len: 80 }),
         spells: strings(idea.needs?.spells, { max: 8, len: 80 }),
       },
-      gain: str(idea.gain, 300),
-      test: str(idea.test, 400),
-      risks: str(idea.risks, 300),
+      gain: text(idea.gain, 400),
+      test: text(idea.test, 500),
+      risks: text(idea.risks, 400),
       confidence: CONFIDENCE.includes(confidence) ? confidence : 'low',
     };
     const measured = base ? measureIdea(base, idea.sim, opts) : null;
@@ -90,7 +90,7 @@ export function shapeIdeas(raw, base, opts = {}) {
   return {
     v: 1,
     kind: 'discover',
-    summary: str(raw?.summary, 600),
+    summary: text(raw?.summary, 700),
     ideas,
     baseline: base ? true : undefined,
   };

@@ -83,6 +83,16 @@ export const num = (v) => {
 };
 export const list = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]);
 export const strings = (v, { max = 8, len = 300 } = {}) => list(v).map((x) => str(x, len)).filter(Boolean).slice(0, max);
+// Text the player reads (a summary, a note). One that is longer than `max`
+// is cut at a word and ends in "...", never in the middle of one.
+export function text(v, max = 400) {
+  const s = str(v, max * 8);
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 3);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.(\-]+$/, '')}...`;
+}
+export const texts = (v, { max = 8, len = 400 } = {}) => list(v).map((x) => text(x, len)).filter(Boolean).slice(0, max);
 export const round = (n, digits = 1) => {
   const m = 10 ** digits;
   return Math.round((Number(n) || 0) * m) / m;

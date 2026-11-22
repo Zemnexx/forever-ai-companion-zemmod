@@ -59,6 +59,9 @@ function Panels.Status(kind)
   local text = string.format(L.STATUS_DONE, Util.ago(result.at, L), profileText(result.data and result.data.asked or result.profile))
   if type(result.tokens) == "table" then
     text = text .. " · " .. string.format(L.TOKENS, Util.fmt(((result.tokens.i or 0) + (result.tokens.o or 0)) / 1000, 1))
+    -- Most of a long analysis is the AI reading again what it already read, which counts for far less.
+    local cached = result.tokens.c or 0
+    if cached >= 1000 then text = text .. " " .. string.format(L.TOKENS_CACHED, Util.fmt(cached / 1000, 1)) end
   end
   return text, "muted"
 end
@@ -214,7 +217,7 @@ function Panels.WeightsText(weights)
   end)
   local parts = {}
   for _, k in ipairs(keys) do
-    local label = _G["ITEM_MOD_" .. k .. "_SHORT"] or _G[k] or k:lower():gsub("_", " ")
+    local label = _G["ITEM_MOD_" .. k .. "_SHORT"] or _G[k] or (k:sub(1, 1) .. k:sub(2):lower():gsub("_", " "))
     parts[#parts + 1] = string.format("%s %s", tostring(label), Util.fmt(weights[k], 2))
   end
   return table.concat(parts, " · ")
@@ -241,7 +244,8 @@ function Panels.Gear()
   end
   if buyable > 0 then
     local open = ns.Auction and ns.Auction:IsOpen()
-    add(blocks, { t = "action", id = "auction", text = open and string.format(L.AH_SEARCH, buyable) or string.format(L.AH_SEARCH_CLOSED, buyable), disabled = not open })
+    local label = (open and "AH_SEARCH" or "AH_SEARCH_CLOSED") .. (buyable == 1 and "_ONE" or "")
+    add(blocks, { t = "action", id = "auction", text = string.format(L[label], buyable), disabled = not open })
     local status = ns.Auction and ns.Auction:Status()
     if status then add(blocks, { t = "p", text = status, color = "muted" }) end
   end
@@ -371,7 +375,7 @@ function Panels.Discover()
   for i, idea in ipairs(data.ideas or {}) do
     local title = string.format("%d. %s", i, idea.title)
     add(blocks, { t = "h", text = title })
-    local tags = { L["CONFIDENCE_" .. tostring(idea.confidence or "low"):upper()] }
+    local tags = { L["IDEA_CONFIDENCE_" .. tostring(idea.confidence or "low"):upper()] }
     local color = "muted"
     if type(idea.measured) == "table" then
       tags[#tags + 1] = string.format(L.MEASURED, signed(idea.measured.pct or 0), Util.fmt(idea.measured.base, 1), Util.fmt(idea.measured.value, 1))

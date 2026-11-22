@@ -2,7 +2,7 @@
 // and this module replays that order under the game's own rules (points per
 // row, prerequisites, max ranks) with the trees the addon read from the game.
 // Only points the game would accept reach the player.
-import { num, str, strings, list } from './json.js';
+import { num, str, text, texts, list } from './json.js';
 
 export const DEFAULT_POINTS_AT_CAP = 51; // one per level from 10 to 60
 const POINTS_PER_ROW = 5;
@@ -111,19 +111,19 @@ export function shapeBuild(index, raw, checked) {
   for (const k of list(raw?.keyTalents)) {
     const talent = index.byId.get(num(k?.id));
     if (talent && checked.ranks.get(talent.id) && keyTalents.length < 6) {
-      keyTalents.push({ id: talent.id, name: talent.name, why: str(k.why, 240) });
+      keyTalents.push({ id: talent.id, name: talent.name, why: text(k.why, 320) });
     }
   }
-  const respec = str(raw?.respec, 400);
+  const respec = text(raw?.respec, 500);
   return {
     v: 1,
     kind: 'talents',
     name: str(raw?.name, 80),
-    summary: str(raw?.summary, 600),
+    summary: text(raw?.summary, 700),
     spec: distribution(index, checked.treePoints),
     order: checked.order,
     keyTalents,
-    notes: strings(raw?.notes, { max: 5, len: 300 }),
+    notes: texts(raw?.notes, { max: 5, len: 400 }),
     respec: respec && !/^(null|none|no)$/i.test(respec) ? respec : undefined,
     points: index.pointsAtCap,
   };

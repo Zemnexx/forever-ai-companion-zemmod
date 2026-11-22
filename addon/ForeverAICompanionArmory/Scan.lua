@@ -145,6 +145,23 @@ local function description(lines, limit)
 end
 Scan.Description = description
 
+-- A talent of the modern trees, described at a rank: the game's own tooltip
+-- for that rank carries that rank's numbers ("6%" at 3/3), where the spell's
+-- description only has the first rank's ("2%"). The tooltip may or may not
+-- start with the talent's name.
+local function traitDescription(entryID, rank, name)
+  local get = C_TooltipInfo and C_TooltipInfo.GetTraitEntry
+  if type(get) ~= "function" or not entryID then return nil end
+  local lines = dataLines(safe(get, entryID, math.max(rank or 0, 1)))
+  if not lines then return nil end
+  local out = {}
+  for i, line in ipairs(lines) do
+    if not (i == 1 and name and line == name) and not isNoise(line) then out[#out + 1] = line end
+  end
+  local s = table.concat(out, " | ")
+  return s ~= "" and s or nil
+end
+
 -- Talents --------------------------------------------------------------------------
 
 local function maxLevel()
@@ -256,7 +273,10 @@ local function traitTalents(light)
           }
           Scan.icons[nodeID] = safe(getIcon, spellID)
           if not light then
-            local desc = C_Spell and C_Spell.GetSpellDescription and clean(safe(C_Spell.GetSpellDescription, spellID))
+            local desc = traitDescription(entryID, talent.rank, name)
+            if not desc then
+              desc = C_Spell and C_Spell.GetSpellDescription and clean(safe(C_Spell.GetSpellDescription, spellID))
+            end
             if not desc or desc == "" then
               local lines = C_TooltipInfo and C_TooltipInfo.GetSpellByID and dataLines(safe(C_TooltipInfo.GetSpellByID, spellID))
               desc = lines and description(lines)
@@ -295,7 +315,9 @@ local function traitTalents(light)
   Scan.how.talents = string.format("modern (C_Traits): %d talents in %d trees", total, #trees)
   return {
     api = "traits", rowPoints = 0, trees = trees, spent = spent, available = available,
-    level = num(safe(UnitLevel, "player")), pointsAtCap = spent + available,
+    -- Forever gives one point per level from 10 here too (28 points at level
+    -- 37 on the live client), so the build is planned to the level cap.
+    level = num(safe(UnitLevel, "player")), pointsAtCap = math.max(maxLevel() - 9, spent + available),
   }
 end
 

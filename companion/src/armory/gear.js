@@ -2,7 +2,7 @@
 // module keeps only what the addon can show and check. Items go back with
 // their id when the AI is sure of one, and the addon verifies every id
 // against the game before it shows a link or scores the item.
-import { num, str, strings, list } from './json.js';
+import { num, str, text, texts, list } from './json.js';
 
 export const SLOTS = [
   'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet',
@@ -44,7 +44,7 @@ export function cleanWeights(raw) {
 function cleanPick(raw) {
   const name = str(raw?.name, 100);
   if (!name) return null;
-  const pick = { name, why: str(raw.why, 240) };
+  const pick = { name, why: text(raw.why, 320) };
   const id = num(raw.itemId);
   if (id !== null && Number.isInteger(id) && id > 0 && id < 10000000) pick.itemId = id;
   const level = num(raw.level);
@@ -55,7 +55,7 @@ function cleanPick(raw) {
     type: SOURCE_TYPES.includes(type) ? type : 'world',
     where: str(src.where, 80) || undefined,
     from: str(src.from, 80) || undefined,
-    note: str(src.note, 160) || undefined,
+    note: text(src.note, 200) || undefined,
   };
   if (raw.auction === true || pick.source.type === 'auction') pick.auction = true;
   const confidence = str(raw.confidence, 10).toLowerCase();
@@ -79,12 +79,12 @@ export function shapeGear(raw) {
   return {
     v: 1,
     kind: 'gear',
-    summary: str(raw?.summary, 600),
+    summary: text(raw?.summary, 700),
     weights: cleanWeights(raw?.weights),
-    weightsNote: str(raw?.weightsNote, 240) || undefined,
+    weightsNote: text(raw?.weightsNote, 400) || undefined,
     slots: SLOTS.filter((s) => bySlot.has(s)).map((s) => ({ slot: s, picks: bySlot.get(s) })),
-    next: strings(raw?.next, { max: 5, len: 240 }),
-    notes: strings(raw?.notes, { max: 4, len: 300 }),
+    next: texts(raw?.next, { max: 5, len: 320 }),
+    notes: texts(raw?.notes, { max: 4, len: 400 }),
   };
 }
 

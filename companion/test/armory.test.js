@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractJson } from '../src/armory/json.js';
+import { extractJson, text, texts } from '../src/armory/json.js';
 import { talentIndex, validateOrder, shapeBuild, takenTalents } from '../src/armory/talents.js';
 import { shapeGear, slotName, cleanWeights, equippable } from '../src/armory/gear.js';
 import { runModel, shapeRotation, describeCondition, keepFromRun } from '../src/armory/rotation.js';
@@ -66,6 +66,19 @@ test('the JSON object is found inside whatever the AI wrote around it', () => {
   assert.deepEqual(extractJson('e.g. {"x":1} then {"summary":"s","order":[1,2,3]}'), { summary: 's', order: [1, 2, 3] });
   assert.equal(extractJson('no json here'), null);
   assert.equal(extractJson('{"never": closed'), null);
+});
+
+test('a text that is too long is cut at a word and says so', () => {
+  assert.equal(text('  Short enough.  ', 40), 'Short enough.');
+  const long = 'Seal of Command procs 7 times per minute, from auto attacks only. Spell power coefficients come from guides.';
+  const cut = text(long, 60);
+  assert.equal(cut, 'Seal of Command procs 7 times per minute, from auto...');
+  assert.ok(cut.length <= 60);
+  assert.equal(text('Ends right after a comma, then goes on and on for a while', 30), 'Ends right after a comma...');
+  assert.equal(text('x'.repeat(100), 20), `${'x'.repeat(17)}...`, 'one long word is cut where it has to be');
+  assert.equal(text(12, 40), '12');
+  assert.equal(text(null, 40), '');
+  assert.deepEqual(texts(['one', '', '  two  ', 'three'], { max: 2, len: 10 }), ['one', 'two']);
 });
 
 test('a legal talent order passes untouched', () => {
@@ -162,6 +175,23 @@ test('a combat model is simulated and shaped for the addon', () => {
   assert.equal(kept.model.rotations[0].name, data.rotations[0].name);
   assert.ok(kept.weights.perPoint.attackPower > 0);
   assert.ok(JSON.stringify(data).length < 8000);
+});
+
+test('a spell the model holds twice is one line in the breakdown', () => {
+  const run = runModel(MELEE_MODEL, { iterations: 20, seed: 3 });
+  const [first] = run.sim.rotations;
+  first.breakdown = [
+    { name: 'Judgement', share: 14.7, perMinute: 4 }, { name: 'Auto attack', share: 44.2, perMinute: 16 },
+    { name: 'Judgement', share: 9.2, perMinute: 2 }, { name: 'Seal of Command', share: 24.6, perMinute: 7 },
+    { name: 'Rounding', share: 0.4, perMinute: 1 }, { name: 'Rounding', share: 0.4, perMinute: 1 },
+  ];
+  const data = shapeRotation({ model: MELEE_MODEL, assumptions: [`${'A long assumption. '.repeat(40)}`] }, run);
+  const shown = data.rotations.find((r) => r.name === first.name).breakdown;
+  assert.deepEqual(shown, [
+    { name: 'Auto attack', share: 44.2, perMinute: 16 }, { name: 'Seal of Command', share: 24.6, perMinute: 7 },
+    { name: 'Judgement', share: 23.9, perMinute: 6 },
+  ]);
+  assert.ok(data.assumptions[0].length <= 400 && /\b(A|long|assumption)\.\.\.$/.test(data.assumptions[0]), 'cut at a word, with the dots');
 });
 
 test('a model that cannot run says what to fix', () => {

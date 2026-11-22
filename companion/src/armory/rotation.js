@@ -3,7 +3,7 @@
 // this module turns the results into what the addon shows: the ranked
 // rotations as steps to follow, what each stat is worth, and a table of every
 // ability's value per use, per second and per point of resource.
-import { num, round, str, strings, list } from './json.js';
+import { num, round, str, text, texts, list } from './json.js';
 import { abilityTable, normalizeModel, simulate, statWeights } from './sim/engine.js';
 
 const MAX_ROTATIONS = 4;
@@ -59,12 +59,30 @@ function stepsOf(rawRotation, abilities) {
   for (const action of list(rawRotation?.actions)) {
     const ability = abilities.get(str(action?.use, 60));
     if (!ability) continue;
-    const step = { spell: ability.name, when: str(action.note, 120) || describeCondition(action.if) || undefined };
+    const step = { spell: ability.name, when: text(action.note, 160) || describeCondition(action.if) || undefined };
     if (num(ability.spellId)) step.spellId = num(ability.spellId);
     steps.push(step);
     if (steps.length >= MAX_STEPS) break;
   }
   return steps;
+}
+
+// Where the damage (or healing) came from, one line per name. A model may
+// hold the same spell twice (Judgement, and Judgement on a stunned target):
+// to the player that is one spell, so their shares are added up.
+function breakdownOf(breakdown) {
+  const byName = new Map();
+  for (const b of list(breakdown)) {
+    const name = str(b?.name, 60);
+    if (!name) continue;
+    const entry = byName.get(name) || { name, share: 0, perMinute: 0 };
+    entry.share += Number(b.share) || 0;
+    entry.perMinute += Number(b.perMinute) || 0;
+    byName.set(name, entry);
+  }
+  // The simulator gives shares as 0..100.
+  return [...byName.values()].filter((b) => b.share >= 1).sort((a, b) => b.share - a.share).slice(0, 8)
+    .map((b) => ({ name: b.name, share: round(b.share, 1), perMinute: round(b.perMinute, 1) }));
 }
 
 // The data the addon gets. raw: the AI's parsed answer ({ summary,
@@ -82,8 +100,7 @@ export function shapeRotation(raw, run) {
       best: i === sim.best || undefined,
       steps: stepsOf(source, abilities),
       // The simulator gives shares and percentages as 0..100.
-      breakdown: list(r.breakdown).filter((b) => b.share >= 1).slice(0, 8)
-        .map((b) => ({ name: str(b.name, 60), share: round(b.share, 1), perMinute: round(b.perMinute, 1) })),
+      breakdown: breakdownOf(r.breakdown),
       idle: round(r.idlePct, 1),
       autoAttack: r.autoAttackShare ? round(r.autoAttackShare, 1) : undefined,
       starved: r.resource?.starvedPct ? round(r.resource.starvedPct, 1) : undefined,
@@ -94,15 +111,15 @@ export function shapeRotation(raw, run) {
   const data = {
     v: 1,
     kind: 'rotation',
-    summary: str(raw?.summary, 600),
+    summary: text(raw?.summary, 700),
     metric: sim.rotations[sim.best]?.metric || (model.kind === 'healing' ? 'hps' : 'dps'),
     rotations,
     fight: {
       duration: model.fight?.duration, targets: model.fight?.targets,
       targetLevel: model.fight?.targetLevel, targetArmor: model.fight?.targetArmor,
     },
-    assumptions: strings(raw?.assumptions, { max: 6, len: 240 }),
-    notes: strings(raw?.notes, { max: 5, len: 300 }),
+    assumptions: texts(raw?.assumptions, { max: 6, len: 400 }),
+    notes: texts(raw?.notes, { max: 5, len: 400 }),
   };
   if (run.problems.length) data.modelIssues = run.problems.length;
   if (run.weights && Object.keys(run.weights.perPoint || {}).length) {
