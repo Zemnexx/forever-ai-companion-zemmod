@@ -265,9 +265,10 @@ end
 -- above it; and an arrow between two talents is an edge from the one that
 -- is required to the one it unlocks.
 
--- The trees' names by group, where the client tells (a function Forever
--- added, whose answer this addon has not seen yet: anything that pairs a
--- group with a name is taken).
+-- The trees' names by group, from a function Forever added. On the live
+-- client it answers with a list of { groupID, displayName, orderIndex, icon,
+-- ... }, one per talent tree. Read loosely (anything that pairs a group with
+-- a name), so another shape on another build still gives the names.
 local function groupNames(treeID)
   local names = {}
   local function walk(t, depth, key)

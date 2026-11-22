@@ -251,7 +251,12 @@ local function traits()
   for id in pairs(want.conditions) do out.conditions[tostring(id)] = call(T.GetConditionInfo, configID, id) end
   for id in pairs(want.subTrees) do out.subTrees[tostring(id)] = call(T.GetSubTreeInfo, configID, id) end
   for id in pairs(want.currencies) do out.currencies[tostring(id)] = call(T.GetTraitCurrencyInfo, id) end
-  for id in pairs(want.groups) do out.groups[tostring(id)] = call(T.GetGroupCurrencyInfo, configID, id) end
+  -- All groups in one question: the function takes a list of them.
+  local groups = {}
+  for id in pairs(want.groups) do groups[#groups + 1] = id end
+  table.sort(groups)
+  out.groups = groups
+  out.groupCurrencies = call(T.GetGroupCurrencyInfo, configID, groups)
   return out
 end
 
