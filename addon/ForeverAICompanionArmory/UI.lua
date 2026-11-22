@@ -79,6 +79,107 @@ local function chip(parent, label, onClick)
   return b
 end
 
+-- One choice from a list that opens under it (the specialization). Made of
+-- plain frames like everything else here: the game's own dropdowns are not
+-- the same on every client.
+local function dropdown(parent, width, placeholder, onPick)
+  local d = CreateFrame("Button", nil, parent, BACKDROP)
+  d:SetSize(width, 24)
+  fill(d, COLORS.chip, COLORS.edge)
+  local fs = text(d, "GameFontHighlightSmall")
+  fs:SetPoint("LEFT", 9, 0)
+  fs:SetPoint("RIGHT", -26, 0)
+  fs:SetJustifyV("MIDDLE")
+  if fs.SetWordWrap then fs:SetWordWrap(false) end
+  d.label = fs
+  -- The arrow: two thin bars that meet at the bottom, so it needs no artwork.
+  for _, side in ipairs({ -1, 1 }) do
+    local bar = d:CreateTexture(nil, "OVERLAY")
+    bar:SetColorTexture(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
+    bar:SetSize(7, 1.5)
+    bar:SetPoint("CENTER", d, "RIGHT", -13 + side * 2.5, 0)
+    if bar.SetRotation then bar:SetRotation(side * math.pi / 4) end
+  end
+
+  local list = CreateFrame("Frame", nil, d, BACKDROP)
+  list:SetPoint("TOPLEFT", d, "BOTTOMLEFT", 0, -2)
+  list:SetWidth(width)
+  list:SetFrameStrata("DIALOG")
+  list:EnableMouse(true)
+  fill(list, COLORS.window, COLORS.edge)
+  list:Hide()
+  d.list, d.rows, d.options = list, {}, {}
+
+  local function row(i)
+    local r = d.rows[i]
+    if r then return r end
+    r = CreateFrame("Button", nil, list)
+    r:SetHeight(24)
+    r:SetPoint("TOPLEFT", 1, -1 - (i - 1) * 24)
+    r:SetPoint("TOPRIGHT", -1, -1 - (i - 1) * 24)
+    local back = r:CreateTexture(nil, "BACKGROUND")
+    back:SetAllPoints()
+    back:SetColorTexture(COLORS.chipOn[1], COLORS.chipOn[2], COLORS.chipOn[3], 1)
+    r.back = back
+    local hover = r:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(COLORS.hover[1], COLORS.hover[2], COLORS.hover[3], COLORS.hover[4])
+    local label = text(r, "GameFontHighlightSmall")
+    label:SetPoint("LEFT", 8, 0)
+    label:SetPoint("RIGHT", -8, 0)
+    label:SetJustifyV("MIDDLE")
+    if label.SetWordWrap then label:SetWordWrap(false) end
+    r.label = label
+    r:SetScript("OnClick", function(self)
+      list:Hide()
+      onPick(self.value)
+    end)
+    d.rows[i] = r
+    return r
+  end
+
+  -- The current choice. One that is not in the list (typed in an earlier
+  -- version) is still shown, until another is chosen.
+  function d:SetValue(value)
+    self.value = value
+    self.label:SetText(value or placeholder)
+    color(self.label, value and "text" or "muted")
+    for i, r in ipairs(self.rows) do
+      if i <= #self.options and r.value == value then r.back:Show() else r.back:Hide() end
+    end
+  end
+
+  function d:SetOptions(options)
+    self.options = options
+    for _, r in ipairs(self.rows) do r:Hide() end
+    for i, name in ipairs(options) do
+      local r = row(i)
+      r.value = name
+      r.label:SetText(name)
+      r:Show()
+    end
+    list:SetHeight(#options * 24 + 2)
+    if #options == 0 then list:Hide() end
+    self:SetValue(self.value)
+  end
+
+  d:SetScript("OnClick", function(self)
+    if list:IsShown() or #self.options == 0 then list:Hide() else list:Show() end
+  end)
+  -- A click anywhere else closes the list, on clients that tell addons about
+  -- clicks; on the others it closes on a choice or on the button.
+  list:SetScript("OnShow", function(self) pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN") end)
+  list:SetScript("OnHide", function(self)
+    pcall(self.UnregisterEvent, self, "GLOBAL_MOUSE_DOWN")
+    -- Hidden with the window or the tab: closed, not waiting to come back with it.
+    self:Hide()
+  end)
+  list:SetScript("OnEvent", function(self)
+    if not (self:IsMouseOver() or d:IsMouseOver()) then self:Hide() end
+  end)
+  return d
+end
+
 local function button(parent, label, width, onClick)
   local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
   b:SetSize(width, 24)
@@ -220,7 +321,7 @@ function UI:BuildProfile(page)
   holder:SetPoint("TOPLEFT", PAD, -64)
   holder:SetPoint("BOTTOMRIGHT", -PAD - 22, PAD)
   local p = CreateFrame("Frame", nil, holder)
-  p:SetSize(BODY_WIDTH, 480)
+  p:SetSize(BODY_WIDTH, 450)
   holder:SetScrollChild(p)
   self.profile = holder
   local width = BODY_WIDTH - 4
@@ -238,19 +339,20 @@ function UI:BuildProfile(page)
     return fs
   end
 
-  -- Specialization: the class's talent trees, or the player's own words.
+  -- Specialization: one of the class's own (Scan.Specs). Only for a class
+  -- with none known is there a box to type it in instead.
   local specLabel = label(L.SPEC, intro)
   local specRow = CreateFrame("Frame", nil, p)
   specRow:SetPoint("TOPLEFT", specLabel, "BOTTOMLEFT", 0, -6)
   specRow:SetSize(width, 24)
-  self.specRow, self.specChips = specRow, {}
-  self.specBox = editBox(p, 230, 60, function(value)
+  local function setSpec(value)
     if ns.Store:SetProfile("spec", value ~= "" and value or nil) then UI:Refresh() end
-  end)
-  self.specBox:SetPoint("TOPLEFT", specRow, "BOTTOMLEFT", 0, -6)
-  local specHint = text(p, "GameFontDisableSmall")
-  specHint:SetPoint("LEFT", self.specBox, "RIGHT", 8, 0)
-  specHint:SetText(L.SPEC_HINT)
+  end
+  self.specDrop = dropdown(specRow, 230, L.SPEC_CHOOSE, setSpec)
+  self.specDrop:SetPoint("TOPLEFT")
+  self.specBox = editBox(specRow, 230, 60, setSpec)
+  self.specBox:SetPoint("TOPLEFT")
+  self.specBox:Hide()
 
   local function choice(title, anchor, values, field, prefix)
     local fs = label(title, anchor)
@@ -267,7 +369,7 @@ function UI:BuildProfile(page)
     return fs, chips
   end
   local goalLabel
-  goalLabel, self.goalChips = choice(L.GOAL, self.specBox, ns.Store.GOALS, "goal", "GOAL_")
+  goalLabel, self.goalChips = choice(L.GOAL, specRow, ns.Store.GOALS, "goal", "GOAL_")
   local roleAnchor = CreateFrame("Frame", nil, p)
   roleAnchor:SetPoint("TOPLEFT", goalLabel, "BOTTOMLEFT", 0, -28)
   roleAnchor:SetSize(1, 1)
@@ -284,6 +386,7 @@ function UI:BuildProfile(page)
   self.notesBox:SetPoint("TOPLEFT", notesLabel, "BOTTOMLEFT", 0, -6)
   local notesHint = text(p, "GameFontDisableSmall")
   notesHint:SetPoint("TOPLEFT", self.notesBox, "BOTTOMLEFT", 0, -4)
+  notesHint:SetWidth(width)
   notesHint:SetText(L.NOTES_HINT)
 
   -- Everything at once, and where each analysis stands.
@@ -318,38 +421,24 @@ function UI:BuildProfile(page)
   self.optButton = option(L.OPTION_BUTTON, "button", self.optTooltip, function() if ns.Button then ns.Button:Update() end end)
 end
 
--- The class's trees as choices. Rebuilt when the talents were read differently.
+-- The class's specializations as the choices. Filled again when the game
+-- names them differently (the talents were not readable yet, say).
 function UI:FillSpecs()
-  local section = ns.Scan.Talents()
-  local names = {}
-  for _, tree in ipairs(section and section.trees or {}) do
-    if section.api == "classic" then names[#names + 1] = tree.name end
-  end
+  local names = ns.Scan.Specs()
   local key = table.concat(names, "|")
   if key ~= self.specKey then
     self.specKey = key
-    for _, c in ipairs(self.specChips) do c:Hide() end
-    local x = 0
-    for i, name in ipairs(names) do
-      local c = self.specChips[i]
-      if not c then
-        c = chip(self.specRow, name, function(self)
-          ns.Store:SetProfile("spec", self.value)
-          UI:Refresh()
-        end)
-        self.specChips[i] = c
-      end
-      c.value = name
-      c.label:SetText(name)
-      c:SetWidth(math.max(64, (c.label:GetStringWidth() or 40) + 22))
-      c:ClearAllPoints()
-      c:SetPoint("TOPLEFT", self.specRow, "TOPLEFT", x, 0)
-      c:Show()
-      x = x + c:GetWidth() + 6
+    self.specDrop:SetOptions(names)
+    if #names > 0 then
+      self.specBox:Hide()
+      self.specDrop:Show()
+    else
+      self.specDrop:Hide()
+      self.specBox:Show()
     end
   end
   local spec = ns.Store:Profile().spec
-  for _, c in ipairs(self.specChips) do c:SetOn(c:IsShown() and c.value == spec) end
+  self.specDrop:SetValue(spec)
   if not self.specBox:HasFocus() then self.specBox:SetText(spec or "") end
 end
 

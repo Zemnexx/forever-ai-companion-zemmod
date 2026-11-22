@@ -27,7 +27,7 @@ local L = {
   -- The build tab
   PROFILE_INTRO = "Tell the Armory what you are building. Every analysis is made for this specialization and purpose, from your character's real talents, spells and gear.",
   SPEC = "Specialization",
-  SPEC_HINT = "or describe it in your own words",
+  SPEC_CHOOSE = "Choose a specialization",
   GOAL = "What for",
   GOAL_LEVELING = "Leveling",
   GOAL_DUNGEONS = "Dungeons",
@@ -39,7 +39,7 @@ local L = {
   ROLE_TANK = "Tank",
   ROLE_HEALER = "Healer",
   NOTES_LABEL = "Anything else",
-  NOTES_HINT = "For example: dual wield, no engineering, mostly five-player dungeons.",
+  NOTES_HINT = "For example: a close-range battlemage build, dual wield, no engineering.",
   PICK_SPEC = "Choose a specialization in the Build tab first.",
   OPTION_TOOLTIP = "Show the Armory score on item tooltips",
   OPTION_BUTTON = "Show the minimap button",

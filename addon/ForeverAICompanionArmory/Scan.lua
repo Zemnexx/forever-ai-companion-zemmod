@@ -6,6 +6,7 @@
 --   Combat()   the numbers a simulator needs (weapon damage and speed per
 --              hand, attack and spell power, crit, hit, haste, resource)
 --   Seen()     items the addon has seen in the game that this character could wear
+--   Specs()    the specializations the player can choose from
 --
 -- WoW Forever runs classic content on the modern client, and this addon was
 -- written without access to the game, so every read tries the classic-style
@@ -318,6 +319,88 @@ function Scan.Ranks()
   return ranks, section
 end
 
+-- Specializations --------------------------------------------------------------------
+
+-- The classic names, for a client that gives neither named talent trees nor
+-- a list of specializations. Forever reworked the classes, so the game's own
+-- names are used whenever it gives them.
+local CLASS_SPECS = {
+  WARRIOR = { "Arms", "Fury", "Protection" },
+  PALADIN = { "Holy", "Protection", "Retribution" },
+  HUNTER = { "Beast Mastery", "Marksmanship", "Survival" },
+  ROGUE = { "Assassination", "Combat", "Subtlety" },
+  PRIEST = { "Discipline", "Holy", "Shadow" },
+  SHAMAN = { "Elemental", "Enhancement", "Restoration" },
+  MAGE = { "Arcane", "Fire", "Frost" },
+  WARLOCK = { "Affliction", "Demonology", "Destruction" },
+  DRUID = { "Balance", "Feral Combat", "Restoration" },
+}
+local MAX_SPECS = 6
+
+-- Names read from the game: no empty or repeated ones.
+local function nameList()
+  local names, seen = {}, {}
+  return names, function(name)
+    name = clean(name)
+    if name and name ~= "" and not seen[name] and #names < MAX_SPECS then
+      seen[name] = true
+      names[#names + 1] = name
+    end
+  end
+end
+
+-- The trees of a classic-style client are the specializations.
+local function treeSpecs()
+  local section = Scan.Talents()
+  if not section or section.api ~= "classic" then return nil end
+  local names, add = nameList()
+  for _, tree in ipairs(section.trees) do
+    -- "Tree 2" is what a tree is called when the game gave no name for it.
+    if not tostring(tree.name):match("^Tree %d+$") then add(tree.name) end
+  end
+  return #names > 0 and names or nil
+end
+
+-- A modern client's own list: for the character, or else for its class.
+local function listedSpecs()
+  local api = type(C_SpecializationInfo) == "table" and C_SpecializationInfo or {}
+  local names, add = nameList()
+  -- info(i): the game's answer for the i-th one: (id, name, description, icon, role, ...)
+  local function read(count, info)
+    count = num(count)
+    if not count then return end
+    for i = 1, math.min(count, MAX_SPECS) do
+      local r = info(i)
+      add(r and r[2])
+    end
+  end
+  local own = GetSpecializationInfo or api.GetSpecializationInfo
+  read(safe(GetNumSpecializations) or safe(api.GetNumSpecializations), function(i) return results(own, i) end)
+  if #names == 0 then
+    local classID = num((select(3, safe(UnitClass, "player"))))
+    local forClass = GetSpecializationInfoForClassID or api.GetSpecializationInfoForClassID
+    if classID then
+      read(safe(GetNumSpecializationsForClassID, classID) or safe(api.GetNumSpecializationsForClassID, classID),
+        function(i) return results(forClass, classID, i) end)
+    end
+  end
+  return #names > 0 and names or nil
+end
+
+-- The specializations the player can choose from in the Build tab: from the
+-- talent trees, from the game's list, or the classic names of the class.
+-- Empty only for a class this addon does not know on a client that names none.
+function Scan.Specs()
+  local names, from = safe(treeSpecs), "talent trees"
+  if not names then names, from = safe(listedSpecs), "the game's list" end
+  if not names then
+    local token = select(2, safe(UnitClass, "player"))
+    names, from = CLASS_SPECS[clean(token) or ""], "built-in list"
+  end
+  Scan.how.specs = names and (table.concat(names, ", ") .. " (" .. from .. ")") or "none known for this class"
+  return names or {}
+end
+
 -- Spells ---------------------------------------------------------------------------
 
 local AUTO_ATTACK = 6603
@@ -557,8 +640,10 @@ function Scan.Diagnose()
   Scan.Changed()
   local talents, spells, combat = Scan.Talents(), Scan.Spells(), Scan.Combat()
   Scan.Seen()
+  Scan.Specs()
   local lines = {
     "talents: " .. tostring(Scan.how.talents),
+    "specializations: " .. tostring(Scan.how.specs),
     "spells: " .. tostring(Scan.how.spells),
     "combat: " .. tostring(Scan.how.combat),
     "items seen: " .. tostring(Scan.how.seen),
