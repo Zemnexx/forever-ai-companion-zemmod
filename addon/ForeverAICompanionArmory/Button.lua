@@ -1,6 +1,7 @@
--- A small button on the minimap's edge: click to open the Armory, drag to
--- slide it around the minimap. It can be hidden in the Build tab (the window
--- still opens with /armory and from the addon list next to the minimap).
+-- A small button on the minimap's edge, a breastplate: click to open the
+-- Armory, drag to slide it around the minimap. It can be hidden in the Build
+-- tab (the window still opens with /armory and from the addon list next to
+-- the minimap, which shows the same icon).
 local _, ns = ...
 local L = ns.L
 
@@ -8,7 +9,7 @@ local Button = {}
 ns.Button = Button
 
 local SIZE = 31
-local ICON = "Interface\\Icons\\INV_Misc_Book_09"
+local ICON = "Interface\\Icons\\INV_Chest_Plate04"
 local DEFAULT_ANGLE = 165
 local atan2 = math.atan2 or math.atan
 
