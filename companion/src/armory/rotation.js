@@ -1,0 +1,135 @@
+// Rotations: the AI writes a combat model of the character (model-spec.js)
+// and candidate priority lists; the simulator (sim/engine.js) runs them and
+// this module turns the results into what the addon shows: the ranked
+// rotations as steps to follow, what each stat is worth, and a table of every
+// ability's value per use, per second and per point of resource.
+import { num, round, str, strings, list } from './json.js';
+import { abilityTable, normalizeModel, simulate, statWeights } from './sim/engine.js';
+
+const MAX_ROTATIONS = 4;
+const MAX_STEPS = 14;
+const MAX_TABLE = 14;
+
+// A condition in a few words, for an action the AI left without a note.
+const CONDITION_TEXT = {
+  resourceAtLeast: (v) => `resource ${v}+`,
+  resourceBelow: (v) => `resource under ${v}`,
+  buffUp: (v) => `with ${v}`,
+  buffDown: (v) => `when ${v} is not up`,
+  buffStacksAtLeast: (v) => `at ${v?.n}+ stacks of ${v?.id}`,
+  buffRemainsBelow: (v) => `when ${v?.id} has under ${v?.sec}s left`,
+  cooldownUp: (v) => `when ${v} is ready`,
+  cooldownRemainsAbove: (v) => `while ${v?.id} is over ${v?.sec}s away`,
+  targetHealthBelow: (v) => `target under ${v}% health`,
+  targetHealthAbove: (v) => `target above ${v}% health`,
+  timeAtLeast: (v) => `after ${v}s`,
+  timeRemainingBelow: (v) => `last ${v}s of the fight`,
+  targetsAtLeast: (v) => `${v}+ targets`,
+  swingTimerAbove: (v) => `more than ${v}s before the next swing`,
+};
+export function describeCondition(cond) {
+  if (!cond || typeof cond !== 'object') return '';
+  const parts = [];
+  for (const [key, value] of Object.entries(cond)) {
+    const text = CONDITION_TEXT[key];
+    if (text) parts.push(text(Array.isArray(value) ? value.join(', ') : value));
+  }
+  return parts.join(', ').slice(0, 120);
+}
+
+// Normalizes and simulates a model. Never throws on a bad model: the problems
+// say what the AI has to fix.
+export function runModel(rawModel, { iterations = 300, seed = 1, weights = true } = {}) {
+  const { model, problems, fatal } = normalizeModel(rawModel);
+  if (fatal) return { model, problems, fatal: true };
+  const sim = simulate(model, { iterations, seed });
+  if (!sim.rotations.length) return { model, problems: [...problems, 'no rotation could be simulated'], fatal: true };
+  const out = { model, problems, fatal: false, sim };
+  // sim.best is a place in sim.rotations; each result's `index` is its
+  // rotation's place in the model.
+  if (weights) out.weights = statWeights(model, { rotation: sim.rotations[sim.best].index, iterations, seed });
+  out.table = abilityTable(model);
+  return out;
+}
+
+// The steps of a rotation as the player reads them. The notes come from the
+// AI's own model (the simulator ignores them).
+function stepsOf(rawRotation, abilities) {
+  const steps = [];
+  for (const action of list(rawRotation?.actions)) {
+    const ability = abilities.get(str(action?.use, 60));
+    if (!ability) continue;
+    const step = { spell: ability.name, when: str(action.note, 120) || describeCondition(action.if) || undefined };
+    if (num(ability.spellId)) step.spellId = num(ability.spellId);
+    steps.push(step);
+    if (steps.length >= MAX_STEPS) break;
+  }
+  return steps;
+}
+
+// The data the addon gets. raw: the AI's parsed answer ({ summary,
+// assumptions, notes, model }); run: runModel()'s result for raw.model.
+export function shapeRotation(raw, run) {
+  const { model, sim } = run;
+  const abilities = new Map(list(model.abilities).map((a) => [a.id, a]));
+  const rawRotations = list(raw?.model?.rotations);
+  const rotations = sim.rotations.map((r, i) => {
+    const source = rawRotations.find((x) => str(x?.name, 80) === r.name) || rawRotations[r.index ?? i] || model.rotations?.[r.index ?? i];
+    return {
+      name: str(r.name, 80) || `Rotation ${i + 1}`,
+      value: round(r.value, 1),
+      spread: round(r.stdev, 1),
+      best: i === sim.best || undefined,
+      steps: stepsOf(source, abilities),
+      // The simulator gives shares and percentages as 0..100.
+      breakdown: list(r.breakdown).filter((b) => b.share >= 1).slice(0, 8)
+        .map((b) => ({ name: str(b.name, 60), share: round(b.share, 1), perMinute: round(b.perMinute, 1) })),
+      idle: round(r.idlePct, 1),
+      autoAttack: r.autoAttackShare ? round(r.autoAttackShare, 1) : undefined,
+      starved: r.resource?.starvedPct ? round(r.resource.starvedPct, 1) : undefined,
+      emptyAt: num(r.resource?.emptyAt) !== null ? round(r.resource.emptyAt, 0) : undefined,
+    };
+  }).sort((a, b) => b.value - a.value).slice(0, MAX_ROTATIONS);
+
+  const data = {
+    v: 1,
+    kind: 'rotation',
+    summary: str(raw?.summary, 600),
+    metric: sim.rotations[sim.best]?.metric || (model.kind === 'healing' ? 'hps' : 'dps'),
+    rotations,
+    fight: {
+      duration: model.fight?.duration, targets: model.fight?.targets,
+      targetLevel: model.fight?.targetLevel, targetArmor: model.fight?.targetArmor,
+    },
+    assumptions: strings(raw?.assumptions, { max: 6, len: 240 }),
+    notes: strings(raw?.notes, { max: 5, len: 300 }),
+  };
+  if (run.problems.length) data.modelIssues = run.problems.length;
+  if (run.weights && Object.keys(run.weights.perPoint || {}).length) {
+    const perPoint = {};
+    const normalized = {};
+    for (const [stat, v] of Object.entries(run.weights.perPoint)) perPoint[stat] = round(v, 3);
+    for (const [stat, v] of Object.entries(run.weights.normalized || {})) normalized[stat] = round(v, 2);
+    data.weights = { reference: run.weights.reference, perPoint, normalized };
+  }
+  const table = list(run.table).filter((row) => row.perUse > 0)
+    .sort((a, b) => b.perSecond - a.perSecond).slice(0, MAX_TABLE)
+    .map((row) => ({
+      name: str(row.name, 60), perUse: round(row.perUse, 0), perSecond: round(row.perSecond, 1),
+      perResource: num(row.perResource) !== null ? round(row.perResource, 2) : undefined,
+      castTime: num(row.castTime) ? round(row.castTime, 2) : undefined,
+    }));
+  if (table.length) data.table = table;
+  return data;
+}
+
+// What is kept for later requests about the same character (store.js): the
+// model with its best rotation only, and the measured weights.
+export function keepFromRun(run) {
+  const best = run.model.rotations?.[run.sim.rotations[run.sim.best]?.index ?? run.sim.best];
+  return {
+    model: { ...run.model, rotations: best ? [best] : [] },
+    weights: run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: run.weights.perPoint } : null,
+    value: run.sim.rotations[run.sim.best]?.value ?? null,
+  };
+}

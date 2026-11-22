@@ -89,6 +89,11 @@ export const DEFAULTS = {
     silenceMs: 1500,
   },
 
+  // The Armory plugin (src/armory): character builds worked out with the
+  // same AI as the chat, asked with more effort, room for a longer answer and
+  // more patience. iterations: fights simulated per rotation.
+  armory: { effort: 'high', maxTokens: 16000, timeoutMs: 600000, iterations: 300 },
+
   // Where the up-to-date WoW Forever guide is published (see src/guide.js).
   // The app downloads it every few hours; null = only the guide inside the app.
   guideUrl: GUIDE_URL,

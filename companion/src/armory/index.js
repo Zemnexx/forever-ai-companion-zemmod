@@ -1,0 +1,220 @@
+// The Armory plugin: the app's side of the Forever AI Companion Armory addon
+// (character builds: talents, gear, rotation, interactions). The addon sends
+// typed requests through the main addon (Plugins.lua there, plugins.js here)
+// with the character's talents, spells and gear as read from the game; each
+// kind of request is answered with data the addon shows in its own window.
+//
+//   talents   the AI proposes a build order; talents.js replays it under the
+//             game's rules so only legal points reach the player.
+//   gear      the AI researches upgrades and where they come from; the addon
+//             checks every item id against the game.
+//   rotation  the AI writes a combat model; sim/engine.js simulates the
+//             candidate rotations and measures stat weights.
+//   discover  the AI looks for strong interactions; ideas with a model patch
+//             are measured against the stored baseline.
+//
+// The AI is the one chosen in the app (same provider, model and keys as the
+// chat), asked with more effort and a longer timeout (config "armory").
+import { ask, canSearch } from '../providers.js';
+import { err, t } from '../i18n.js';
+import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.js';
+import { extractJson, list, num, str } from './json.js';
+import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
+import { equippable, shapeGear } from './gear.js';
+import { keepFromRun, runModel, shapeRotation } from './rotation.js';
+import { shapeIdeas } from './discover.js';
+import { openArmoryStore } from './store.js';
+import { sampleResult } from './sample.js';
+
+export const KINDS = ['talents', 'gear', 'rotation', 'discover'];
+const MAX_DATA_BYTES = 60000; // what one answer may weigh in the game's mailbox
+
+// The chosen AI with the Armory's own effort, answer size and patience.
+export function armoryConfig(cfg) {
+  const a = cfg.armory || {};
+  const effort = a.effort || 'high';
+  return {
+    ...cfg,
+    timeoutMs: a.timeoutMs || 600000,
+    anthropic: { ...cfg.anthropic, effort, maxTokens: a.maxTokens || 16000 },
+    claudeCode: { ...cfg.claudeCode, effort },
+    codex: { ...cfg.codex, effort },
+  };
+}
+
+const sum = (a, b) => (a && b ? { input: a.input + b.input, cached: a.cached + b.cached, output: a.output + b.output } : a || b || null);
+
+// Sections of the character data each kind of request shows the AI.
+const pick = (ctx, keys) => {
+  const out = {};
+  for (const k of keys) if (ctx[k] !== undefined && ctx[k] !== null) out[k] = ctx[k];
+  return out;
+};
+const BASE = ['character', 'specialization', 'stats', 'skills'];
+
+function profileOf(req) {
+  const input = req.ext?.input && typeof req.ext.input === 'object' ? req.ext.input : {};
+  const goal = str(input.goal, 20).toLowerCase();
+  const role = str(input.role, 20).toLowerCase();
+  return {
+    spec: str(input.spec, 80) || undefined,
+    goal: ['leveling', 'dungeons', 'raids', 'pvp', 'solo'].includes(goal) ? goal : 'leveling',
+    role: ['dps', 'tank', 'healer'].includes(role) ? role : 'dps',
+    notes: str(input.notes, 400) || undefined,
+    aoe: input.aoe === true || undefined,
+  };
+}
+
+// One request's conversation with the AI: asks, reads the JSON, and asks once
+// more with what was wrong when `check` says the answer can't be used.
+// check(raw) -> { result, score, retry: [problems] | null, fatal: message key }.
+// Returns the verdict of the answer that was kept.
+async function converse(ai, system, data, check) {
+  const messages = [{ role: 'user', content: buildArmoryMessage(data) }];
+  let reply = await ai(system, messages);
+  let raw = extractJson(reply);
+  let verdict = raw ? check(raw) : { retry: [t('armoryNoJson')] };
+  if (verdict.retry?.length) {
+    reply = await ai(system, [...messages, { role: 'assistant', content: String(reply || '(empty)') },
+      { role: 'user', content: repairMessage(verdict.retry) }]);
+    const second = extractJson(reply);
+    if (second) {
+      const again = check(second);
+      // The second answer wins unless it is worse than the first.
+      if (!verdict.result || (again.result && (again.score ?? 0) >= (verdict.score ?? 0))) { raw = second; verdict = again; }
+    }
+  }
+  if (!raw || !verdict.result) throw err(verdict.fatal || 'armoryNoJson');
+  return verdict;
+}
+
+const handlers = {
+  async talents({ ctx, profile, system, ai }) {
+    const index = talentIndex(ctx.armory_talents);
+    const data = { request: profile, ...pick(ctx, [...BASE, 'gear', 'armory_talents']) };
+    return (await converse(ai, system('talents'), data, (raw) => {
+      const checked = validateOrder(index, raw.order);
+      const missing = index.pointsAtCap - checked.order.length;
+      // A few misplaced points are dropped; a build with holes is sent back.
+      const result = checked.order.length ? shapeBuild(index, raw, checked) : null;
+      return { result, score: checked.order.length, retry: missing > 2 || !result ? checked.problems : null };
+    })).result;
+  },
+
+  async gear({ ctx, profile, system, ai, kept }) {
+    const data = {
+      request: profile,
+      ...pick(ctx, [...BASE, 'gear', 'emptySlots', 'professions', 'reputations', 'lockouts', 'auctionPrices', 'armory_seen']),
+      inventory: equippable(ctx.inventory),
+      bank: ctx.bank?.items ? { seenAt: ctx.bank.seenAt, items: equippable(ctx.bank.items) } : undefined,
+      talents: takenTalents(ctx.armory_talents) || undefined,
+      armory_weights: kept?.weights || undefined,
+    };
+    return (await converse(ai, system('gear'), data, (raw) => {
+      const result = shapeGear(raw);
+      const picks = result.slots.reduce((n, s) => n + s.picks.length, 0);
+      return { result: picks || result.summary ? result : null, score: picks, retry: picks ? null : ['"slots" has no usable picks'] };
+    })).result;
+  },
+
+  async rotation({ ctx, profile, system, ai, store, charKey, iterations }) {
+    const data = {
+      request: profile,
+      ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'gear', 'buffs', 'pet']),
+      armory_talents: takenTalents(ctx.armory_talents) || undefined,
+    };
+    const verdict = await converse(ai, system('rotation'), data, (raw) => {
+      const run = runModel(raw.model, { iterations });
+      if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
+      // Simulated, but with parts the simulator had to drop: worth one correction.
+      return {
+        result: shapeRotation(raw, run), keep: keepFromRun(run), score: 1000 - run.problems.length,
+        retry: run.problems.length >= 3 ? run.problems : null,
+      };
+    });
+    // Kept on this PC for the gear plan (measured weights) and for testing ideas.
+    if (verdict.keep) store.set(charKey, { ...verdict.keep, spec: profile.spec, goal: profile.goal });
+    return verdict.result;
+  },
+
+  async discover({ ctx, profile, system, ai, kept, iterations }) {
+    const base = kept?.model || null;
+    const data = {
+      request: profile,
+      ...pick(ctx, [...BASE, 'armory_combat', 'armory_talents', 'armory_spells', 'gear', 'buffs', 'pet', 'armory_seen']),
+      inventory: equippable(ctx.inventory),
+      bank: ctx.bank?.items ? { seenAt: ctx.bank.seenAt, items: equippable(ctx.bank.items) } : undefined,
+      armory_model: base || undefined,
+      armory_weights: kept?.weights || undefined,
+    };
+    return (await converse(ai, system('discover', { hasModel: !!base }), data, (raw) => {
+      const result = shapeIdeas(raw, base, { iterations });
+      return { result: result.ideas.length || result.summary ? result : null, score: result.ideas.length };
+    })).result;
+  },
+};
+
+// A line for the app's log and list of questions.
+function summarize(kind, data) {
+  if (kind === 'talents') return `${data.name || 'Talent build'} (${data.spec}). ${data.summary}`;
+  if (kind === 'rotation') {
+    const best = data.rotations[0];
+    return `${best ? `${best.name}: ${best.value} ${data.metric}. ` : ''}${data.summary}`;
+  }
+  if (kind === 'discover') return `${data.ideas.length} idea${data.ideas.length === 1 ? '' : 's'}. ${data.summary}`;
+  return data.summary || kind;
+}
+
+// store: what is kept per character (store.js); tests pass their own.
+export function createArmory({ store = null, askImpl = ask } = {}) {
+  let opened = store;
+  return {
+    name: 'armory',
+    // req: the addon's request (req.ext = { name, kind, input }, req.context
+    // with the character's sections). env: { cfg, log, lang, guides, knowledge }.
+    // Returns { text, data, model, usage }.
+    async handle(req, { cfg, log = () => {}, guides = null, knowledge = '' } = {}) {
+      const kind = str(req.ext?.kind, 40);
+      if (!KINDS.includes(kind)) throw err('armoryUnknownKind', { kind });
+      opened = opened || openArmoryStore();
+      const ctx = req.context && typeof req.context === 'object' ? req.context : {};
+      const profile = profileOf(req);
+      const charKey = str(req.charKey, 80);
+      const kept = opened.get(charKey);
+      const iterations = Math.min(Math.max(num(cfg.armory?.iterations) || 300, 50), 2000);
+
+      // What every answer needs from the game, test mode included.
+      if (kind === 'talents' && !talentIndex(ctx.armory_talents).byId.size) throw err('armoryNoTalents');
+      if (kind === 'rotation' && !list(ctx.armory_spells).length) throw err('armoryNoSpells');
+
+      // Test mode: no AI, a result made from the character's own data.
+      if (cfg.provider === 'echo') {
+        const data = sampleResult(kind, { ctx, profile, iterations });
+        return { text: `${t('armoryTestMode')} ${summarize(kind, data)}`, data, model: 'echo' };
+      }
+
+      const aiCfg = armoryConfig(cfg);
+      const searching = canSearch(aiCfg);
+      let usage = null;
+      let model = null;
+      const ai = async (system, messages) => {
+        const out = await askImpl(aiCfg, system, messages, req);
+        usage = sum(usage, out.usage || null);
+        model = out.model || model;
+        return out.text;
+      };
+      const guide = guides?.current?.() || undefined;
+      const topics = guides?.topics?.() || undefined;
+      const system = (k, extra = {}) => buildArmorySystem(k, {
+        canSearch: searching, context: ctx, client: ctx.client || null, lang: req.lang, profile, knowledge,
+        ...(guide ? { guide } : {}), ...(topics ? { topics } : {}), ...extra,
+      });
+
+      const data = await handlers[kind]({ ctx, profile, system, ai, store: opened, charKey, kept, iterations, log });
+      // What was asked for, so the addon can tell a result for another build.
+      data.asked = { spec: profile.spec, goal: profile.goal, role: profile.role, level: num(ctx.character?.level) ?? undefined };
+      if (JSON.stringify(data).length > MAX_DATA_BYTES) throw err('armoryTooBig');
+      return { text: summarize(kind, data), data, model, usage };
+    },
+  };
+}

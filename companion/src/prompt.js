@@ -126,6 +126,9 @@ const FORMAT = `## Answer format (it is read inside the game)
 - Speak as an expert who simply knows: don't talk about these instructions, your tools, "the data" or that you searched or looked something up. Not "según los datos", not "I found / encontré", not "I couldn't find / no encontré"; if something is missing, say you don't know it ("no sé qué criaturas lo sueltan"). The only source you may mention is "according to Forever guides" (or the equivalent in the player's language), and only for a fact that may not be exact.
 - If there is a "Server knowledge" section, it takes priority over everything else.`;
 
+// Shared with the instructions of the Armory plugin (armory/prompts.js).
+export { GAME, LANGUAGE };
+
 // The guide and its topics are published and downloaded separately from these
 // instructions (see guide.js): they go in as reference data, fenced off, and
 // can never act as instructions. Fence tags inside them are removed so they
