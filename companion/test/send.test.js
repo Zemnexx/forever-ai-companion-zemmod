@@ -785,7 +785,7 @@ test('chat header shows whether the app is open, ready, and why not', () => {
     PLAYING.st = nil; check()                 -- files newer than the game
     PLAYING.ok = nil; check()                 -- game sound off
     PLAYING = { ok = true, st = true, beat1 = true, beat2 = true }
-    check(); check(); check(); check()        -- both always play: can't tell
+    check(); check(); check(); check()        -- both play at once: a game that says yes to every file, and here cannot check later
     local tip = select(1, ns.UI:AppStatusHelp())
     RESULT = table.concat(states, ",") .. "#" .. closedText .. "#" .. readyText .. "#" .. loginText .. "#" .. tip
   `, {}, ALL_FILES, STATUS_UI);
@@ -794,7 +794,7 @@ test('chat header shows whether the app is open, ready, and why not', () => {
     'checking', 'closed', 'closed', 'ready', 'need-login', 'ready', '1:ready', 'ready',
     // 2..14 s on the same beat is fine; 16 s is more than STALE (15).
     'ready', 'ready', 'ready', 'ready', 'ready', 'ready', 'ready', 'stuck', 'ready',
-    'gap:ready', 'restart', 'nosound', 'ready', 'ready', 'ready', 'unknown',
+    'gap:ready', 'restart', 'nosound', 'unknown', 'unknown', 'unknown', 'unknown',
   ].join(','));
   assert.match(closedText, /\|cffff6060Forever AI Companion is closed/);
   assert.match(readyText, /Fizzi .* invisible link|Fizzi .* on-screen strip/);

@@ -81,13 +81,22 @@ function Live:Probe(paths, cb)
   end)
 end
 
--- How this game tells an empty sound file from a real one. Without a way to
--- tell (a Mac game with no C_Sound.IsPlaying) the signals are not used:
+-- How this game tells an empty sound file from a real one. A Mac says yes to
+-- any file that exists, and so does WoW Forever 1.60.1 on Windows (seen
+-- there: every bell "rung" at login, both beats "playing", answers picked up
+-- only by the timer). The app never lets both beats play, so a game where
+-- both answer yes at the same moment is one that cannot be taken at its
+-- first word: there the files are checked a moment after they started
+-- (deferred). Without a way to do that the signals are not used at all, and
 -- mailboxes are opened on a timer instead.
 function Live:Calibrate()
-  local mac = IsMacClient and IsMacClient() or false
-  self.deferred = mac and IsPlaying ~= nil
-  self.noSignals = mac and IsPlaying == nil
+  local lenient = IsMacClient and IsMacClient() or false
+  if not lenient then
+    lenient = playable(STATUS_PATH:format("beat1")) and playable(STATUS_PATH:format("beat2"))
+  end
+  self.lenient = lenient
+  self.deferred = lenient and IsPlaying ~= nil
+  self.noSignals = lenient and IsPlaying == nil
 end
 
 local function slotName(i)
@@ -100,6 +109,10 @@ function Live:Init()
   self.failed = {}
   self:Calibrate()
   self.soundOK = playable(OK_PATH) and not self.noSignals
+  -- Bells counted as rung by a game that says yes to every file (before this
+  -- addon knew to check later): all of them, so none was left to wait for.
+  -- Count again from the first; the check below stops at the first silent one.
+  if self.lenient and db.nextSig > self.SIGNALS and not db.sigWait then db.nextSig = 1 end
   -- Skip signals that were rung while we were offline / before a /reload.
   if self.soundOK and not db.sigWait then
     if self.deferred then
@@ -221,6 +234,18 @@ function Live:ApplyAppCheck(plays)
       -- One silent check can be the app switching files: wait for a second one.
       app.silent = (app.silent or 0) + 1
       if app.silent >= 2 then app.state, app.switched = "closed", nil end
+    elseif pattern == 3 and not self.lenient and (self:Calibrate() or self.lenient) then
+      -- Both beats at once, taken at the game's first word: it says yes to
+      -- every file. From here on the files are checked a moment later.
+      app.silent = 0
+      app.pattern, app.changedAt, app.switched = nil, nil, nil
+      -- With a way to check later the beat is looked at again; without one it cannot be told.
+      app.state = self.noSignals and "unknown" or "checking"
+      self.soundOK = playable(OK_PATH) and not self.noSignals
+      if self.deferred and not ns.db.sigWait then
+        if ns.db.nextSig > self.SIGNALS then ns.db.nextSig = 1 end
+        self:SkipRung()
+      end
     elseif pattern == 3 and now - app.changedAt >= 6 then
       app.silent = 0
       app.state = "unknown"
@@ -365,11 +390,18 @@ function Live:Diagnose()
   local now = GetTime()
   local function ago(t) return t and string.format("%.0fs ago", now - t) or "never" end
   local sig = db.nextSig or 0
+  local how = self.noSignals and "NOT USED (this game says yes to every sound file and cannot check later)"
+    or self.deferred and "checked a moment after playing (this game says yes to every sound file)"
+    or "taken at the game's word"
+  local rung = ""
+  if not self.lenient then
+    rung = (sig >= 1 and sig <= self.SIGNALS and playable(SIG_PATH:format(sig))) and " (it has rung)" or " (not rung yet)"
+  elseif self.scanning then
+    rung = " (counting the ones already rung)"
+  end
   local lines = {
-    string.format("answers: sound %s, waiting for bell %d of %d (%s), mailboxes opened %d of %d",
-      playable(OK_PATH) and "on" or "OFF", sig, self.SIGNALS,
-      (sig >= 1 and sig <= self.SIGNALS and playable(SIG_PATH:format(sig))) and "it has rung" or "not rung yet",
-      self.usedSlots or 0, self.SLOTS),
+    string.format("answers: sound %s, bells %s, waiting for bell %d of %d%s, mailboxes opened %d of %d",
+      playable(OK_PATH) and "on" or "OFF", how, sig, self.SIGNALS, rung, self.usedSlots or 0, self.SLOTS),
     string.format("timers: last tick %s%s", ago(self.tickedAt), self.tickedAt and "" or " (NOT RUNNING)"),
   }
   local app = self.app

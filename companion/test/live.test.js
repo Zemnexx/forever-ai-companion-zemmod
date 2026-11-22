@@ -13,7 +13,9 @@ import { ADDON_SRC } from '../src/config.js';
 
 const require = createRequire(import.meta.url);
 
-function game(script) {
+// lenient: a game that says yes to playing any file that exists (a Mac, and
+// WoW Forever 1.60.1 on Windows); canCheckLater: it has C_Sound.IsPlaying.
+function game(script, { lenient = false, canCheckLater = true } = {}) {
   const { lua, lauxlib, lualib, to_luastring } = require('fengari');
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
@@ -23,23 +25,34 @@ function game(script) {
   }
   const code = `
     NOW, OUT = 0, {}
-    function SAY(s) OUT[#OUT + 1] = string.format("%d %s", NOW, s) end
+    function SAY(s) OUT[#OUT + 1] = string.format("%d %s", math.floor(NOW), s) end
     GetTime = function() return NOW end
     time = function() return 1700000000 + math.floor(NOW) end
     TICKERS = {}
     C_Timer = {
       -- As the game does it: a ticker whose function fails is not called again.
       NewTicker = function(every, fn) TICKERS[#TICKERS + 1] = { every = every, fn = fn, at = NOW + every } return {} end,
-      After = function() end,
+      After = function(seconds, fn) AFTERS[#AFTERS + 1] = { at = NOW + seconds, fn = fn } end,
     }
+    AFTERS = {}
     RUNG, APP_OPEN = {}, true
-    PlaySoundFile = function(file)
+    local function really(file)
       local name = file:match("sig\\\\(.-)%.wav$")
-      local plays = name == "ok" or name == "st" or (tonumber(name) and RUNG[tonumber(name)] == true)
-      if name == "beat1" or name == "beat2" then plays = APP_OPEN and name == ((math.floor(NOW / 3) % 2 == 0) and "beat1" or "beat2") end
-      if plays then return true, 1 end
+      if name == "beat1" or name == "beat2" then return APP_OPEN and name == ((math.floor(NOW / 3) % 2 == 0) and "beat1" or "beat2") end
+      return name == "ok" or name == "st" or (tonumber(name) ~= nil and RUNG[tonumber(name)] == true)
+    end
+    HANDLES, PLAYED = {}, 0
+    PlaySoundFile = function(file)
+      PLAYED = PLAYED + 1
+      if ${lenient} then
+        -- Yes to anything; whether it really plays shows a moment later.
+        HANDLES[PLAYED] = really(file)
+        return true, PLAYED
+      end
+      if really(file) then return true, PLAYED end
       return false
     end
+    if ${lenient && canCheckLater} then C_Sound = { IsPlaying = function(handle) return HANDLES[handle] == true end } end
     StopSound = function() end
     LOADED = {}
     C_AddOns = {
@@ -60,6 +73,11 @@ function game(script) {
       local stop = NOW + seconds
       while NOW < stop do
         NOW = NOW + 0.5
+        local due = AFTERS
+        AFTERS = {}
+        for _, a in ipairs(due) do
+          if a.at <= NOW then a.fn() else AFTERS[#AFTERS + 1] = a end
+        end
         for _, t in ipairs(TICKERS) do
           while not t.dead and t.at <= NOW do
             t.at = t.at + t.every
@@ -132,10 +150,71 @@ test('a tick that fails does not stop the ticking, and the diagnosis says what h
     ADVANCE(4)`);
   const text = out.join('\n');
   assert.doesNotMatch(text, /a ticker died/);
-  assert.match(text, /answers: sound on, waiting for bell 5 of 500 \(not rung yet\), mailboxes opened 1 of 50/);
+  assert.match(text, /answers: sound on, bells taken at the game's word, waiting for bell 5 of 500 \(not rung yet\), mailboxes opened 1 of 50/);
   assert.match(text, /timers: last tick 0s ago/);
   assert.match(text, /app: ready, beat \d, seen switching true, last check 0s ago/);
   assert.match(text, /transport error: tick: .*boom/);
   assert.match(text, /waiting for armory gear: sent 16s ago, waits 1260s/);
   assert.match(text, /18 result gear ok=true/, 'the answer still arrives');
+});
+
+// WoW Forever 1.60.1 on Windows (and any Mac): PlaySoundFile says yes to an
+// empty file. Taken at its word, every bell had "rung" at login (the addon
+// waited for bell 501 of 500) and both beats "played" (app status unknown),
+// so answers came only by the timer, and never once the wait was over.
+test('a game that says yes to every sound file is found out, and the files are checked a moment later', () => {
+  const out = game(`
+    ns.db.nextSig = 7
+    for i = 1, 6 do RUNG[i] = true end
+    ns.db.plugins = { pending = { a1 = { name = "armory", kind = "gear", t = time(), timeout = 1260 } }, held = {} }
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    ns.Live:OnSent(true)
+    ns.Plugins:Watch("armory", true)
+    ADVANCE(10)
+    SAY("bell " .. ns.db.nextSig .. " app " .. ForeverAICompanionAPI.AppState())
+    SAY(ForeverAICompanionAPI.Diagnose()[1])
+    ADVANCE(500)
+    INBOX = { answers = { { id = "a1", ok = true, answer = "Plan.", data = { kind = "gear" } } } }
+    RUNG[7] = true
+    SAY("the app answers")
+    ADVANCE(4)
+    SAY("bell " .. ns.db.nextSig)`, { lenient: true });
+  const lines = out.filter((l) => !/mailbox$/.test(l));
+  assert.equal(lines[0], '10 bell 7 app ready', 'no bell counted that has not rung, and the app\'s beat is seen');
+  assert.match(lines[1], /bells checked a moment after playing \(this game says yes to every sound file\), waiting for bell 7 of 500, mailboxes opened 1 of 50/);
+  assert.deepEqual(lines.slice(2), ['510 the app answers', '512 result gear ok=true late=nil timedOut=nil', '514 bell 8'], 'picked up when the bell rings, not by the timer');
+  assert.equal(out.filter((l) => /mailbox$/.test(l) && !/^(0|300|512) /.test(l)).length, 0, 'one mailbox at login, the safety one at 5 minutes, and the answer\'s');
+});
+
+test('bells that such a game counted as rung are counted again', () => {
+  const out = game(`
+    ns.db.nextSig = 501
+    for i = 1, 6 do RUNG[i] = true end
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    ADVANCE(6)
+    SAY("bell " .. ns.db.nextSig)
+    local sig, reset = ns.Live:RequestFields()
+    SAY("a request asks for bell " .. sig .. ", start over: " .. tostring(reset))`, { lenient: true });
+  assert.deepEqual(out, ['6 bell 7', '6 a request asks for bell 7, start over: nil'], 'the first silent bell, without asking the app to start them over');
+});
+
+test('such a game with no way to check later goes by the timer, and says so', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    ns.db.plugins = { pending = { a1 = { name = "armory", kind = "gear", t = time(), timeout = 1260 } }, held = {} }
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    ns.Live:OnSent(true)
+    ns.Plugins:Watch("armory", true)
+    ADVANCE(60)
+    SAY("app " .. ForeverAICompanionAPI.AppState())
+    SAY(ForeverAICompanionAPI.Diagnose()[1])
+    INBOX = { answers = { { id = "a1", ok = true, answer = "Plan.", data = { kind = "gear" } } } }
+    ADVANCE(40)`, { lenient: true, canCheckLater: false });
+  const text = out.join('\n');
+  assert.match(text, /60 app unknown/);
+  assert.match(text, /bells NOT USED \(this game says yes to every sound file and cannot check later\)/);
+  assert.match(text, /90 result gear ok=true/, 'the mailbox opened on the timer at 90 seconds brings it');
 });
