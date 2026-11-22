@@ -198,15 +198,33 @@ export function installArmory(wowDir, { files = armoryFiles(), log = () => {} } 
   return dir;
 }
 
-// Updates an installed Armory when this app carries another version. Never
-// installs it by itself. Returns true when the Armory is installed.
+// True when every file of the Armory this app carries is installed as it is here.
+export function sameArmoryFiles(wowDir, files = armoryFiles()) {
+  const dir = armoryDir(wowDir);
+  return Object.entries(files).every(([name, content]) => {
+    try {
+      return fs.readFileSync(path.join(dir, name), 'utf8') === content;
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Updates an installed Armory when its files are not the ones this app
+// carries: another version, or the same version with other contents (a
+// version keeps its number while it is being tested). Never installs it by
+// itself. Returns true when the Armory is installed.
 export function ensureArmory(wowDir, { files = armoryFiles(), log = () => {} } = {}) {
   const installed = installedArmoryVersion(wowDir);
   if (!installed) return false;
   const bundled = bundledArmoryVersion(files);
-  if (bundled && installed !== bundled) {
+  if (!bundled) return true;
+  if (installed !== bundled) {
     installArmory(wowDir, { files });
     log(`Armory updated to ${bundled}`);
+  } else if (!sameArmoryFiles(wowDir, files)) {
+    installArmory(wowDir, { files });
+    log(`Armory ${bundled} replaced: its files were not the ones this app carries`);
   }
   return true;
 }

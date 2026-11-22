@@ -35,6 +35,7 @@ end)
 on({ "PLAYER_LOGIN" }, function()
   if not ns.db then ns.Store:Init() end
   ns.Store:PruneSeen()
+  pcall(ns.Dump.Init)
   -- Registers with the main addon: answers to requests still waiting arrive now.
   if not ns.Advisor:Init() then Util.chat(L.NEED_COMPANION) end
   pcall(ns.Tooltip.Init, ns.Tooltip)
@@ -93,6 +94,15 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     for _, line in ipairs(ns.Scan.Diagnose()) do Util.chat(line) end
     Util.chat("companion: " .. tostring(ns.Advisor:Blocked() or ("ready, app " .. tostring(ns.Advisor:AppState()))))
     if Core.lastError then Util.chat("last error: " .. Core.lastError) end
+  elseif word == "dump" then
+    -- The game's own talent data, saved for the addon's author to read.
+    local ok, nodes = pcall(ns.Dump.Run)
+    if ok then
+      Util.chat(string.format(L.DUMP_DONE, nodes))
+      Util.chat(L.DUMP_NEXT)
+    else
+      Util.chat(string.format(L.DUMP_FAILED, tostring(nodes)))
+    end
   else
     Util.chat(L.HELP)
   end

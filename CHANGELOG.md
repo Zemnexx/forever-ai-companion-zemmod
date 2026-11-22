@@ -6,7 +6,7 @@ The Armory: a second addon for your character's build, on top of the plugins of 
 
 ### Added
 
-- **The app installs the Armory and keeps it up to date.** The dashboard has a new section, **The Armory**: click **Set up**, then **Install the Armory**, and the addon is copied next to the main one. From then on the app updates it whenever it carries a newer version, the same way it updates the main addon. It is never installed unless you ask, **Remove** takes it out again, and uninstalling the app removes it too. Restart WoW after installing.
+- **The app installs the Armory and keeps it up to date.** The dashboard has a new section, **The Armory**: click **Set up**, then **Install the Armory**, and the addon is copied next to the main one. From then on the app replaces it whenever the installed files are not the ones the app carries (a newer version, or a test build that keeps the version number). It is never installed unless you ask, **Remove** takes it out again, and uninstalling the app removes it too. Restart WoW after installing.
 - **Your own settings for the Armory's analyses**, on the same screen:
   - **How thorough**: Quick, Balanced or Thorough (the default). More gives better builds and uses more of your plan or key.
   - **Model for the analyses**: the same as the chat, or another model of the AI you chose, for example Sonnet for the chat and Opus for builds. The choice is kept per AI option, so changing your AI never leaves a model the new one doesn't have.

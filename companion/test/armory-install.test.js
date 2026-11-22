@@ -85,6 +85,17 @@ test('an installed Armory follows the app\'s version; one that is not installed 
   assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
   assert.equal(fs.statSync(path.join(armoryDir(wow), 'Core.lua')).mtimeMs, before);
   assert.equal(logs.length, 1);
+
+  // The same version with other contents (a test build keeps the number): replaced too.
+  const core = armoryFiles()['Core.lua'];
+  fs.writeFileSync(path.join(armoryDir(wow), 'Core.lua'), `${core}\n-- from an earlier test build`);
+  fs.rmSync(path.join(armoryDir(wow), 'Scan.lua'));
+  assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
+  assert.equal(fs.readFileSync(path.join(armoryDir(wow), 'Core.lua'), 'utf8'), core);
+  assert.equal(fs.existsSync(path.join(armoryDir(wow), 'Scan.lua')), true, 'a file that was missing is back');
+  assert.equal(logs[1], `Armory ${bundledArmoryVersion()} replaced: its files were not the ones this app carries`);
+  assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
+  assert.equal(logs.length, 2);
 });
 
 test('uninstalling the app takes the Armory with it', (t) => {
