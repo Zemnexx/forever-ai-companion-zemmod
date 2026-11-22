@@ -144,6 +144,10 @@ Turn on **Voice questions** in the app's dashboard. It needs invisible sending, 
 - **Follow-up questions** work the same way: they go to the open chat, so the assistant knows what you were talking about.
 - The microphone is open only while you talk (at most 30 seconds), and Windows shows when it's in use. The recording goes to OpenAI to be turned into text and is never saved; OpenAI charges your API key per minute of audio.
 
+### The Armory (optional second addon)
+
+[Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) is a separate addon for your character's build: the talent build for the specialization you choose, a gear plan with where to find each upgrade, rotations ranked by a simulator inside this app, and interactions between your talents, spells and items that the simulator can measure. It has no connection of its own: it asks through this addon, and the app answers with the AI you already chose. Install it from its own repository, into the same `Interface\AddOns` folder, and open it with `/armory`.
+
 ### Chat commands (optional)
 
 Every command also works with its Spanish word (shown in parentheses).
@@ -394,6 +398,7 @@ addon/ForeverAICompanion/   Addon (Lua 5.1, modern client, interface 16001)
   UI.lua Button.lua         Chat window (and the combat warning) and minimap button
   Chats.lua Notify.lua      Conversations and notifications
   Personas.lua              Fizzi and Rizzik
+  Plugins.lua               Other addons asking the app through this one (ForeverAICompanionAPI)
   Core.lua                  Events and /ia commands
 companion/
   src/app/                  App: main (self-install, tray), controller,
@@ -415,6 +420,11 @@ companion/
   src/prompt.js             Instructions for the AI
   src/guide.js              WoW Forever guide: date, version, downloads and picking topic sections
   src/providers.js          Claude, OpenAI/Gemini/Ollama, Claude Code, Codex, test
+  src/plugins.js            Plugins: the app's side of other addons' requests
+  src/armory/               The Armory plugin: talent builds, gear plans, rotations, interactions
+    prompts.js              What the AI is told for each kind of request
+    model-spec.js           The combat model the AI writes for the simulator
+    sim/engine.js           The combat simulator (rotations, stat weights, ability table)
   src/codex.js              Codex: install, sign-in and running it
   src/claude-code.js        Claude Code: install and sign-in
   src/tts-voice.js          Installs the silent voice

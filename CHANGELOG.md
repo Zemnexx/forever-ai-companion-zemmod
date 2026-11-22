@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0 (addon 1.17.0)
+
+### Added
+
+- **Other addons can ask the app through this one, starting with the Armory.** The addon now has a small public API (`ForeverAICompanionAPI`, in `Plugins.lua`) that a second addon can use to send the app a request and get data back, over the same channels and with the same per-PC request code as a question. The app answers such a request only when it has a plugin of that name (`companion/src/plugins.js`), and what a plugin tells the AI is written in the app, never taken from the request.
+  - A plugin's own data is sent only when it changed, like your character's.
+  - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in.
+  - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
+  - Mailboxes are opened less often while waiting for a plugin's answer, which takes minutes, so they last as long as before.
+- **The Armory's side of the app** (`companion/src/armory`), for the [Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) addon. It uses the AI you already chose, asked with more effort, room for a longer answer and more patience (`"armory"` in `config.json`: `effort`, `maxTokens`, `timeoutMs`, `iterations`).
+  - **Talent builds.** The AI proposes the order in which to spend every point from your class's real talent trees, and the app replays that order under the game's rules (points per row, prerequisites, maximum ranks). Points the game would not accept never reach you, and a build with holes is sent back to the AI once with what was wrong.
+  - **Gear plans.** Upgrades per slot with where each comes from, stat weights for scoring items in the game, and item ids only when the AI is sure of them (the addon checks each one against the game).
+  - **Rotations, by simulation.** The AI writes a combat model of your character from your spells' tooltips, talents and stats, with a few candidate rotations. A simulator in the app (`sim/engine.js`: swing timers, the classic attack table, armor, cooldowns, resources, damage over time, buffs and procs) runs each one for hundreds of fights, ranks them, and measures what each stat is worth by simulating again with a little more of it. A model the simulator can't run is sent back once with the problems it found.
+  - **Interactions.** The AI looks for combinations of your talents, spells and item effects that are stronger than they look. An idea that changes your numbers comes with a change to your combat model, and the simulator measures it against your last rotation.
+  - **Test mode answers too.** With no AI chosen, every kind of request gets a placeholder made from your own data through the same checks and the same simulator, so the connection can be tried for free.
+
+### Fixed
+
+- **Answers with certain field names no longer break the mailbox.** A table key that is a Lua keyword (`for`, `end`...) was written bare into the mailbox file, which the game could not load. No answer had such a key until now.
+
 ## 2.1.2 (addon 1.16.14)
 
 ### Added
