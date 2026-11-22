@@ -1,0 +1,24 @@
+## Interface: 16001
+## Title: Forever AI Companion: Armory
+## Notes: Talent builds, gear plans and simulated rotations for your character, worked out by your own AI. Requires Forever AI Companion and its app.
+## Author: Forever AI Companion
+## Version: 0.1.0
+## Dependencies: ForeverAICompanion
+## SavedVariables: ForeverAICompanionArmory_DB
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## AddonCompartmentFunc: ForeverAICompanionArmory_Toggle
+## Group: ForeverAICompanion
+
+Locale.lua
+Util.lua
+Store.lua
+Scan.lua
+Items.lua
+Build.lua
+Panels.lua
+Advisor.lua
+Auction.lua
+UI.lua
+Tooltip.lua
+Button.lua
+Core.lua

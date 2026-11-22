@@ -1,6 +1,6 @@
 // Developer mode: run the companion in the terminal (no window).
 import { loadConfig, resolveWowDir } from '../src/config.js';
-import { ensureAddon, isAddonInstalled } from '../src/install.js';
+import { ensureAddon, ensureArmory, isAddonInstalled } from '../src/install.js';
 import { startWatcher } from '../src/watcher.js';
 import { loadKnowledge } from '../src/prompt.js';
 
@@ -12,6 +12,7 @@ try {
   // Updates the addon's files (or installs it under its current name when only
   // the one from before the rename is there).
   ensureAddon(cfg, { wowDir, log });
+  ensureArmory(wowDir, { log }); // only when it is installed already
   if (!isAddonInstalled(wowDir, cfg)) {
     throw new Error('The addon is not installed. Run first: npm run install-addon');
   }

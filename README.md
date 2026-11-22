@@ -146,7 +146,11 @@ Turn on **Voice questions** in the app's dashboard. It needs invisible sending, 
 
 ### The Armory (optional second addon)
 
-[Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) is a separate addon for your character's build: the talent build for the specialization you choose, a gear plan with where to find each upgrade, rotations ranked by a simulator inside this app, and interactions between your talents, spells and items that the simulator can measure. It has no connection of its own: it asks through this addon, and the app answers with the AI you already chose. Install it from its own repository, into the same `Interface\AddOns` folder, and open it with `/armory`.
+[Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) is a separate addon for your character's build: the talent build for the specialization you choose, a gear plan with where to find each upgrade, rotations ranked by a simulator inside this app, and interactions between your talents, spells and items that the simulator can measure. It has no connection of its own: it asks through this addon, and the app answers with the AI you already chose.
+
+- **Install it from the app:** in the dashboard, under **The Armory**, click **Set up** and then **Install the Armory**. Restart WoW, and open it with `/armory`. The app keeps it up to date from then on, like the main addon.
+- **How its analyses are asked** is on the same screen: how thorough (Quick, Balanced or Thorough), and which model of your AI to use for them, which can be a stronger one than the chat's.
+- It needs invisible sending: talent trees and spell tooltips don't fit on the on-screen line.
 
 ### Chat commands (optional)
 
@@ -388,6 +392,8 @@ Open the app and, under **More options**, click **Uninstall**. It removes the ad
 ### Structure
 
 ```
+addon/ForeverAICompanionArmory/  The Armory addon: a copy of its own repository's files (scripts/sync-armory.js)
+addon/armory-source.json    Which commit of the Armory that copy is
 addon/ForeverAICompanion/   Addon (Lua 5.1, modern client, interface 16001)
   Locale.lua                English and Spanish texts (by the client's language)
   Collect.lua               Reads the character's data (each section separately),
@@ -436,6 +442,7 @@ companion/
 
   scripts/build.js          Packages ForeverAICompanion.exe
   scripts/sign.js           Signs releases and the guide (local key or Key Vault)
+  scripts/sync-armory.js    Copies the Armory addon in from its repository
   test/                     Tests (they run the addon's real Lua)
 ```
 
@@ -493,6 +500,7 @@ Paste the printed public key into `TRUSTED_KEYS`. To rotate, add the new key, re
 
 Installed apps (1.7.0 and later) pick up every new release by themselves (`src/updater.js`), so:
 
+0. If the Armory changed in its repository: bump its version there, then `node scripts/sync-armory.js <path to the Armory repository>` and commit the copy. Players' installed Armory is updated when its version differs from the one the app carries.
 1. Bump the number in `companion/src/app/controller.js` (`VERSION`) and, if the addon changed, in `addon/ForeverAICompanion/ForeverAICompanion.toc`. If Blizzard raised the game's interface number, update `## Interface:` in the toc too, or WoW will treat the addon as out of date.
 2. `npm test` and `npm run build`.
 3. Sign the exe. The signature covers its name, `VERSION`, size and SHA-256, so it can't be reused for another file or version. With a local key: `node scripts/sign.js release dist/ForeverAICompanion.exe --key <key.pem>`. With Key Vault: `node scripts/sign.js digest release dist/ForeverAICompanion.exe`, then `az keyvault key sign --vault-name <vault> --name faic-signing --algorithm ES256 --digest <digest>`, then `node scripts/sign.js attach release dist/ForeverAICompanion.exe <signature>`.

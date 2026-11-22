@@ -10,6 +10,11 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const APP_ID = 'ForeverAICompanion';
 export const ADDON_NAME = APP_ID;
 export const ADDON_SRC = path.resolve(ROOT, '..', 'addon', ADDON_NAME);
+// The Armory: an optional second addon the app installs and updates when the
+// player asks for it (install.js). Its files are a copy of the ones in its own
+// repository, brought in by scripts/sync-armory.js.
+export const ARMORY_ADDON = 'ForeverAICompanionArmory';
+export const ARMORY_SRC = path.resolve(ROOT, '..', 'addon', ARMORY_ADDON);
 // The project's previous name, still found on PCs that had version 1.5.0 or
 // older (addon folders, saved variables, data and install folders). Only used
 // to migrate those installs.
@@ -91,8 +96,10 @@ export const DEFAULTS = {
 
   // The Armory plugin (src/armory): character builds worked out with the
   // same AI as the chat, asked with more effort, room for a longer answer and
-  // more patience. iterations: fights simulated per rotation.
-  armory: { effort: 'high', maxTokens: 16000, timeoutMs: 600000, iterations: 300 },
+  // more patience. iterations: fights simulated per rotation. models: the
+  // model to use instead of the chat's, per AI option ("claude-code": "opus"),
+  // chosen in the app's window; none = the chat's model.
+  armory: { effort: 'high', maxTokens: 16000, timeoutMs: 600000, iterations: 300, models: {} },
 
   // Where the up-to-date WoW Forever guide is published (see src/guide.js).
   // The app downloads it every few hours; null = only the guide inside the app.

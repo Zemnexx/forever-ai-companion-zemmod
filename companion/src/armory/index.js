@@ -27,18 +27,49 @@ import { openArmoryStore } from './store.js';
 import { sampleResult } from './sample.js';
 
 export const KINDS = ['talents', 'gear', 'rotation', 'discover'];
+const PET_CLASSES = ['HUNTER', 'WARLOCK'];
 const MAX_DATA_BYTES = 60000; // what one answer may weigh in the game's mailbox
 
-// The chosen AI with the Armory's own effort, answer size and patience.
+// How thorough an analysis is asked to be (the app's window offers these).
+export const ARMORY_EFFORTS = ['low', 'medium', 'high'];
+
+// The model chosen for the Armory with the current AI option, or null for
+// the chat's own model.
+export function armoryModel(cfg) {
+  const model = cfg.armory?.models?.[cfg.preset || cfg.provider];
+  return typeof model === 'string' && model.trim() ? model.trim() : null;
+}
+
+// The change to the saved settings for what the app's window sent: how
+// thorough, and the model for the current AI option (empty = the chat's).
+// Kept per AI option, so changing the AI never leaves a model it doesn't have.
+export function armoryPatch(cfg, { effort, model } = {}) {
+  const patch = {};
+  if (effort !== undefined) {
+    if (!ARMORY_EFFORTS.includes(effort)) throw err('unknownOption');
+    patch.effort = effort;
+  }
+  if (model !== undefined) {
+    const name = String(model ?? '').trim();
+    if (name && !/^[\w.:/-]{1,80}$/.test(name)) throw err('unknownOption');
+    patch.models = { [cfg.preset || cfg.provider]: name || null };
+  }
+  return { armory: patch };
+}
+
+// The chosen AI with the Armory's own effort, model, answer size and patience.
 export function armoryConfig(cfg) {
   const a = cfg.armory || {};
   const effort = a.effort || 'high';
+  const model = armoryModel(cfg);
+  const withModel = (section) => (model ? { ...section, model } : section);
   return {
     ...cfg,
     timeoutMs: a.timeoutMs || 600000,
-    anthropic: { ...cfg.anthropic, effort, maxTokens: a.maxTokens || 16000 },
-    claudeCode: { ...cfg.claudeCode, effort },
-    codex: { ...cfg.codex, effort },
+    anthropic: { ...withModel(cfg.anthropic), effort, maxTokens: a.maxTokens || 16000 },
+    claudeCode: { ...withModel(cfg.claudeCode), effort },
+    codex: { ...withModel(cfg.codex), effort },
+    openai: withModel(cfg.openai),
   };
 }
 
@@ -134,6 +165,10 @@ const handlers = {
     });
     // Kept on this PC for the gear plan (measured weights) and for testing ideas.
     if (verdict.keep) store.set(charKey, { ...verdict.keep, spec: profile.spec, goal: profile.goal });
+    // Pets are not simulated yet (later work): a class that fights with one is told.
+    if (PET_CLASSES.includes(ctx.character?.classToken)) {
+      verdict.result.assumptions = [t('armoryNoPets'), ...verdict.result.assumptions].slice(0, 6);
+    }
     return verdict.result;
   },
 

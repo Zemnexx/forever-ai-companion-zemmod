@@ -7,9 +7,10 @@ import { PRESETS, env, envVar, loadConfig, readUserConfig, saveConfig, wowPaths 
 import { startBeacon } from '../beacon.js';
 import { findWowDirs, isWowRunning, isWowRunningAsync, normalizeWowDir } from '../detect.js';
 import {
-  bundledAddonVersion, ensureAddon, finishLegacyMigration, hasLegacyAddon, install, installedAddonVersion, isAddonInstalled,
-  uninstall as uninstallAddon,
+  bundledAddonVersion, bundledArmoryVersion, ensureAddon, ensureArmory, finishLegacyMigration, hasLegacyAddon, install, installArmory,
+  installedAddonVersion, installedArmoryVersion, isAddonInstalled, uninstall as uninstallAddon, uninstallArmory,
 } from '../install.js';
+import { ARMORY_EFFORTS, armoryModel, armoryPatch } from '../armory/index.js';
 import { knowledgeReadme, micCsSource, sampleContext } from '../assets.js';
 import { buildMessages, buildSystem, cleanAnswer, loadKnowledge, plainAnswer } from '../prompt.js';
 import { ask, canSearch } from '../providers.js';
@@ -57,6 +58,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
   let trayReady = false; // icon next to the Windows clock is running
   const events = [];
   const bundledVersion = bundledAddonVersion();
+  const armoryVersion = bundledArmoryVersion(); // null: this copy carries no Armory
 
   const knowledgeDir = () => path.join(env.dataDir, 'knowledge');
   const ensureKnowledgeDir = () => {
@@ -165,6 +167,12 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
       ensureAddon(cfg, { wowDir: cfg.wowDir, log });
     } catch (e) {
       log(`Could not update the addon: ${e.message}`);
+    }
+    // The Armory, when the player installed it: kept at this app's version too.
+    try {
+      ensureArmory(cfg.wowDir, { log });
+    } catch (e) {
+      log(`Could not update the Armory: ${e.message}`);
     }
     watchLegacyAddon();
     if (!addonOk()) { watcherError = t('needAddon'); return; }
@@ -316,6 +324,14 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
           // "need-login" (Claude Code / Codex signed out), or null.
           issue: ['need-ai', 'need-login'].includes(notReadyReason()) ? notReadyReason() : null,
         },
+        // The Armory (optional second addon) and how its analyses are asked.
+        armory: {
+          available: Boolean(armoryVersion),
+          installed: wowDirValid() ? installedArmoryVersion(cfg.wowDir) : null,
+          bundledVersion: armoryVersion,
+          effort: ARMORY_EFFORTS.includes(cfg.armory?.effort) ? cfg.armory.effort : 'high',
+          model: armoryModel(cfg),
+        },
         running: Boolean(watcher),
         problem: watcherError,
         events: [...events].reverse(),
@@ -406,6 +422,27 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
       install(cfg, { wowDir: cfg.wowDir, log });
       restartWatcher();
       return { wowRunning: isWowRunning() };
+    },
+
+    // The Armory addon: installed when the player asks, next to the main addon.
+    installArmory() {
+      if (!wowDirValid()) throw err('needGameFolder');
+      if (!addonOk()) throw err('needAddon');
+      if (!armoryVersion) throw err('armoryNotBundled');
+      installArmory(cfg.wowDir, { log });
+      return { version: armoryVersion, wowRunning: isWowRunning() };
+    },
+    uninstallArmory() {
+      if (!wowDirValid()) throw err('needGameFolder');
+      uninstallArmory(cfg.wowDir);
+      log('Armory removed.');
+      return {};
+    },
+    // How the Armory's analyses are asked: how thorough, and with which model
+    // of the chosen AI (empty = the chat's model).
+    setArmory(body) {
+      save(armoryPatch(cfg, body));
+      return { effort: cfg.armory.effort, model: armoryModel(cfg) };
     },
 
     setAI({ preset, apiKey, model }) {

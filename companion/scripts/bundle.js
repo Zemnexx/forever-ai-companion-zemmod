@@ -4,12 +4,13 @@
 import path from 'node:path';
 import { build } from 'esbuild';
 import { ROOT } from '../src/config.js';
-import { GUIDE_FILES, addonFiles, appIconIco, appIconPng, foreverGuide, knowledgeReadme, micCsSource, sampleContext, trayCsSource, ttsEngineSource, uiHtml } from '../src/assets.js';
+import { GUIDE_FILES, addonFiles, armoryFiles, appIconIco, appIconPng, foreverGuide, knowledgeReadme, micCsSource, sampleContext, trayCsSource, ttsEngineSource, uiHtml } from '../src/assets.js';
 
 export async function bundleApp(outfile) {
   // Replace src/assets.js with a module that has every file embedded.
   const embedded = `
 const ADDON = ${JSON.stringify(addonFiles())};
+const ARMORY = ${JSON.stringify(armoryFiles())};
 const UI = ${JSON.stringify(uiHtml())};
 const SAMPLE = ${JSON.stringify(sampleContext())};
 const KNOWLEDGE = ${JSON.stringify(knowledgeReadme())};
@@ -27,6 +28,7 @@ const GUIDES = ${JSON.stringify(Object.fromEntries(GUIDE_FILES.map((f) => [f, fo
 export const foreverGuide = (file = 'wow-forever.md') => GUIDES[file] || '';
 export const ttsEngineSource = () => TTS;
 export const addonFiles = () => ({ ...ADDON });
+export const armoryFiles = () => ({ ...ARMORY });
 export const uiHtml = () => UI;
 export const sampleContext = () => structuredClone(SAMPLE);
 export const knowledgeReadme = () => KNOWLEDGE;

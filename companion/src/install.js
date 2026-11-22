@@ -10,8 +10,8 @@
 // see inbox.js).
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADDON_NAME, LEGACY_NAME, wowPaths } from './config.js';
-import { addonFiles } from './assets.js';
+import { ADDON_NAME, ARMORY_ADDON, LEGACY_NAME, wowPaths } from './config.js';
+import { addonFiles, armoryFiles } from './assets.js';
 import { isWowRunning } from './detect.js';
 import { inboxSource, silentWav, writeAtomic } from './inbox.js';
 import { createStatusFiles } from './beacon.js';
@@ -165,4 +165,52 @@ export function uninstall(cfg, wowDir = cfg.wowDir) {
   fs.rmSync(p.addonDir, { recursive: true, force: true });
   for (let i = 1; i <= cfg.slots; i++) fs.rmSync(p.slotDir(i), { recursive: true, force: true });
   removeLegacyAddon(wowDir);
+  uninstallArmory(wowDir);
+}
+
+// The Armory ----------------------------------------------------------------------
+// An optional second addon (character builds) that asks through ours. It needs
+// no mailboxes, signals or key of its own, so installing it is copying its
+// files; the player asks for it in the app's window, and from then on it is
+// kept at the version this app carries, like the main addon.
+
+export const ARMORY_TOC = `${ARMORY_ADDON}.toc`;
+export const armoryDir = (wowDir) => path.join(wowPaths(wowDir).addons, ARMORY_ADDON);
+
+// Version of the Armory this app carries, or null when it carries none.
+export const bundledArmoryVersion = (files = armoryFiles()) => addonVersion(files[ARMORY_TOC]);
+
+export function installedArmoryVersion(wowDir) {
+  const toc = path.join(armoryDir(wowDir), ARMORY_TOC);
+  return fs.existsSync(toc) ? addonVersion(fs.readFileSync(toc, 'utf8')) : null;
+}
+
+// Writes the Armory's files, and removes Lua files an older version left behind.
+export function installArmory(wowDir, { files = armoryFiles(), log = () => {} } = {}) {
+  if (!files[ARMORY_TOC]) throw new Error('This copy of the app does not carry the Armory addon.');
+  const dir = armoryDir(wowDir);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of fs.readdirSync(dir)) {
+    if (/\.(lua|toc|xml)$/i.test(name) && !(name in files)) fs.rmSync(path.join(dir, name), { force: true });
+  }
+  for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
+  log(`Armory ${bundledArmoryVersion(files)} installed in: ${dir}`);
+  return dir;
+}
+
+// Updates an installed Armory when this app carries another version. Never
+// installs it by itself. Returns true when the Armory is installed.
+export function ensureArmory(wowDir, { files = armoryFiles(), log = () => {} } = {}) {
+  const installed = installedArmoryVersion(wowDir);
+  if (!installed) return false;
+  const bundled = bundledArmoryVersion(files);
+  if (bundled && installed !== bundled) {
+    installArmory(wowDir, { files });
+    log(`Armory updated to ${bundled}`);
+  }
+  return true;
+}
+
+export function uninstallArmory(wowDir) {
+  fs.rmSync(armoryDir(wowDir), { recursive: true, force: true });
 }

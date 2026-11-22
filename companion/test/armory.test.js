@@ -326,6 +326,17 @@ test('a rotation request is simulated, and its model kept for the gear plan and 
   assert.equal(found.data.baseline, true);
 });
 
+test('a class that fights with a pet is told the pet is not simulated', async () => {
+  const hunter = request('rotation');
+  hunter.context.character.classToken = 'HUNTER';
+  const { askImpl } = scripted({ summary: 's', assumptions: ['one', 'two', 'three', 'four', 'five', 'six'], model: MELEE_MODEL });
+  const out = await createArmory({ store: tmpStore(), askImpl }).handle(hunter, { cfg });
+  assert.match(out.data.assumptions[0], /pet's damage is not simulated/);
+  assert.equal(out.data.assumptions.length, 6);
+  const warrior = await createArmory({ store: tmpStore(), askImpl }).handle(request('rotation'), { cfg });
+  assert.equal(warrior.data.assumptions[0], 'one');
+});
+
 test('a model the simulator cannot run is sent back, and fails clearly if it stays broken', async () => {
   const broken = { summary: 's', model: { abilities: [], rotations: [] } };
   const fixed = scripted(broken, { summary: 'ok', model: MELEE_MODEL });

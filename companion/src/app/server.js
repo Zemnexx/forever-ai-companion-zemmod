@@ -49,6 +49,9 @@ export function createServer(controller, { onQuit = () => {}, onWindowClosed = (
     'talk-status': () => controller.talkStatus(),
     'set-talk': (body) => controller.setTalk(body),
     'talk-test': () => controller.talkTest(),
+    'armory-install': () => controller.installArmory(),
+    'armory-uninstall': () => controller.uninstallArmory(),
+    'set-armory': (body) => controller.setArmory(body),
     'window-closed': (body) => {
       const closedAt = Date.now();
       pages.delete(String(body?.page || ''));

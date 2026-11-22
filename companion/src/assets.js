@@ -3,7 +3,7 @@
 // packaged ForeverAICompanion.exe is self-contained.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADDON_SRC, ROOT } from './config.js';
+import { ADDON_SRC, ARMORY_SRC, ROOT } from './config.js';
 
 // { "ForeverAICompanion.toc": "...", "Core.lua": "...", ... }
 // RequestKey.lua is created per PC by the app (request-key.js): a copy left
@@ -13,6 +13,19 @@ export function addonFiles() {
   for (const name of fs.readdirSync(ADDON_SRC)) {
     const file = path.join(ADDON_SRC, name);
     if (name !== 'RequestKey.lua' && fs.statSync(file).isFile()) out[name] = fs.readFileSync(file, 'utf8');
+  }
+  return out;
+}
+
+// The Armory addon's files, the same way: { "ForeverAICompanionArmory.toc": "...", ... }.
+// Empty when this copy of the app was built without them.
+export function armoryFiles() {
+  const out = {};
+  let names = [];
+  try { names = fs.readdirSync(ARMORY_SRC); } catch { /* not in this checkout */ }
+  for (const name of names) {
+    const file = path.join(ARMORY_SRC, name);
+    if (fs.statSync(file).isFile()) out[name] = fs.readFileSync(file, 'utf8');
   }
   return out;
 }
