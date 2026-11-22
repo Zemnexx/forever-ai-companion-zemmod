@@ -232,6 +232,12 @@ test('the AI knows WoW Forever and searches only when it can', () => {
   assert.match(withSearch, /The Drowned City/, 'built-in Forever guide is included');
   assert.match(withSearch, /## Searching the internet/);
   assert.match(without, /You cannot search the internet/);
+  // Unsure whether Forever changed something: search, don't hedge with Classic.
+  assert.match(withSearch, /- Doubt means search\. If you are about to answer with what Classic had and add that Forever may have changed it[^\n]*search first/);
+  assert.match(withSearch, /- Never answer with what Classic had plus a warning that Forever may differ: search instead\./);
+  assert.doesNotMatch(withSearch, /Forever may differ\.`?$/m);
+  assert.match(without, /say once, briefly, that it is how the original game had it and Forever may differ/);
+  assert.doesNotMatch(without, /Doubt means search/);
   assert.match(withSearch, /Never include links/);
 
   // Which providers search, and with what.

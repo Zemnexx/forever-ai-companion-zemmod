@@ -32,6 +32,7 @@
 
   A reminder already given in the chat isn't repeated, and on a hardcore character a real danger comes first in the answer, not as a reminder.
 - **Recipes only go with crafting questions.** They are the longest part of your data (about 1,500 tokens for three professions), so the app now sends them only when the question is about crafting, names a profession, a recipe or one of its materials (also in the question just before), or a trainer's window is open. Your profession skill levels still go with every question. Recipes that no longer give skill go as a plain list of names, a third of the size.
+- **It searches instead of guessing from Classic.** When the AI wasn't sure whether Forever changed something, it answered with what the original game had and added that Forever may have changed it. Now that doubt makes it search first, and it answers from memory only when it's sure the fact is the same in Forever. If it can't confirm it after searching, it gives what the Forever guides say and that it may not be exact. Without search (an OpenAI API key, or **Search the internet** off), it still says when an answer comes from the original game.
 - **No more reminders about abilities missing from your bars.** They kept naming abilities your spec doesn't use. The AI still knows which abilities are on no bar, and uses that only when you ask about your bars, keybinds, rotation or a spell you can't find.
 
 ### Fixed
