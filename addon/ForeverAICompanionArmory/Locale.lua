@@ -103,6 +103,12 @@ local L = {
   -- Gear
   WEIGHTS = "Stat weights",
   GO_FOR_FIRST = "Go for these first",
+  GEAR_FROM = "Gear from:",
+  GEAR_FROM_DUNGEON = "Dungeons",
+  GEAR_FROM_RAID = "Raids",
+  GEAR_FROM_QUEST = "Questing",
+  GEAR_FROM_TIP = "Untick to keep this out of your gear plan, then analyze again. At least one of the three stays ticked. Crafted, vendor, reputation, world drop and auction house gear is always considered.",
+  OTHER_SOURCES = "This plan was made for gear from: %s. Analyze again for a plan with your current choice.",
   WEARING = "equipped",
   SLOT_EMPTY = "Nothing equipped here.",
   NEEDS_LEVEL = "level %d",

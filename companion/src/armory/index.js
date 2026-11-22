@@ -20,7 +20,7 @@ import { err, t } from '../i18n.js';
 import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.js';
 import { extractJson, list, num, str } from './json.js';
 import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
-import { equippable, shapeGear } from './gear.js';
+import { equippable, leftOut, shapeGear } from './gear.js';
 import { keepFromRun, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
 import { openArmoryStore } from './store.js';
@@ -93,6 +93,8 @@ function profileOf(req) {
     role: ['dps', 'tank', 'healer'].includes(role) ? role : 'dps',
     notes: str(input.notes, 400) || undefined,
     aoe: input.aoe === true || undefined,
+    // Gear plans only: dungeons, raids or questing the player left out.
+    without: leftOut(input.without).length ? leftOut(input.without) : undefined,
   };
 }
 
@@ -142,7 +144,7 @@ const handlers = {
       armory_weights: kept?.weights || undefined,
     };
     return (await converse(ai, system('gear'), data, (raw) => {
-      const result = shapeGear(raw);
+      const result = shapeGear(raw, { without: profile.without });
       const picks = result.slots.reduce((n, s) => n + s.picks.length, 0);
       return { result: picks || result.summary ? result : null, score: picks, retry: picks ? null : ['"slots" has no usable picks'] };
     })).result;
@@ -248,6 +250,7 @@ export function createArmory({ store = null, askImpl = ask } = {}) {
       const data = await handlers[kind]({ ctx, profile, system, ai, store: opened, charKey, kept, iterations, log });
       // What was asked for, so the addon can tell a result for another build.
       data.asked = { spec: profile.spec, goal: profile.goal, role: profile.role, level: num(ctx.character?.level) ?? undefined };
+      if (kind === 'gear' && profile.without) data.asked.without = profile.without;
       if (JSON.stringify(data).length > MAX_DATA_BYTES) throw err('armoryTooBig');
       return { text: summarize(kind, data), data, model, usage };
     },

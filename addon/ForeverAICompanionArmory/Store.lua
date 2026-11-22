@@ -12,6 +12,9 @@ ns.Store = Store
 Store.KINDS = { "talents", "gear", "rotation", "discover" }
 Store.GOALS = { "leveling", "dungeons", "raids", "pvp", "solo" }
 Store.ROLES = { "dps", "tank", "healer" }
+-- What the gear plan may send the player to do. Each can be left out of the
+-- plan; at least one of them stays in.
+Store.GEAR_SOURCES = { "dungeon", "raid", "quest" }
 local MAX_SEEN = 1500
 
 function Store:Init()
@@ -56,6 +59,42 @@ function Store:SetProfile(field, value)
   if p[field] == value then return false end
   p[field] = value
   return true
+end
+
+-- Where this character wants gear from: { dungeon = true, raid = true, quest = true }.
+-- Kept as what is left out, so a character that never chose has all three.
+function Store:GearSources()
+  local c = self:Char()
+  local without = c and c.gearWithout or {}
+  local out = {}
+  for _, source in ipairs(Store.GEAR_SOURCES) do out[source] = not without[source] end
+  return out
+end
+
+-- Takes a source into the gear plan or leaves it out. False when that would
+-- leave none of them in (or the source is not one of them): nothing changes.
+function Store:SetGearSource(source, on)
+  local c = self:Char()
+  local known, others = false, 0
+  local without = c and c.gearWithout or {}
+  for _, s in ipairs(Store.GEAR_SOURCES) do
+    if s == source then known = true elseif not without[s] then others = others + 1 end
+  end
+  if not c or not known or (not on and others == 0) then return false end
+  without[source] = (not on) or nil
+  c.gearWithout = next(without) and without or nil
+  return true
+end
+
+-- The sources left out, in their fixed order, or nil when none is.
+function Store:GearWithout()
+  local c = self:Char()
+  local without = c and c.gearWithout or {}
+  local out = {}
+  for _, source in ipairs(Store.GEAR_SOURCES) do
+    if without[source] then out[#out + 1] = source end
+  end
+  return #out > 0 and out or nil
 end
 
 -- A result: { data, at, model, tokens, text, forProfile }.

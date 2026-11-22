@@ -290,6 +290,41 @@ function UI:Build()
   self.analyze = button(page, L.ANALYZE, 140, function() UI:Analyze() end)
   self.analyze:SetPoint("TOPRIGHT", -PAD, -PAD)
 
+  -- The gear tab's own row, above its plan: what the plan may send the player to do.
+  local sources = CreateFrame("Frame", nil, page)
+  sources:SetPoint("TOPLEFT", PAD, -64)
+  sources:SetSize(BODY_WIDTH, 24)
+  local from = text(sources, "GameFontHighlightSmall")
+  from:SetPoint("LEFT", 0, 0)
+  from:SetJustifyV("MIDDLE")
+  from:SetText(L.GEAR_FROM)
+  color(from, "muted")
+  self.sourceChecks = {}
+  local x = (from:GetStringWidth() or 60) + 8
+  for _, source in ipairs(ns.Store.GEAR_SOURCES) do
+    local name = L["GEAR_FROM_" .. source:upper()]
+    local c = CreateFrame("CheckButton", nil, sources, "UICheckButtonTemplate")
+    c:SetSize(24, 24)
+    c:SetPoint("LEFT", x, 0)
+    local fs = text(c, "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", c, "RIGHT", 1, 0)
+    fs:SetJustifyV("MIDDLE")
+    fs:SetText(name)
+    local width = fs:GetStringWidth() or 50
+    -- The name is part of the checkbox: a click on it ticks it too.
+    if c.SetHitRectInsets then c:SetHitRectInsets(0, -width, 0, 0) end
+    c:SetScript("OnClick", function(self)
+      -- The last one that is ticked stays ticked.
+      if not ns.Store:SetGearSource(source, self:GetChecked() and true or false) then self:SetChecked(true) end
+      UI:Refresh()
+    end)
+    hint(c, name, L.GEAR_FROM_TIP)
+    self.sourceChecks[source] = c
+    x = x + 24 + width + 16
+  end
+  sources:Hide()
+  self.sources = sources
+
   local scroll = CreateFrame("ScrollFrame", "ForeverAICompanionArmoryScroll", page, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", PAD, -64)
   scroll:SetPoint("BOTTOMRIGHT", -PAD - 22, PAD)
@@ -657,10 +692,21 @@ function UI:Refresh()
     color(self.status, blocked and "warn" or "muted")
     self.analyze:Hide()
     self.scroll:Hide()
+    self.sources:Hide()
     self.profile:Show()
     self:RefreshProfile()
   else
     self.profile:Hide()
+    -- The gear tab has its row of sources between the status and the plan.
+    local gear = tab == "gear"
+    self.scroll:SetPoint("TOPLEFT", PAD, gear and -94 or -64)
+    if gear then
+      local on = ns.Store:GearSources()
+      for source, c in pairs(self.sourceChecks) do c:SetChecked(on[source] and true or false) end
+      self.sources:Show()
+    else
+      self.sources:Hide()
+    end
     self.scroll:Show()
     self.analyze:Show()
     self.heading:SetText(L["TAB_" .. tab:upper()])

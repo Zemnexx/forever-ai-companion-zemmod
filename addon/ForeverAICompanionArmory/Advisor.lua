@@ -106,9 +106,12 @@ function Advisor:Ask(kind)
 
   local started = time()
   ns.Store:SetAsking(kind, { state = "preparing", t = started })
+  local input = { spec = profile.spec, goal = profile.goal, role = profile.role, notes = profile.notes }
+  -- The gear plan stays away from what the player left out (dungeons, raids or questing).
+  if kind == "gear" then input.without = ns.Store:GearWithout() end
   local id, why = a.Request(self.PLUGIN, {
     kind = kind,
-    input = { spec = profile.spec, goal = profile.goal, role = profile.role, notes = profile.notes },
+    input = input,
     sections = sections,
     only = spec.only,
     summary = string.format("%s: %s (%s, %s)", L.TITLE, L["KIND_" .. kind:upper()], profile.spec, L["GOAL_" .. profile.goal:upper()]),

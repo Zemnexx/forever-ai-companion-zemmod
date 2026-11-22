@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { extractJson, text, texts } from '../src/armory/json.js';
 import { talentIndex, validateOrder, shapeBuild, takenTalents } from '../src/armory/talents.js';
-import { shapeGear, slotName, cleanWeights, equippable } from '../src/armory/gear.js';
+import { shapeGear, slotName, cleanWeights, equippable, leftOut } from '../src/armory/gear.js';
 import { runModel, shapeRotation, describeCondition, keepFromRun } from '../src/armory/rotation.js';
 import { applyIdea, measureIdea, shapeIdeas } from '../src/armory/discover.js';
 import { buildArmorySystem, buildArmoryMessage } from '../src/armory/prompts.js';
@@ -149,6 +149,24 @@ test('a gear plan keeps only what the addon can show', () => {
   assert.equal(slotName('Off-Hand'), 'offHand');
   assert.deepEqual(cleanWeights(null), {});
   assert.deepEqual(equippable([{ name: 'Cloth', count: 3 }, { name: 'Helm', equipSlot: 'INVTYPE_HEAD' }]), [{ name: 'Helm', equipSlot: 'INVTYPE_HEAD' }]);
+});
+
+test('a gear plan stays away from the sources the player left out', () => {
+  assert.deepEqual(leftOut(['Raid', 'dungeon', 'crafted', 7]), ['dungeon', 'raid'], 'only the three, in a fixed order');
+  assert.deepEqual(leftOut(['dungeon', 'raid', 'quest']), [], 'never all of them');
+  assert.deepEqual(leftOut(undefined), []);
+  assert.deepEqual(leftOut('quest'), ['quest']);
+  const raw = { summary: 'Plan.', slots: [
+    { slot: 'head', picks: [
+      { name: 'Raging Berserker\'s Helm', source: { type: 'dungeon', where: 'Scarlet Monastery' } },
+      { name: 'Green Iron Helm', source: { type: 'crafted' } },
+    ] },
+    { slot: 'neck', picks: [{ name: 'Triune Amulet', source: { type: 'dungeon' } }] },
+    { slot: 'finger1', picks: [{ name: 'Seal of Sylvanas', source: { type: 'quest' } }] },
+  ] };
+  const plan = shapeGear(raw, { without: ['dungeon'] });
+  assert.deepEqual(plan.slots.map((s) => [s.slot, s.picks.map((p) => p.name)]), [['head', ['Green Iron Helm']], ['finger1', ['Seal of Sylvanas']]]);
+  assert.equal(shapeGear(raw).slots.length, 3, 'nothing left out: nothing dropped');
 });
 
 test('a combat model is simulated and shaped for the addon', () => {
@@ -327,6 +345,28 @@ test('an answer that is not JSON twice is an error, and so is a request without 
   await assert.rejects(createArmory({ store: tmpStore(), askImpl }).handle(request('talents', { armory_talents: null }), { cfg }), /No talent data/);
   await assert.rejects(createArmory({ store: tmpStore(), askImpl }).handle(request('rotation', { armory_spells: [] }), { cfg }), /No spell data/);
   await assert.rejects(createArmory({ store: tmpStore(), askImpl }).handle({ ...request('talents'), ext: { name: 'armory', kind: 'hack' } }, { cfg }), /does not know/);
+});
+
+test('a gear request passes on what the player left out, and drops a pick that ignores it', async () => {
+  const answer = { summary: 'Plan.', weights: { STRENGTH: 2 }, slots: [{ slot: 'head', picks: [
+    { name: 'Dungeon Helm', source: { type: 'dungeon' } }, { name: 'Crafted Helm', source: { type: 'crafted' } },
+  ] }] };
+  const { askImpl, calls } = scripted(answer);
+  const req = request('gear');
+  req.ext.input = { ...req.ext.input, without: ['raid', 'dungeon', 'pvp'] };
+  const out = await createArmory({ store: tmpStore(), askImpl }).handle(req, { cfg });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].messages[0].content.match(/\{[\s\S]*\}/)[0]).request.without, ['dungeon', 'raid']);
+  assert.match(calls[0].system, /When "request" has "without"/);
+  assert.deepEqual(out.data.slots, [{ slot: 'head', picks: [out.data.slots[0].picks[0]] }]);
+  assert.equal(out.data.slots[0].picks[0].name, 'Crafted Helm');
+  assert.deepEqual(out.data.asked.without, ['dungeon', 'raid']);
+  // Nothing left out: the request and the answer are as before.
+  const plain = scripted(answer);
+  const all = await createArmory({ store: tmpStore(), askImpl: plain.askImpl }).handle(request('gear'), { cfg });
+  assert.equal(all.data.slots[0].picks.length, 2);
+  assert.equal(all.data.asked.without, undefined);
+  assert.equal(plain.calls[0].messages[0].content.includes('"without"'), false);
 });
 
 test('a rotation request is simulated, and its model kept for the gear plan and for ideas', async () => {

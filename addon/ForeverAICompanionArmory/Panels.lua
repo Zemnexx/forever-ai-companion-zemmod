@@ -223,12 +223,40 @@ function Panels.WeightsText(weights)
   return table.concat(parts, " · ")
 end
 
+local function sourceSet(list)
+  local set = {}
+  for _, source in ipairs(type(list) == "table" and list or {}) do set[source] = true end
+  return set
+end
+
+-- "Dungeons, Questing": the sources a plan was made for, given what it left out.
+local function sourcesText(without)
+  local names = {}
+  for _, source in ipairs(ns.Store.GEAR_SOURCES) do
+    if not without[source] then names[#names + 1] = L["GEAR_FROM_" .. source:upper()] end
+  end
+  return table.concat(names, ", ")
+end
+
 function Panels.Gear()
   local blocks = {}
   local result = ns.Store:Result("gear")
   if not result or type(result.data) ~= "table" then return blocks end
   local data = result.data
   caveats(blocks, result)
+  -- Dungeons, raids or questing left out since this plan was made: its picks
+  -- from there are hidden at once; the rest of it is still the old plan.
+  local without = sourceSet(ns.Store:GearWithout())
+  local was = sourceSet(data.asked and data.asked.without)
+  for _, source in ipairs(ns.Store.GEAR_SOURCES) do
+    if (without[source] or false) ~= (was[source] or false) then
+      add(blocks, { t = "p", text = string.format(L.OTHER_SOURCES, sourcesText(was)), color = "warn" })
+      break
+    end
+  end
+  local function wanted(pick)
+    return not (type(pick.source) == "table" and without[pick.source.type])
+  end
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
   local weights = ns.Store:Weights()
   if weights then
@@ -239,7 +267,7 @@ function Panels.Gear()
   local buyable = 0
   for _, slot in ipairs(data.slots or {}) do
     for _, pick in ipairs(slot.picks or {}) do
-      if pick.auction then buyable = buyable + 1 end
+      if pick.auction and wanted(pick) then buyable = buyable + 1 end
     end
   end
   if buyable > 0 then
@@ -251,15 +279,22 @@ function Panels.Gear()
   end
 
   for _, slot in ipairs(data.slots or {}) do
-    add(blocks, { t = "h", text = L["SLOT_" .. tostring(slot.slot):upper()] })
-    local worn = ns.Items.Equipped(slot.slot)
-    if worn then
-      local score = weights and ns.Items.Score(worn, weights)
-      add(blocks, { t = "row", link = worn, title = Util.clean(worn) or "?", sub = L.WEARING, right = score and Util.fmt(score, 1) or nil, rightColor = "muted", dim = true })
-    else
-      add(blocks, { t = "p", text = L.SLOT_EMPTY, color = "muted" })
+    local picks = {}
+    for _, pick in ipairs(slot.picks or {}) do
+      if wanted(pick) then picks[#picks + 1] = pick end
     end
-    for _, pick in ipairs(slot.picks or {}) do add(blocks, pickRow(pick, weights)) end
+    -- A slot whose every pick came from what is left out now has nothing to show.
+    if #picks > 0 then
+      add(blocks, { t = "h", text = L["SLOT_" .. tostring(slot.slot):upper()] })
+      local worn = ns.Items.Equipped(slot.slot)
+      if worn then
+        local score = weights and ns.Items.Score(worn, weights)
+        add(blocks, { t = "row", link = worn, title = Util.clean(worn) or "?", sub = L.WEARING, right = score and Util.fmt(score, 1) or nil, rightColor = "muted", dim = true })
+      else
+        add(blocks, { t = "p", text = L.SLOT_EMPTY, color = "muted" })
+      end
+      for _, pick in ipairs(picks) do add(blocks, pickRow(pick, weights)) end
+    end
   end
   notes(blocks, data.notes, L.NOTES)
   return blocks

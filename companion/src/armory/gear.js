@@ -10,6 +10,15 @@ export const SLOTS = [
 ];
 export const SOURCE_TYPES = ['dungeon', 'raid', 'quest', 'vendor', 'reputation', 'crafted', 'pvp', 'world', 'auction'];
 const CONFIDENCE = ['high', 'medium', 'low'];
+// What a player can keep out of their gear plan. At least one stays in.
+export const OPTIONAL_SOURCES = ['dungeon', 'raid', 'quest'];
+
+// The sources a request leaves out: only known ones, and never all of them.
+export function leftOut(value) {
+  const asked = list(value).map((x) => str(x, 20).toLowerCase());
+  const out = OPTIONAL_SOURCES.filter((s) => asked.includes(s));
+  return out.length && out.length < OPTIONAL_SOURCES.length ? out : [];
+}
 const MAX_PICKS = 3;
 const MAX_WEIGHTS = 16;
 
@@ -64,7 +73,9 @@ function cleanPick(raw) {
 }
 
 // The data the addon gets for a gear plan. `raw`: the AI's parsed answer.
-export function shapeGear(raw) {
+// `without`: sources the player left out; a pick from one of them is dropped,
+// whatever the AI made of the instruction.
+export function shapeGear(raw, { without = [] } = {}) {
   const bySlot = new Map();
   for (const entry of list(raw?.slots)) {
     const slot = slotName(entry?.slot);
@@ -72,6 +83,7 @@ export function shapeGear(raw) {
     const picks = bySlot.get(slot) || [];
     for (const p of list(entry.picks)) {
       const pick = cleanPick(p);
+      if (pick && without.includes(pick.source.type)) continue;
       if (pick && picks.length < MAX_PICKS && !picks.some((x) => x.name.toLowerCase() === pick.name.toLowerCase())) picks.push(pick);
     }
     if (picks.length) bySlot.set(slot, picks);
