@@ -45,11 +45,13 @@ export function applyIdea(base, patch) {
 
 // Simulates an idea against the baseline with the same random numbers.
 // Returns { base, value, pct, metric } or null when it could not be run.
-export function measureIdea(base, patch, { iterations = 300, seed = 1 } = {}) {
+// metric "tps": the baseline was a tank's, measured on threat per second.
+export function measureIdea(base, patch, { iterations = 300, seed = 1, metric } = {}) {
   if (!base || !patch || typeof patch !== 'object' || !Object.keys(patch).length) return null;
   try {
-    const before = runModel(base, { iterations, seed, weights: false });
-    const after = runModel(applyIdea(base, patch), { iterations, seed, weights: false });
+    const tank = metric === 'tps';
+    const before = runModel(base, { iterations, seed, weights: false, tank });
+    const after = runModel(applyIdea(base, patch), { iterations, seed, weights: false, tank });
     if (before.fatal || after.fatal) return null;
     const b = before.sim.rotations[before.sim.best];
     const a = after.sim.rotations[after.sim.best];

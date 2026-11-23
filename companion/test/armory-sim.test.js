@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, abilityTable, armorReduction, mulberry32, normalizeModel, simulate, statWeights,
+  DEFENSE, RULES, abilityTable, armorReduction, mulberry32, normalizeModel, simulate, statWeights, survival,
 } from '../src/armory/sim/engine.js';
 
 const near = (actual, expected, tol, msg) => {
@@ -563,4 +563,160 @@ test('performance: a typical 8-ability, 180 s model with 300 iterations is fast'
   assert.ok(r.rotations[0].value > 0);
   assert.ok(r.rotations[0].uptime.sunder > 80, `sunder ${r.rotations[0].uptime.sunder}`);
   t.diagnostic(`300 iterations took ${ms.toFixed(0)} ms`);
+});
+
+// ------------------------------------------------------------------ tanks
+
+// Auto attacks and one strike that cannot miss, with threat fields.
+function threatModel(over = {}) {
+  const m = base({
+    stats: { attackPower: 280 },
+    abilities: [{ id: 'strike', name: 'Strike', type: 'spell', school: 'holy', cooldown: 6, canMiss: false, canCrit: false,
+      damage: { min: 100, max: 100 }, threatMultiplier: 2, threat: 100 }],
+    rotations: [{ name: 'r', actions: ['strike'] }],
+    ...over,
+  });
+  m.player.threatMultiplier = 1.5;
+  return m;
+}
+
+test('threat comes from the same hits as damage, with the multipliers and the flat threat', () => {
+  const m = threatModel();
+  const dmg = run(m).rotations[0];
+  const thr = run(m, { metric: 'tps' }).rotations[0];
+  // The same dice: the damage of a threat run is the damage run's, to the last digit.
+  assert.equal(thr.dps, dmg.value);
+  assert.equal(dmg.metric, 'dps');
+  assert.equal(thr.metric, 'tps');
+  const uses = entry(dmg, 'strike').perMinute * 3;
+  near(uses, 30, 0.01, 'uses');
+  const autoDps = (dmg.value * entry(dmg, 'auto').share) / 100;
+  const strikeDps = (dmg.value * entry(dmg, 'strike').share) / 100;
+  // (damage * ability multiplier + flat) * player multiplier.
+  const expected = 1.5 * autoDps + 1.5 * (2 * strikeDps + (100 * uses) / 180);
+  near(thr.value, expected, 1e-9, 'tps');
+  near(thr.tps, thr.value, 1e-12);
+  const shares = thr.breakdown.reduce((n, b) => n + b.share, 0);
+  near(shares, 100, 1e-9, 'threat shares');
+  near(entry(thr, 'strike').share, (100 * 1.5 * (2 * strikeDps + (100 * uses) / 180)) / expected, 1e-9, 'the strike\'s share of the threat');
+  // Without any threat fields a damage run is exactly what it was.
+  const plain = base({ stats: { attackPower: 280 }, abilities: [{ id: 'strike', name: 'Strike', type: 'spell', school: 'holy', cooldown: 6, canMiss: false, canCrit: false, damage: { min: 100, max: 100 } }], rotations: [{ name: 'r', actions: ['strike'] }] });
+  assert.equal(run(plain).rotations[0].value, dmg.value);
+  // Defaults: threat equals damage.
+  near(run(plain, { metric: 'tps' }).rotations[0].value, dmg.value, 1e-12, 'multiplier 1, flat 0');
+});
+
+test('a tank\'s rotations are ranked by threat, a damage dealer\'s by damage', () => {
+  const m = base({
+    autoAttack: 'none', weapons: null,
+    abilities: [
+      { id: 'big', name: 'Big Hit', type: 'spell', school: 'fire', canMiss: false, canCrit: false, damage: { min: 300, max: 300 } },
+      { id: 'taunt', name: 'Threat Strike', type: 'spell', school: 'fire', canMiss: false, canCrit: false, damage: { min: 100, max: 100 }, threat: 400 },
+    ],
+    rotations: [{ name: 'Damage', actions: ['big'] }, { name: 'Threat', actions: ['taunt'] }],
+  });
+  const dps = run(m);
+  const tps = run(m, { metric: 'tps' });
+  assert.equal(dps.rotations[dps.best].name, 'Damage');
+  assert.equal(tps.rotations[tps.best].name, 'Threat');
+  near(tps.rotations[1].value, 500 / 1.5, 1e-9, 'threat per second');
+  near(tps.rotations[1].dps, 100 / 1.5, 1e-9, 'its damage per second still comes along');
+  // The ability table counts threat too.
+  const table = abilityTable(m, { metric: 'tps' });
+  near(table.find((r) => r.id === 'taunt').perUse, 500, 1e-9);
+  near(abilityTable(m).find((r) => r.id === 'taunt').perUse, 100, 1e-9);
+  // Stat weights for a tank are measured on threat.
+  const w = statWeights(threatModel(), { metric: 'tps', iterations: 200 });
+  assert.equal(w.metric, 'tps');
+  assert.ok(w.perPoint.attackPower > 0);
+  near(w.base, run(threatModel(), { metric: 'tps' }).rotations[0].value, 1e-9);
+});
+
+test('normalizeModel reads threat and the enemy, with defaults and bounds', () => {
+  const { model, problems } = normalizeModel({
+    ...threatModel(),
+    enemy: { meleeHit: '1200', attackSpeed: 0, magicDps: -5 },
+  });
+  assert.equal(model.player.threatMultiplier, 1.5);
+  assert.equal(model.abilities[0].threatMultiplier, 2);
+  assert.equal(model.abilities[0].threat, 100);
+  assert.deepEqual(model.enemy, { level: 60, meleeHit: 1200, attackSpeed: 0.1, magicDps: 0 });
+  assert.ok(problems.some((p) => /enemy\.attackSpeed/.test(p)));
+  const plain = normalizeModel(base()).model;
+  assert.equal(plain.player.threatMultiplier, 1);
+  assert.equal(plain.enemy, undefined);
+  // An ability that only makes threat does something.
+  const sunder = normalizeModel(base({ abilities: [{ id: 'sunder', name: 'Sunder Armor', threat: 260 }], rotations: [{ name: 'r', actions: ['sunder'] }] }));
+  assert.ok(!sunder.problems.some((p) => /does nothing/.test(p)));
+});
+
+// A level 60 tank against a level 63 boss, worked out by hand:
+//   skill difference 315 - 300 = 15, so 0.6% moves on each line of the table:
+//   miss 5 - 0.6 = 4.4, dodge 10 - 0.6 = 9.4, parry 8 - 0.6 = 7.4, block 6 - 0.6 = 5.4,
+//   crit 5 + 0.6 = 5.6, crushing 2 * 15 - 15 = 15, hit 100 - 47.2 = 52.8.
+//   Armor: 5000 / (5000 + 400 + 85 * (63 + 4.5 * 4)) = 5000 / 12285 = 40.70%.
+//   Per second: 1000 / 2 = 500 swung. Avoided 500 * 0.212 = 106.
+//   Landing before armor 500 * (0.528 + 0.054 + 2 * 0.056 + 1.5 * 0.15) = 459.5; armor takes 187.02 of it.
+//   Blocked 0.054 * 50 / 2 = 1.35. Taken 459.5 * 7285 / 12285 - 1.35 + 20 magic = 291.13.
+//   Incoming 106 + 187.02 + 1.35 + 271.13 + 20 = 585.5 (= 500 * 1.131 + 20).
+//   Time to die 6000 / 291.13 = 20.61 s; effective health 6000 * 585.5 / 291.13 = 12067.
+const TANK = { level: 60, armor: 5000, maxHealth: 6000, dodgePct: 10, parryPct: 8, blockPct: 6, blockValue: 50, defense: 300 };
+const BOSS = { level: 63, meleeHit: 1000, attackSpeed: 2, magicDps: 20 };
+
+test('survival against a boss three levels above matches the numbers worked out by hand', () => {
+  const s = survival(TANK, BOSS);
+  const t = s.table;
+  for (const [k, v] of Object.entries({ miss: 4.4, dodge: 9.4, parry: 7.4, block: 5.4, crit: 5.6, crush: 15, hit: 52.8 })) near(t[k], v, 1e-9, k);
+  near(s.armorReduction, 5000 / 12285, 1e-12, 'armor');
+  near(s.avoided, 106, 1e-9, 'avoided');
+  near(s.armor, 459.5 * 5000 / 12285, 1e-9, 'armor per second');
+  near(s.blocked, 1.35, 1e-9, 'blocked');
+  near(s.taken, (459.5 * 7285) / 12285 - 1.35 + 20, 1e-9, 'taken');
+  near(s.taken, 291.13, 1e-4);
+  near(s.incoming, 585.5, 1e-9, 'incoming');
+  near(s.timeToDie, 20.61, 1e-3, 'time to die');
+  near(s.effectiveHealth, 12067, 1e-4, 'effective health');
+  assert.deepEqual(s.missing, []);
+  // +1% dodge turns 1% of plain hits into dodges: 0.01 * 1000 * 7285 / 12285 / 2 less per second.
+  near(s.worth.dodgePct.taken, (0.01 * 1000 * 7285) / 12285 / 2, 1e-9, 'dodge');
+  near(s.worth.parryPct.taken, s.worth.dodgePct.taken, 1e-9, 'parry, the same here');
+  // +10 block value: 10 more off each block, 5.4% of the swings every 2 seconds.
+  near(s.worth.blockValue.taken, (0.054 * 10) / 2, 1e-9, 'block value');
+  // +10 stamina is health, not less damage.
+  assert.equal(s.worth.stamina.taken, 0);
+  near(s.worth.stamina.time, (10 * DEFENSE.HEALTH_PER_STAMINA) / s.taken, 1e-9, 'stamina');
+  assert.ok(s.worth.armor.taken > 0 && s.worth.armor.time > 0);
+  assert.ok(s.worth.blockPct.taken > 0);
+});
+
+test('survival leaves out what the game did not give, and says so', () => {
+  // An enemy of the character's level: no crushing blows, nothing moves.
+  const even = survival(TANK, { level: 60, meleeHit: 100, attackSpeed: 2, magicDps: 0 });
+  assert.equal(even.table.crush, 0);
+  near(even.table.miss, 5, 1e-9);
+  near(even.table.dodge, 10, 1e-9);
+  // Only armor and health known.
+  const bare = survival({ armor: 2000, maxHealth: 3000 }, BOSS, { level: 60 });
+  assert.deepEqual(bare.missing, ['dodgePct', 'parryPct', 'blockPct', 'defense']);
+  assert.equal(bare.table.dodge, 0);
+  assert.deepEqual(Object.keys(bare.worth), ['armor', 'stamina']);
+  // A block chance without a block value: blocks are left out and counted as hits.
+  const noValue = survival({ ...TANK, blockValue: undefined }, BOSS);
+  assert.ok(noValue.missing.includes('blockValue'));
+  assert.equal(noValue.table.block, 0);
+  assert.equal(noValue.worth.blockPct, undefined);
+  // No health: no time to die.
+  const noHealth = survival({ ...TANK, maxHealth: undefined }, BOSS);
+  assert.ok(noHealth.missing.includes('maxHealth'));
+  assert.equal(noHealth.timeToDie, undefined);
+  assert.equal(noHealth.worth.stamina, undefined);
+  // No enemy: nothing to estimate.
+  assert.deepEqual(survival(TANK, null), { missing: ['enemy'] });
+  assert.deepEqual(survival(TANK, { level: 63, meleeHit: 0, attackSpeed: 2, magicDps: 0 }), { missing: ['enemy'] });
+  // Enough defense takes crushing blows off the table.
+  near(survival({ ...TANK, defense: 308 }, BOSS).table.crush, 0, 1e-9, 'crush at 308 defense');
+  // A table fuller than 100% leaves nothing to hit.
+  const wall = survival({ ...TANK, dodgePct: 60, parryPct: 40 }, BOSS);
+  near(wall.table.hit, 0, 1e-9);
+  near(Object.values(wall.table).reduce((a, b) => a + b, 0), 100, 1e-9);
 });

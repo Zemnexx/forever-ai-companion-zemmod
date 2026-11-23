@@ -4,7 +4,8 @@
 --   Spells()   the spellbook with each ability's tooltip as the game shows it
 --              for this character right now (cost, cast time, cooldown, numbers)
 --   Combat()   the numbers a simulator needs (weapon damage and speed per
---              hand, attack and spell power, crit, hit, haste, resource)
+--              hand, attack and spell power, crit, hit, haste, resource), and
+--              the defensive ones a tank's survival estimate needs
 --   Seen()     items the addon has seen in the game that this character could wear
 --   Specs()    the specializations the player can choose from
 --
@@ -719,6 +720,17 @@ function Scan.Combat()
   end)
   put(c, "armor", function() local base, eff = UnitArmor("player"); return num(eff) or num(base) end)
   put(c, "maxHealth", function() return num(UnitHealthMax("player")) end)
+  -- Defense, for a tank's survival estimate. The modern client and the
+  -- classic one both have these chances; a missing one only leaves it out.
+  put(c, "dodgePct", function() return round(GetDodgeChance(), 2) end)
+  put(c, "parryPct", function() return round(GetParryChance(), 2) end)
+  put(c, "blockPct", function() return round(GetBlockChance(), 2) end)
+  -- What a block takes off a hit. A modern client that answers with a
+  -- percentage instead is not known yet: /armory debug shows what came back.
+  put(c, "blockValue", function() return num(GetShieldBlock()) end)
+  -- Defense skill (base plus gear and talents), only where the client still
+  -- has it; without it the app takes 5 per level and says so.
+  put(c, "defense", function() return sum3(UnitDefense("player")) end)
   local n = Util.count(c)
   Scan.how.combat = string.format("%d values", n)
   return n > 0 and c or nil
@@ -800,6 +812,12 @@ function Scan.Diagnose()
   if spell then lines[#lines + 1] = string.format("first spell: %s (%s): %s", spell.name, tostring(spell.id), tostring(spell.tip or "(no tooltip)"):sub(1, 120)) end
   if combat and combat.mainHand then
     lines[#lines + 1] = string.format("main hand: %s-%s every %ss", tostring(combat.mainHand.min), tostring(combat.mainHand.max), tostring(combat.mainHand.speed))
+  end
+  if combat then
+    local function shown(v) return v ~= nil and Util.fmt(v, 2) or "-" end
+    lines[#lines + 1] = string.format("defense: dodge %s, parry %s, block %s, block value %s, defense skill %s, armor %s, health %s",
+      shown(combat.dodgePct), shown(combat.parryPct), shown(combat.blockPct), shown(combat.blockValue),
+      shown(combat.defense), shown(combat.armor), shown(combat.maxHealth))
   end
   return lines
 end

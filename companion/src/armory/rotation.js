@@ -4,7 +4,7 @@
 // rotations as steps to follow, what each stat is worth, and a table of every
 // ability's value per use, per second and per point of resource.
 import { num, round, str, text, texts, list } from './json.js';
-import { abilityTable, normalizeModel, simulate, statWeights } from './sim/engine.js';
+import { abilityTable, normalizeModel, simulate, statWeights, survival } from './sim/engine.js';
 
 const MAX_ROTATIONS = 4;
 const MAX_STEPS = 14;
@@ -38,17 +38,61 @@ export function describeCondition(cond) {
 }
 
 // Normalizes and simulates a model. Never throws on a bad model: the problems
-// say what the AI has to fix.
-export function runModel(rawModel, { iterations = 300, seed = 1, weights = true } = {}) {
+// say what the AI has to fix. tank: rank by threat per second, and estimate
+// survival against the model's "enemy" with the defensive numbers the game
+// gave (defense: the addon's armory_combat).
+export function runModel(rawModel, { iterations = 300, seed = 1, weights = true, tank = false, defense = null } = {}) {
   const { model, problems, fatal } = normalizeModel(rawModel);
   if (fatal) return { model, problems, fatal: true };
-  const sim = simulate(model, { iterations, seed });
+  const metric = tank ? 'tps' : undefined;
+  const sim = simulate(model, { iterations, seed, metric });
   if (!sim.rotations.length) return { model, problems: [...problems, 'no rotation could be simulated'], fatal: true };
   const out = { model, problems, fatal: false, sim };
   // sim.best is a place in sim.rotations; each result's `index` is its
   // rotation's place in the model.
-  if (weights) out.weights = statWeights(model, { rotation: sim.rotations[sim.best].index, iterations, seed });
-  out.table = abilityTable(model);
+  if (weights) out.weights = statWeights(model, { rotation: sim.rotations[sim.best].index, iterations, seed, metric });
+  out.table = abilityTable(model, { metric });
+  if (tank) {
+    out.tank = true;
+    if (!model.enemy) out.problems = [...problems, '"enemy" is missing: a tank\'s survival cannot be estimated without the enemy\'s melee hit and attack speed'];
+    out.survival = survival(defense, model.enemy, { level: model.player.level });
+  }
+  return out;
+}
+
+// The survival estimate as the addon shows it: rounded, shares of the
+// incoming damage in percent, and what each defensive stat is worth.
+const SHARE = (part, whole) => (whole > 0 ? round((100 * part) / whole, 1) : 0);
+function shapeSurvival(s) {
+  if (!s) return undefined;
+  const out = {};
+  if (s.missing?.length) out.missing = s.missing;
+  if (num(s.taken) === null) return out;
+  out.enemy = {
+    level: s.enemy.level, meleeHit: round(s.enemy.meleeHit, 0), attackSpeed: round(s.enemy.attackSpeed, 2),
+    magicDps: s.enemy.magicDps ? round(s.enemy.magicDps, 1) : undefined,
+  };
+  out.taken = round(s.taken, 1);
+  out.incoming = round(s.incoming, 1);
+  out.mitigated = SHARE(s.incoming - s.taken, s.incoming);
+  out.armor = SHARE(s.armor, s.incoming);
+  out.avoided = SHARE(s.avoided, s.incoming);
+  out.blocked = SHARE(s.blocked, s.incoming);
+  out.armorReduction = round(100 * s.armorReduction, 1);
+  if (s.enemy.meleeHit > 0) {
+    out.table = {};
+    for (const [k, v] of Object.entries(s.table)) out.table[k] = round(v, 1);
+  }
+  if (num(s.health) !== null) out.health = round(s.health, 0);
+  if (num(s.effectiveHealth) !== null) out.effectiveHealth = round(s.effectiveHealth, 0);
+  if (num(s.timeToDie) !== null) out.timeToDie = round(s.timeToDie, 1);
+  const worth = [];
+  for (const [stat, w] of Object.entries(s.worth || {})) {
+    const row = { stat, amount: w.amount, taken: round(w.taken, 2) };
+    if (num(w.time) !== null) row.time = round(w.time, 2);
+    worth.push(row);
+  }
+  if (worth.length) out.worth = worth;
   return out;
 }
 
@@ -153,6 +197,8 @@ export function shapeRotation(raw, run, { spells = [] } = {}) {
       name: str(r.name, 80) || `Rotation ${i + 1}`,
       value: round(r.value, 1),
       spread: round(r.stdev, 1),
+      // A tank's rotation is ranked by threat; its damage is still worth knowing.
+      damage: run.tank ? round(r.dps, 1) : undefined,
       best: i === sim.best || undefined,
       steps: stepsOf(source, abilities),
       // The simulator gives shares and percentages as 0..100.
@@ -177,6 +223,10 @@ export function shapeRotation(raw, run, { spells = [] } = {}) {
     assumptions: texts(raw?.assumptions, { max: 6, len: 400 }),
     notes: texts(raw?.notes, { max: 5, len: 400 }),
   };
+  if (run.tank) {
+    const shaped = shapeSurvival(run.survival);
+    if (shaped) data.survival = shaped;
+  }
   const buffs = shapeBuffs(raw?.buffs, spells);
   if (buffs.length) data.buffs = buffs;
   if (run.problems.length) data.modelIssues = run.problems.length;
@@ -202,12 +252,17 @@ export function shapeRotation(raw, run, { spells = [] } = {}) {
 }
 
 // What is kept for later requests about the same character (store.js): the
-// model with its best rotation only, and the measured weights.
+// model with its best rotation only, and the measured weights. For a tank the
+// weights are on threat, and what each defensive stat is worth comes along.
 export function keepFromRun(run) {
   const best = run.model.rotations?.[run.sim.rotations[run.sim.best]?.index ?? run.sim.best];
+  const weights = run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: measured(run.weights.perPoint) } : null;
+  const worth = run.tank ? shapeSurvival(run.survival)?.worth : undefined;
+  if (weights && worth) weights.survival = worth;
   return {
     model: { ...run.model, rotations: best ? [best] : [] },
-    weights: run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: measured(run.weights.perPoint) } : null,
+    weights,
     value: run.sim.rotations[run.sim.best]?.value ?? null,
+    metric: run.sim.rotations[run.sim.best]?.metric,
   };
 }

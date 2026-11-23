@@ -97,13 +97,26 @@ function sampleModel(ctx) {
   };
 }
 
-function sampleRotation({ ctx, iterations }) {
-  const model = sampleModel(ctx);
-  const run = runModel(model, { iterations });
+// For a tank: made-up threat numbers and an enemy of the character's level
+// that hits for a placeholder amount, so the survival estimate can be seen.
+function tankModel(model, level) {
+  const out = { ...model, player: { ...model.player, threatMultiplier: 1.3 } };
+  out.abilities = model.abilities.map((a) => ({ ...a, threatMultiplier: 1.5, threat: 50 }));
+  out.enemy = { level, meleeHit: Math.max(20, level * 8), attackSpeed: 2 };
+  return out;
+}
+
+function sampleRotation({ ctx, profile, iterations }) {
+  const tank = profile?.role === 'tank';
+  const plain = sampleModel(ctx);
+  const model = tank ? tankModel(plain, plain.player.level) : plain;
+  const run = runModel(model, { iterations, tank, defense: tank ? ctx.armory_combat : null });
   if (run.fatal) throw new Error(run.problems.join('; ') || 'the test model could not be simulated');
+  const assumptions = ['The abilities are placeholders, not your spells.'];
+  if (tank) assumptions.push('The threat numbers and the enemy are placeholders too: the enemy hits for 8 damage per level every 2 seconds.');
   return shapeRotation({
     summary: 'Test mode: a made-up model simulated for real, without an AI. The numbers only show that the simulator runs.',
-    assumptions: ['The abilities are placeholders, not your spells.'],
+    assumptions,
     model,
   }, run);
 }

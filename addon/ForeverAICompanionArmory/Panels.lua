@@ -338,6 +338,69 @@ local STAT_LABELS = {
   agility = "STAT_AGILITY", intellect = "STAT_INTELLECT", spirit = "STAT_SPIRIT", stamina = "STAT_STAMINA",
 }
 
+-- Survival (tanks) -------------------------------------------------------------------
+
+-- The defensive stats whose worth is measured, in the app's order, and the
+-- inputs the game may not have given.
+local DEFENSE_STATS = {
+  armor = L.STAT_ARMOR, dodgePct = L.STAT_DODGE, parryPct = L.STAT_PARRY, blockPct = L.STAT_BLOCK,
+  blockValue = L.STAT_BLOCK_VALUE, stamina = L.STAT_STAMINA,
+}
+local MISSING = {
+  armor = L.MISSING_ARMOR, dodgePct = L.MISSING_DODGE, parryPct = L.MISSING_PARRY, blockPct = L.MISSING_BLOCK,
+  blockValue = L.MISSING_BLOCK_VALUE, defense = L.MISSING_DEFENSE, maxHealth = L.MISSING_HEALTH,
+}
+
+-- "+1% Dodge" or "+100 Armor".
+local function defenseAmount(w)
+  local label = DEFENSE_STATS[w.stat] or tostring(w.stat)
+  local pct = tostring(w.stat):sub(-3) == "Pct"
+  return string.format(pct and "+%s%% %s" or "+%s %s", Util.fmt(w.amount, 0), label)
+end
+
+-- What a tank can expect to take from the enemy the AI assumed, worked out
+-- by the app from the game's defensive numbers. Always marked an estimate.
+local function survival(blocks, sv)
+  add(blocks, { t = "h", text = L.SURVIVAL })
+  local missing = {}
+  for _, key in ipairs(type(sv.missing) == "table" and sv.missing or {}) do
+    if key == "enemy" then
+      add(blocks, { t = "p", text = L.SURVIVAL_NO_ENEMY, color = "warn" })
+      return
+    end
+    missing[#missing + 1] = MISSING[key] or tostring(key)
+  end
+  if not sv.taken then return end
+  local e = type(sv.enemy) == "table" and sv.enemy or {}
+  local enemy = string.format(L.SURVIVAL_ENEMY, tostring(e.level or "?"), Util.fmt(e.meleeHit, 0), Util.fmt(e.attackSpeed, 1))
+  if e.magicDps then enemy = enemy .. " " .. string.format(L.SURVIVAL_MAGIC, Util.fmt(e.magicDps, 1)) end
+  add(blocks, { t = "p", text = enemy, color = "muted" })
+  add(blocks, { t = "p", text = string.format(L.SURVIVAL_TAKEN, Util.fmt(sv.taken, 0), Util.fmt(sv.incoming, 0), Util.fmt(sv.mitigated, 0)) })
+  add(blocks, { t = "note", text = string.format(L.SURVIVAL_ARMOR, Util.fmt(sv.armor, 1), Util.fmt(sv.armorReduction, 1)) })
+  add(blocks, { t = "note", text = string.format(L.SURVIVAL_AVOIDED, Util.fmt(sv.avoided, 1)) })
+  if (sv.blocked or 0) > 0 then add(blocks, { t = "note", text = string.format(L.SURVIVAL_BLOCKED, Util.fmt(sv.blocked, 1)) }) end
+  local tb = sv.table
+  if type(tb) == "table" then
+    add(blocks, { t = "p", color = "muted", text = string.format(L.SURVIVAL_TABLE, Util.fmt(tb.miss, 1), Util.fmt(tb.dodge, 1),
+      Util.fmt(tb.parry, 1), Util.fmt(tb.block, 1), Util.fmt(tb.crit, 1), Util.fmt(tb.crush, 1)) })
+  end
+  if sv.effectiveHealth then add(blocks, { t = "p", text = string.format(L.SURVIVAL_HEALTH, Util.fmt(sv.effectiveHealth, 0), Util.fmt(sv.health, 0)) }) end
+  if sv.timeToDie then add(blocks, { t = "p", text = string.format(L.SURVIVAL_TIME, Util.fmt(sv.timeToDie, 1)) }) end
+  if #missing > 0 then add(blocks, { t = "p", text = string.format(L.SURVIVAL_MISSING, table.concat(missing, ", ")), color = "warn" }) end
+  if type(sv.worth) == "table" and #sv.worth > 0 then
+    add(blocks, { t = "h", text = L.DEFENSE_WORTH })
+    for _, w in ipairs(sv.worth) do
+      local taken, time = tonumber(w.taken) or 0, tonumber(w.time)
+      local line
+      if taken > 0 and time then line = string.format(L.DEFENSE_WORTH_BOTH, defenseAmount(w), Util.fmt(taken, 2), Util.fmt(time, 2))
+      elseif time then line = string.format(L.DEFENSE_WORTH_TIME, defenseAmount(w), Util.fmt(time, 2))
+      else line = string.format(L.DEFENSE_WORTH_TAKEN, defenseAmount(w), Util.fmt(taken, 2)) end
+      add(blocks, { t = "note", text = line })
+    end
+  end
+  add(blocks, { t = "p", text = L.SURVIVAL_HINT, color = "muted" })
+end
+
 function Panels.Rotation()
   local blocks = {}
   local result = ns.Store:Result("rotation")
@@ -349,7 +412,7 @@ function Panels.Rotation()
   if aoe ~= ns.Store:Aoe() then
     add(blocks, { t = "p", text = aoe and L.OTHER_AOE_MANY or L.OTHER_AOE_ONE, color = "warn" })
   end
-  local unit = data.metric == "hps" and L.HPS or L.DPS
+  local unit = data.metric == "hps" and L.HPS or (data.metric == "tps" and L.TPS or L.DPS)
   local best = data.rotations and data.rotations[1]
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
   if best then
@@ -360,6 +423,8 @@ function Panels.Rotation()
     end
     if #(best.steps or {}) == 0 then add(blocks, { t = "p", text = L.AUTO_ONLY, color = "muted" }) end
     local facts = {}
+    -- A tank's rotation is ranked by threat; its damage is a fact about it.
+    if best.damage then facts[#facts + 1] = string.format(L.TANK_DAMAGE, Util.fmt(best.damage, 1)) end
     if best.idle and best.idle >= 1 then facts[#facts + 1] = string.format(L.IDLE, Util.fmt(best.idle, 0)) end
     if best.starved and best.starved >= 1 then facts[#facts + 1] = string.format(L.STARVED, Util.fmt(best.starved, 0)) end
     if best.emptyAt then facts[#facts + 1] = string.format(L.EMPTY_AT, Util.fmt(best.emptyAt, 0)) end
@@ -391,7 +456,8 @@ function Panels.Rotation()
   end
 
   if best and type(best.breakdown) == "table" and #best.breakdown > 0 then
-    add(blocks, { t = "h", text = data.metric == "hps" and L.BREAKDOWN_HEALING or L.BREAKDOWN_DAMAGE })
+    local heading = data.metric == "hps" and L.BREAKDOWN_HEALING or (data.metric == "tps" and L.BREAKDOWN_THREAT or L.BREAKDOWN_DAMAGE)
+    add(blocks, { t = "h", text = heading })
     for _, b in ipairs(best.breakdown) do
       add(blocks, { t = "bar", label = b.name, value = b.share, right = Util.fmt(b.share, 1) .. "%" })
     end
@@ -423,8 +489,10 @@ function Panels.Rotation()
     add(blocks, { t = "p", text = L.WEIGHTS_HINT, color = "muted" })
   end
 
+  if type(data.survival) == "table" then survival(blocks, data.survival) end
+
   if type(data.table) == "table" and #data.table > 0 then
-    add(blocks, { t = "h", text = L.ABILITY_TABLE })
+    add(blocks, { t = "h", text = data.metric == "tps" and L.ABILITY_TABLE_THREAT or L.ABILITY_TABLE })
     for _, row in ipairs(data.table) do
       local parts = { string.format(L.PER_USE, Util.fmt(row.perUse, 0)), string.format(L.PER_SECOND, Util.fmt(row.perSecond, 1)) }
       if row.perResource then parts[#parts + 1] = string.format(L.PER_RESOURCE, Util.fmt(row.perResource, 2)) end

@@ -189,8 +189,11 @@ const handlers = {
       ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'gear', 'buffs', 'pet']),
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
     };
+    // A tank's rotations are ranked by threat, and survival is estimated with
+    // the defensive numbers the game gave (never the AI's).
+    const tank = profile.role === 'tank';
     const verdict = await converse(ai, system('rotation'), data, (raw) => {
-      const run = runModel(withTargets(raw.model, profile), { iterations });
+      const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
       // Simulated, but with parts the simulator had to drop: worth one correction.
       return {
@@ -218,7 +221,7 @@ const handlers = {
       armory_weights: kept?.weights || undefined,
     };
     return (await converse(ai, system('discover', { hasModel: !!base }), data, (raw) => {
-      const result = shapeIdeas(raw, base, { iterations });
+      const result = shapeIdeas(raw, base, { iterations, metric: kept?.metric });
       return { result: result.ideas.length || result.summary ? result : null, score: result.ideas.length };
     })).result;
   },

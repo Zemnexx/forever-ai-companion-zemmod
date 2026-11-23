@@ -553,3 +553,92 @@ test('the Armory answers through the app\'s plugin route, and what it returns lo
   assert.equal(again.ok, false);
   assert.match(again.answer, /No talent data arrived.*ask once more/);
 });
+
+// A tank: Heroic Strike and Bloodthirst with threat, and a boss to survive.
+const TANK_MODEL = {
+  ...MELEE_MODEL,
+  player: { ...MELEE_MODEL.player, threatMultiplier: 1.3 },
+  abilities: [MELEE_MODEL.abilities[0], { ...MELEE_MODEL.abilities[1], threat: 145 }],
+  enemy: { level: 63, meleeHit: 1200, attackSpeed: 2, magicDps: 0 },
+};
+const TANK_COMBAT = { attackPower: 1000, critPct: 20, mainHand: { min: 150, max: 250, speed: 3.4 },
+  armor: 6000, maxHealth: 7000, dodgePct: 8, parryPct: 7, blockPct: 9, blockValue: 60, defense: 310 };
+
+test('a tank\'s combat model is ranked by threat and comes with a survival estimate', () => {
+  const run = runModel(TANK_MODEL, { iterations: 80, tank: true, defense: TANK_COMBAT });
+  const data = shapeRotation({ summary: 's', model: TANK_MODEL }, run);
+  assert.equal(data.metric, 'tps');
+  assert.ok(data.rotations.every((r) => r.damage > 0 && r.value > r.damage), 'threat above damage, damage kept');
+  assert.equal(data.rotations[0].name, 'Bloodthirst and Heroic Strike', 'the flat threat of Heroic Strike wins');
+  assert.ok(data.rotations[0].breakdown.some((b) => b.name === 'Heroic Strike'));
+  assert.equal(data.weights.reference, 'attackPower');
+  const sv = data.survival;
+  assert.deepEqual(sv.enemy, { level: 63, meleeHit: 1200, attackSpeed: 2, magicDps: undefined });
+  assert.ok(sv.taken > 0 && sv.taken < sv.incoming);
+  assert.equal(Math.round(sv.mitigated), Math.round(sv.armor + sv.avoided + sv.blocked), 'mitigation is armor, avoided and blocked');
+  assert.ok(sv.timeToDie > 0 && sv.effectiveHealth > sv.health);
+  assert.deepEqual(sv.worth.map((w) => w.stat), ['armor', 'dodgePct', 'parryPct', 'blockPct', 'blockValue', 'stamina']);
+  assert.equal(sv.missing, undefined, 'nothing missing');
+  assert.ok(JSON.stringify(data).length < 9000);
+  // Kept for the gear plan: threat weights and what each defensive stat is worth.
+  const kept = keepFromRun(run);
+  assert.equal(kept.metric, 'tps');
+  assert.equal(kept.weights.metric, 'tps');
+  assert.equal(kept.weights.survival.length, 6);
+  // A damage dealer's result has none of it.
+  const dps = shapeRotation({ model: TANK_MODEL }, runModel(TANK_MODEL, { iterations: 40 }));
+  assert.equal(dps.metric, 'dps');
+  assert.equal(dps.survival, undefined);
+  assert.equal(dps.rotations[0].damage, undefined);
+  assert.equal(keepFromRun(runModel(TANK_MODEL, { iterations: 20 })).weights.survival, undefined);
+  // A tank's model without an enemy: the rotation still runs, and the AI is told what is missing.
+  const noEnemy = runModel(MELEE_MODEL, { iterations: 20, tank: true, defense: TANK_COMBAT });
+  assert.ok(noEnemy.problems.some((p) => /"enemy" is missing/.test(p)));
+  assert.deepEqual(shapeRotation({ model: MELEE_MODEL }, noEnemy).survival, { missing: ['enemy'] });
+});
+
+test('a tank\'s rotation request: threat, survival from the game\'s numbers, and weights for the gear plan', async () => {
+  const store = tmpStore();
+  const req = request('rotation', { armory_combat: TANK_COMBAT });
+  req.ext.input.role = 'tank';
+  const { askImpl, calls } = scripted({ summary: 's', assumptions: ['The boss hits are estimates.'], model: TANK_MODEL });
+  const out = await createArmory({ store, askImpl }).handle(req, { cfg });
+  assert.match(calls[0].system, /Tanks \("role": "tank"\): the simulator ranks the rotations by threat per second/);
+  assert.equal(out.data.metric, 'tps');
+  assert.ok(out.text.includes('tps'));
+  assert.equal(out.data.asked.role, 'tank');
+  assert.equal(out.data.survival.health, 7000, 'the health the game gave');
+  assert.equal(store.get('Player-1-ABC').weights.metric, 'tps');
+  // The gear plan is told to weigh survival first, and gets both kinds of worth.
+  const gear = scripted({ summary: 'g', weights: { STAMINA: 2 }, slots: [{ slot: 'head', picks: [{ name: 'Bag Helm', itemId: 77, source: { type: 'world' }, confidence: 'high' }] }] });
+  const greq = request('gear');
+  greq.ext.input.role = 'tank';
+  await createArmory({ store, askImpl: gear.askImpl, fetchImpl: noNetwork }).handle(greq, { cfg });
+  assert.match(gear.calls[0].system, /weigh survival first .* and threat second/);
+  const sent = JSON.parse(gear.calls[0].messages[0].content.split('\n')[1]);
+  assert.equal(sent.armory_weights.metric, 'tps');
+  assert.ok(sent.armory_weights.survival.some((w) => w.stat === 'armor' && w.taken > 0));
+  // An idea is measured on threat against a tank's baseline.
+  const ideas = scripted({ summary: 'i', ideas: [{ title: 'More', mechanism: 'm', confidence: 'low', sim: { modifiers: [{ stat: 'damagePct', value: 10 }] } }] });
+  const found = await createArmory({ store, askImpl: ideas.askImpl }).handle(request('discover'), { cfg });
+  assert.equal(found.data.ideas[0].measured.metric, 'tps');
+});
+
+test('test mode answers a tank with a placeholder tank result', async () => {
+  const echo = { ...cfg, provider: 'echo' };
+  const req = request('rotation', { armory_combat: TANK_COMBAT });
+  req.ext.input.role = 'tank';
+  const out = await createArmory({ store: tmpStore(), askImpl: async () => { throw new Error('no AI'); } }).handle(req, { cfg: echo });
+  assert.equal(out.data.test, true);
+  assert.equal(out.data.metric, 'tps');
+  assert.equal(out.data.asked.role, 'tank');
+  assert.ok(out.data.rotations[0].value > out.data.rotations[0].damage);
+  assert.equal(out.data.survival.enemy.level, 14);
+  assert.ok(out.data.survival.taken > 0 && out.data.survival.timeToDie > 0);
+  assert.ok(out.data.assumptions.some((a) => /placeholders too/.test(a)));
+  // Without the defensive numbers it says what it left out.
+  const bare = request('rotation');
+  bare.ext.input.role = 'tank';
+  const thin = await createArmory({ store: tmpStore() }).handle(bare, { cfg: echo });
+  assert.deepEqual(thin.data.survival.missing, ['armor', 'dodgePct', 'parryPct', 'blockPct', 'defense', 'maxHealth']);
+});

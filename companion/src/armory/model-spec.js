@@ -51,7 +51,15 @@ export const MODEL_SPEC = `### Combat model format (JSON)
       }
     },
     "critMultiplier": { "melee": 2, "ranged": 2, "spell": 1.5, "heal": 1.5 },
-    "modifiers": [ MODIFIER ]                        // always on: talents, set bonuses, passives
+    "modifiers": [ MODIFIER ],                       // always on: talents, set bonuses, passives
+    "threatMultiplier": 1                            // threat per point of damage from a stance, Righteous Fury,
+                                                     // threat talents and the like, all together (1.3 = 30% more)
+  },
+  "enemy": {                  // tanks only ("role": "tank"): the enemy whose hits the player has to survive
+    "level": 63,
+    "meleeHit": 0,            // one ordinary melee hit before armor, as an estimate
+    "attackSpeed": 2.0,       // seconds between its melee swings
+    "magicDps": 0             // steady magic damage per second it deals, when you know of any; else 0
   },
   "abilities": [ ABILITY ],
   "buffs": [ BUFF ],
@@ -91,6 +99,9 @@ ABILITY = {
   },
   "canCrit": true, "canMiss": true, "ignoresArmor": false,
   "maxTargets": 1,            // enemies hit, up to fight.targets
+  "threatMultiplier": 1,      // the ability's own threat per point of its damage ("causes 20% additional threat" = 1.2)
+  "threat": 0,                // flat threat each time it lands, where the tooltip or a Forever source gives one.
+                              // Threat = (damage * threatMultiplier + threat) * player.threatMultiplier
   "applies": [ "buffId" ],    // buffs or debuffs started (or refreshed, +1 stack) when it lands
   "consumes": [ "buffId" ],   // buffs removed when used
   "requires": CONDITION       // can only be used while this holds (e.g. target below 20% health)

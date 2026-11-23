@@ -63,6 +63,31 @@ export const RULES = Object.freeze({
   NOISE_SIGMAS: 2,
 });
 
+// Survival for tanks (see survival() below): how an enemy's melee swing
+// resolves against the player. These are WoW Classic's rules, NOT confirmed
+// for WoW Forever: Forever may have changed any of them.
+export const DEFENSE = Object.freeze({
+  SKILL_PER_LEVEL: 5, // weapon skill and defense skill: 5 points per level
+  // Each point of the enemy's weapon skill over the player's defense moves
+  // this many percent: less miss, dodge, parry and block, more crit.
+  PER_SKILL: 0.04,
+  MOB_MISS: 5, // % an enemy misses a defender of equal skill
+  MOB_CRIT: 5, // % an enemy crits a defender of equal skill
+  MOB_CRIT_MULT: 2,
+  // Crushing blows: only from an enemy this many levels above the player, with
+  // chance = CRUSH_PER_SKILL * (skill difference) - CRUSH_OFFSET percent: 15%
+  // for a boss 3 levels above a character with no extra defense, none once
+  // defense closes the gap to 7 points.
+  CRUSH_MIN_LEVEL_DIFF: 3,
+  CRUSH_PER_SKILL: 2,
+  CRUSH_OFFSET: 15,
+  CRUSH_MULT: 1.5,
+  // Health per point of stamina (Classic: 10, ignoring the first 20 points).
+  HEALTH_PER_STAMINA: 10,
+  // How much of each defensive stat is added to measure what it is worth.
+  WORTH: { armor: 100, dodgePct: 1, parryPct: 1, blockPct: 1, blockValue: 10, stamina: 10 },
+});
+
 const SCHOOLS = ['physical', 'holy', 'fire', 'nature', 'frost', 'shadow', 'arcane'];
 const TYPES = ['melee', 'ranged', 'spell', 'heal'];
 const MOD_TYPES = [...TYPES, 'auto'];
@@ -367,6 +392,8 @@ function normalizeInner(raw, problems) {
   const critMultiplier = {};
   for (const [k, d] of Object.entries({ melee: 2, ranged: 2, spell: 1.5, heal: 1.5 })) critMultiplier[k] = R.num(rc[k], d, 1, 10, `player.critMultiplier.${k}`);
   const playerMods = normMods(rp.modifiers, 'player', R, problems);
+  // What turns damage into threat on the player (a stance, Righteous Fury...).
+  const threatMultiplier = R.num(rp.threatMultiplier, 1, 0, 20, 'player.threatMultiplier');
 
   // Fight.
   const rf = asObj(src.fight);
@@ -378,6 +405,14 @@ function normalizeInner(raw, problems) {
     executePct: R.num(rf.executePct, 20, 0, 100, 'fight.executePct'),
   };
   const rawKind = matchEnum(src.kind, ['damage', 'healing']);
+  // The enemy a tank has to survive (survival() below); the AI's estimate.
+  const re = isObj(src.enemy) ? src.enemy : null;
+  const enemy = re ? {
+    level: Math.round(R.num(re.level, fight.targetLevel, 1, 63, 'enemy.level')),
+    meleeHit: R.num(re.meleeHit, 0, 0, 1e6, 'enemy.meleeHit'),
+    attackSpeed: R.num(re.attackSpeed, 2, 0.1, 10, 'enemy.attackSpeed'),
+    magicDps: R.num(re.magicDps, 0, 0, 1e6, 'enemy.magicDps'),
+  } : null;
 
   // Buffs (before abilities and procs, which reference them).
   const buffs = withIds(src.buffs, 'buff', problems).map(({ raw: b, id, name }) => ({
@@ -421,6 +456,8 @@ function normalizeInner(raw, problems) {
       canMiss: R.bool(a.canMiss, true),
       ignoresArmor: R.bool(a.ignoresArmor, false),
       maxTargets: Math.round(R.num(a.maxTargets, 1, 1, 20, `${where} maxTargets`)),
+      threatMultiplier: R.num(a.threatMultiplier, 1, 0, 50, `${where} threatMultiplier`),
+      threat: R.num(a.threat, 0, 0, 1e5, `${where} threat`),
       applies: buffRefs(a.applies, 'applies', id),
       consumes: buffRefs(a.consumes, 'consumes', id),
       requires: null,
@@ -434,7 +471,7 @@ function normalizeInner(raw, problems) {
     if (ab.nextSwing && (!weapons.mainHand || autoAttack !== 'melee')) {
       problems.push(`${where} is "nextSwing" but there are no main-hand auto attacks: it can never be used`);
     }
-    if (!ab.damage && !ab.dot && !ab.applies.length && !ab.gain) problems.push(`${where} has no damage, dot, applies or gain: it does nothing`);
+    if (!ab.damage && !ab.dot && !ab.applies.length && !ab.gain && !ab.threat) problems.push(`${where} has no damage, dot, applies or gain: it does nothing`);
     return ab;
   });
   const kind = rawKind || (abilities.length && abilities.every((a) => a.type === 'heal') ? 'healing' : 'damage');
@@ -520,9 +557,10 @@ function normalizeInner(raw, problems) {
 
   const model = {
     version: 1, kind, fight,
-    player: { level, stats, weapons, autoAttack, resource, critMultiplier, modifiers: playerMods },
+    player: { level, stats, weapons, autoAttack, resource, critMultiplier, modifiers: playerMods, threatMultiplier },
     abilities, buffs, procs, statConversions, rotations,
   };
+  if (enemy) model.enemy = enemy;
   return { model, problems, fatal };
 }
 
@@ -539,7 +577,9 @@ function makeCtx(id, type, school, extra) {
   };
 }
 
-function compile(m) {
+// metric: "tps" ranks by threat per second (tanks); otherwise the model's
+// kind decides between damage and healing per second.
+function compile(m, metric) {
   const healMetric = m.kind === 'healing';
   const p = m.player;
   const d = clamp(m.fight.targetLevel - p.level, 0, RULES.MAX_LEVEL_DIFF);
@@ -601,6 +641,18 @@ function compile(m) {
     actions: r.actions.map((a) => ({ ab: C.ab[abIdx.get(a.use)], cond: compileCond(a.if, C) })),
   }));
   C.nSrc = 1 + nAb + m.procs.length;
+  // Threat per point of damage of each source: auto attacks and procs carry
+  // the player's multiplier, abilities their own on top of it. Healing makes
+  // no threat here (not modelled).
+  const pm = p.threatMultiplier ?? 1;
+  C.threatMetric = metric === 'tps';
+  C.thrMult = new Float64Array(C.nSrc);
+  C.thrMult[0] = pm;
+  C.ab.forEach((a) => {
+    C.thrMult[a.src] = a.heal ? 0 : (a.threatMultiplier ?? 1) * pm;
+    a.threatFlat = a.heal ? 0 : (a.threat || 0) * pm * a.targetsMult;
+  });
+  C.procList.forEach((pr) => { C.thrMult[pr.src] = pr.heal ? 0 : pm; });
   return C;
 }
 
@@ -655,7 +707,7 @@ function newState(C, seed, iter) {
     dCrit: new Float64Array(nAb), dCritMult: new Float64Array(nAb), dStacks: new Int32Array(nAb),
     dSince: new Float64Array(nAb), dUp: new Float64Array(nAb),
     icd: new Float64Array(C.procList.length),
-    total: new Float64Array(C.nSrc), count: new Float64Array(C.nSrc), crits: new Float64Array(C.nSrc), critN: new Float64Array(C.nSrc),
+    total: new Float64Array(C.nSrc), threat: new Float64Array(C.nSrc), count: new Float64Array(C.nSrc), crits: new Float64Array(C.nSrc), critN: new Float64Array(C.nSrc),
     wasted: 0, idle: 0, idleFlag: false, decisions: 0, starved: 0, emptyAt: null,
     rngMH: mulberry32(streamSeed(seed, iter, 1)), rngOH: mulberry32(streamSeed(seed, iter, 2)), rngRG: mulberry32(streamSeed(seed, iter, 3)),
     rngAb: C.ab.map((a, i) => mulberry32(streamSeed(seed, iter, 100 + i))),
@@ -783,8 +835,11 @@ function useCharges(S, kind) {
   }
 }
 
+// Threat comes from the same hits as damage: no roll of its own, so it never
+// moves the dice of a damage or healing run.
 function record(S, src, amount, crit, eligible) {
   S.total[src] += amount;
+  S.threat[src] += amount * S.C.thrMult[src];
   if (eligible) { S.critN[src]++; if (crit) S.crits[src]++; }
 }
 
@@ -895,6 +950,8 @@ function afterUse(S, a, landed) {
   if (landed) {
     for (const b of a.targetBuffs) applyBuff(S, b);
     if (a.dot) applyDot(S, a);
+    // Flat threat of an ability that landed (Sunder Armor's, a taunt's bonus).
+    if (a.threatFlat) S.threat[a.src] += a.threatFlat;
   }
   if (a.gain) gainRes(S, a.gain);
   fireProcs(S, 'abilityUse', a.id, a.speed, false);
@@ -1123,24 +1180,32 @@ const srcIsHeal = (C, src) => (src === 0 ? false : src <= C.nAb ? C.ab[src - 1].
 function runRotation(C, ri, iterations, seed) {
   const rot = C.rotations[ri], dur = C.fight.duration;
   const total = new Float64Array(C.nSrc), count = new Float64Array(C.nSrc), crits = new Float64Array(C.nSrc), critN = new Float64Array(C.nSrc);
+  const threat = new Float64Array(C.nSrc);
   const bUp = new Float64Array(C.buffs.length), dUp = new Float64Array(C.nAb);
-  const values = new Float64Array(iterations);
-  let wasted = 0, idle = 0, decisions = 0, starved = 0, emptySum = 0, emptyN = 0;
+  const values = new Float64Array(iterations), threatValues = new Float64Array(iterations);
+  let wasted = 0, idle = 0, decisions = 0, starved = 0, emptySum = 0, emptyN = 0, damageSum = 0;
   for (let it = 0; it < iterations; it++) {
     const S = runFight(C, rot, seed, it);
-    let v = 0;
+    let v = 0, th = 0, dmg = 0;
     for (let s = 0; s < C.nSrc; s++) {
       total[s] += S.total[s]; count[s] += S.count[s]; crits[s] += S.crits[s]; critN[s] += S.critN[s];
+      threat[s] += S.threat[s];
+      th += S.threat[s];
       if (srcIsHeal(C, s) === C.healMetric) v += S.total[s];
+      if (!srcIsHeal(C, s)) dmg += S.total[s];
     }
     values[it] = v / dur;
+    threatValues[it] = th / dur;
+    damageSum += dmg / dur;
     for (let i = 0; i < bUp.length; i++) bUp[i] += S.bUp[i];
     for (let i = 0; i < dUp.length; i++) dUp[i] += S.dUp[i];
     wasted += S.wasted; idle += S.idle; decisions += S.decisions; starved += S.starved;
     if (S.emptyAt !== null) { emptySum += S.emptyAt; emptyN++; }
   }
-  const mean = values.reduce((x, y) => x + y, 0) / iterations;
-  const sd = iterations > 1 ? Math.sqrt(values.reduce((x, y) => x + (y - mean) ** 2, 0) / (iterations - 1)) : 0;
+  const meanOf = (xs) => xs.reduce((x, y) => x + y, 0) / iterations;
+  const sdOf = (xs, m) => (iterations > 1 ? Math.sqrt(xs.reduce((x, y) => x + (y - m) ** 2, 0) / (iterations - 1)) : 0);
+  const mean = meanOf(values), sd = sdOf(values, mean);
+  const tps = meanOf(threatValues), tpsSd = sdOf(threatValues, tps);
   let grand = 0;
   for (let s = 0; s < C.nSrc; s++) if (srcIsHeal(C, s) === C.healMetric) grand += total[s];
   const minutes = (dur / 60) * iterations;
@@ -1166,15 +1231,35 @@ function runRotation(C, ri, iterations, seed) {
     resource: { wasted: wasted / iterations, starvedPct: decisions > 0 ? (100 * starved) / decisions : 0, emptyAt: emptyN ? emptySum / emptyN : null },
     idlePct: (100 * idle) / (dur * iterations),
     autoAttackShare: !C.healMetric && grand > 0 ? (100 * total[0]) / grand : 0,
+    tps, dps: damageSum / iterations,
   };
-  return { result, values };
+  if (!C.threatMetric) return { result, values };
+  // A tank's rotations are ranked by threat; the breakdown says where the threat comes from.
+  result.value = tps;
+  result.stdev = tpsSd;
+  result.metric = 'tps';
+  result.breakdown = threatBreakdown(C, threat, count, minutes);
+  result.autoAttackShare = tps > 0 ? (100 * threat[0]) / (tps * dur * iterations) : 0;
+  return { result, values: threatValues };
+}
+
+function threatBreakdown(C, threat, count, minutes) {
+  let grand = 0;
+  for (let s = 0; s < C.nSrc; s++) grand += threat[s];
+  const out = [];
+  for (let s = 0; s < C.nSrc; s++) {
+    if (threat[s] <= 0) continue;
+    const e = s === 0 ? { id: 'auto', name: 'Auto attack' } : s <= C.nAb ? C.ab[s - 1] : C.procList[s - 1 - C.nAb];
+    out.push({ id: e.id, name: e.name, share: grand > 0 ? (100 * threat[s]) / grand : 0, perMinute: count[s] / minutes });
+  }
+  return out.sort((x, y) => y.share - x.share);
 }
 
 function readOpts(opts) {
   const o = asObj(opts);
   const it = Math.round(toNum(o.iterations));
   const sd = Math.round(toNum(o.seed));
-  return { iterations: Number.isFinite(it) ? clamp(it, 1, 100000) : 300, seed: Number.isFinite(sd) ? sd : 1, o };
+  return { iterations: Number.isFinite(it) ? clamp(it, 1, 100000) : 300, seed: Number.isFinite(sd) ? sd : 1, o, metric: o.metric === 'tps' ? 'tps' : null };
 }
 
 /**
@@ -1184,8 +1269,8 @@ function readOpts(opts) {
 export function simulate(model, opts = {}) {
   try {
     const { model: m } = normalizeModel(model);
-    const { iterations, seed, o } = readOpts(opts);
-    const C = compile(m);
+    const { iterations, seed, o, metric } = readOpts(opts);
+    const C = compile(m, metric);
     let idx = C.rotations.map((_, i) => i);
     const ri = Math.round(toNum(o.rotation));
     if (o.rotation != null && Number.isFinite(ri)) idx = ri >= 0 && ri < C.rotations.length ? [ri] : [];
@@ -1254,10 +1339,10 @@ function raised(m, stat, delta) {
 export function statWeights(model, opts = {}) {
   try {
     const { model: m, fatal } = normalizeModel(model);
-    const { iterations, seed, o } = readOpts(opts);
-    const metric = m.kind === 'healing' ? 'hps' : 'dps';
+    const { iterations, seed, o, metric: rank } = readOpts(opts);
+    const metric = rank || (m.kind === 'healing' ? 'hps' : 'dps');
     if (fatal || !m.rotations.length) return { metric, base: 0, perPoint: {}, normalized: {}, reference: null };
-    const C = compile(m);
+    const C = compile(m, rank);
     let ri = Math.round(toNum(o.rotation));
     let base;
     if (o.rotation != null && Number.isFinite(ri) && ri >= 0 && ri < C.rotations.length) base = runRotation(C, ri, iterations, seed);
@@ -1275,7 +1360,7 @@ export function statWeights(model, opts = {}) {
         if (!conv || !Object.keys(conv).some((t) => !STAT_KEYS.includes(t) || rel[t])) continue;
         delta = RULES.PRIMARY_DELTA;
       } else if (!rel[stat]) continue;
-      const run = runRotation(compile(raised(m, stat, delta)), ri, iterations, seed);
+      const run = runRotation(compile(raised(m, stat, delta), rank), ri, iterations, seed);
       const n = iterations;
       const diffs = run.values.map((v, i) => v - base.values[i]);
       const mean = diffs.reduce((x, y) => x + y, 0) / n;
@@ -1322,22 +1407,146 @@ function expectedUse(S, a) {
   return v;
 }
 
-/** Analytic per-use, per-second and per-resource values of every ability. */
-export function abilityTable(model) {
+/**
+ * Analytic per-use, per-second and per-resource values of every ability.
+ * With opts.metric "tps" the values are threat instead of damage.
+ */
+export function abilityTable(model, opts = {}) {
   try {
     const { model: m } = normalizeModel(model);
-    const C = compile(m);
+    const { metric } = readOpts(opts);
+    const C = compile(m, metric);
     const S = newState(C, 1, 0);
     return C.ab.map((a) => {
       const st = stats(S, a.ctx);
       const haste = Math.max(0.1, 1 + st.castHaste / 100);
       const castTime = a.castTime / haste;
       const gcd = a.gcd > 0 && !a.nextSwing ? (a.spellLike ? Math.max(Math.min(RULES.GCD_MIN, a.gcd), a.gcd / haste) : a.gcd) : RULES.OFF_GCD_TIME;
-      const perUse = expectedUse(S, a);
+      let perUse = expectedUse(S, a);
+      if (C.threatMetric) {
+        const land = !a.canMiss || a.heal ? 1 : clamp(1 - (st.miss + st.dodge) / 100, 0, 1);
+        perUse = perUse * C.thrMult[a.src] + a.threatFlat * land;
+      }
       const cost = C.resOn ? a.cost * st.costMult : 0;
       return { id: a.id, name: a.name, perUse, perSecond: perUse / Math.max(castTime, gcd), perResource: cost > 0 ? perUse / cost : null, castTime };
     });
   } catch {
     return [];
+  }
+}
+
+// --------------------------------------------------------------- survival
+
+// The player's defensive numbers as the addon read them from the game
+// (armory_combat), each a finite number or left out.
+const DEFENSE_INPUTS = ['armor', 'maxHealth', 'dodgePct', 'parryPct', 'blockPct', 'blockValue', 'defense'];
+function defenseOf(raw, level) {
+  const src = asObj(raw);
+  const out = { level: Number.isFinite(toNum(src.level)) && toNum(src.level) > 0 ? toNum(src.level) : level };
+  for (const k of DEFENSE_INPUTS) {
+    const v = toNum(src[k]);
+    if (Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  return out;
+}
+
+// One enemy swing against the player: the chance (percent) of each outcome
+// on Classic's single-roll table, in its order. What is left is a plain hit.
+function attackTable(d, enemy, useBlock) {
+  const R = DEFENSE;
+  const defense = d.defense !== undefined ? d.defense : R.SKILL_PER_LEVEL * d.level;
+  const skill = R.SKILL_PER_LEVEL * enemy.level - defense;
+  // The sheet's dodge, parry and block are against an enemy of the player's
+  // own level; each level above takes SKILL_PER_LEVEL * PER_SKILL off them.
+  const levelShift = R.PER_SKILL * R.SKILL_PER_LEVEL * (enemy.level - d.level);
+  const wanted = {
+    miss: R.MOB_MISS - R.PER_SKILL * skill,
+    dodge: (d.dodgePct || 0) - levelShift,
+    parry: (d.parryPct || 0) - levelShift,
+    block: useBlock ? (d.blockPct || 0) - levelShift : 0,
+    crit: R.MOB_CRIT + R.PER_SKILL * skill,
+    crush: enemy.level - d.level >= R.CRUSH_MIN_LEVEL_DIFF ? R.CRUSH_PER_SKILL * skill - R.CRUSH_OFFSET : 0,
+  };
+  const table = {};
+  let left = 100;
+  for (const [k, v] of Object.entries(wanted)) {
+    table[k] = Math.min(left, Math.max(0, v));
+    left -= table[k];
+  }
+  table.hit = left;
+  return table;
+}
+
+// The expected numbers per second, split so that avoided + armor + blocked +
+// taken add up to the incoming damage (avoided swings counted as plain hits).
+function survivalNumbers(d, enemy, useBlock) {
+  const melee = enemy.meleeHit > 0;
+  const table = attackTable(d, enemy, useBlock);
+  const p = (k) => table[k] / 100;
+  const dr = armorReduction(d.armor || 0, enemy.level);
+  const perSec = melee ? enemy.meleeHit / enemy.attackSpeed : 0;
+  const landing = perSec * (p('hit') + p('block') + DEFENSE.MOB_CRIT_MULT * p('crit') + DEFENSE.CRUSH_MULT * p('crush'));
+  const afterArmor = enemy.meleeHit * (1 - dr);
+  const blocked = melee ? (p('block') * Math.min(afterArmor, d.blockValue || 0)) / enemy.attackSpeed : 0;
+  const avoided = perSec * (p('miss') + p('dodge') + p('parry'));
+  const armor = landing * dr;
+  const meleeTaken = landing * (1 - dr) - blocked;
+  const incoming = avoided + armor + blocked + meleeTaken + enemy.magicDps;
+  const taken = meleeTaken + enemy.magicDps;
+  const out = { table, armorReduction: dr, incoming, taken, avoided, armor, blocked };
+  if (d.maxHealth > 0 && taken > 0) {
+    out.timeToDie = d.maxHealth / taken;
+    out.effectiveHealth = (d.maxHealth * incoming) / taken;
+  }
+  return out;
+}
+
+/**
+ * What a tank can expect to take from one enemy, analytically: the attack
+ * table, damage taken per second, how much is mitigated and how, effective
+ * health and seconds to die with no healing, and what each defensive stat
+ * is worth (finite differences on the same formula). defense: the game's
+ * numbers (armor, maxHealth, dodgePct, parryPct, blockPct, blockValue,
+ * defense, level); enemy: the model's normalized "enemy". A missing input is
+ * listed in `missing` and its part left out; nothing is guessed except the
+ * defense skill, taken as SKILL_PER_LEVEL per level when the game gave none.
+ */
+export function survival(rawDefense, enemy, { level = 60 } = {}) {
+  try {
+    if (!enemy || !(enemy.meleeHit > 0 || enemy.magicDps > 0)) return { missing: ['enemy'] };
+    const d = defenseOf(rawDefense, level);
+    const missing = [];
+    const melee = enemy.meleeHit > 0;
+    if (melee) {
+      for (const k of ['armor', 'dodgePct', 'parryPct', 'blockPct']) if (d[k] === undefined) missing.push(k);
+      if (d.defense === undefined) missing.push('defense');
+    }
+    // A block of unknown size is left out: blocks then count as hits.
+    const useBlock = d.blockPct > 0 && d.blockValue !== undefined;
+    if (melee && d.blockPct > 0 && d.blockValue === undefined) missing.push('blockValue');
+    if (d.maxHealth === undefined) missing.push('maxHealth');
+    const base = survivalNumbers(d, enemy, useBlock);
+    const worth = {};
+    const known = {
+      armor: melee && d.armor !== undefined,
+      dodgePct: melee && d.dodgePct !== undefined,
+      parryPct: melee && d.parryPct !== undefined,
+      blockPct: melee && useBlock,
+      blockValue: melee && useBlock,
+      stamina: d.maxHealth !== undefined,
+    };
+    for (const [stat, amount] of Object.entries(DEFENSE.WORTH)) {
+      if (!known[stat]) continue;
+      const more = { ...d };
+      if (stat === 'stamina') more.maxHealth += amount * DEFENSE.HEALTH_PER_STAMINA;
+      else more[stat] += amount;
+      const after = survivalNumbers(more, enemy, useBlock);
+      const w = { amount, taken: base.taken - after.taken };
+      if (base.timeToDie !== undefined && after.timeToDie !== undefined) w.time = after.timeToDie - base.timeToDie;
+      worth[stat] = w;
+    }
+    return { enemy: { ...enemy }, ...base, health: d.maxHealth, worth, missing };
+  } catch (err) {
+    return { missing: ['enemy'], error: String(err && err.message) };
   }
 }
