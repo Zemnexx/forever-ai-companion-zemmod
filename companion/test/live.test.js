@@ -38,7 +38,11 @@ function game(script, { lenient = false, canCheckLater = true } = {}) {
     RUNG, APP_OPEN = {}, true
     local function really(file)
       local name = file:match("sig\\\\(.-)%.wav$")
-      if name == "beat1" or name == "beat2" then return APP_OPEN and name == ((math.floor(NOW / 3) % 2 == 0) and "beat1" or "beat2") end
+      if name == "beat1" or name == "beat2" then
+        -- BEATS(name): a test's own idea of what the game plays.
+        if BEATS then return BEATS(name) end
+        return APP_OPEN and name == ((math.floor(NOW / 3) % 2 == 0) and "beat1" or "beat2")
+      end
       return name == "ok" or name == "st" or (tonumber(name) ~= nil and RUNG[tonumber(name)] == true)
     end
     HANDLES, PLAYED = {}, 0
@@ -179,11 +183,14 @@ test('a game that says yes to every sound file is found out, and the files are c
     RUNG[7] = true
     SAY("the app answers")
     ADVANCE(4)
-    SAY("bell " .. ns.db.nextSig)`, { lenient: true });
+    SAY("bell " .. ns.db.nextSig)
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`, { lenient: true });
   const lines = out.filter((l) => !/mailbox$/.test(l));
   assert.equal(lines[0], '10 bell 7 app ready', 'no bell counted that has not rung, and the app\'s beat is seen');
   assert.match(lines[1], /bells checked a moment after playing \(this game says yes to every sound file\), waiting for bell 7 of 500, mailboxes opened 1 of 50/);
-  assert.deepEqual(lines.slice(2), ['510 the app answers', '512 result gear ok=true late=nil timedOut=nil', '514 bell 8'], 'picked up when the bell rings, not by the timer');
+  assert.deepEqual(lines.slice(2, 5), ['510 the app answers', '512 result gear ok=true late=nil timedOut=nil', '514 bell 8'], 'picked up when the bell rings, not by the timer');
+  // The mailboxes opened at login and at 5 minutes brought nothing: only the bell's counts.
+  assert.ok(lines.some((l) => /^514 last answers: bell at 51[23]s \(after login\)$/.test(l)), lines.join('\n'));
   assert.equal(out.filter((l) => /mailbox$/.test(l) && !/^(0|300|512) /.test(l)).length, 0, 'one mailbox at login, the safety one at 5 minutes, and the answer\'s');
 });
 
@@ -212,9 +219,70 @@ test('such a game with no way to check later goes by the timer, and says so', ()
     SAY("app " .. ForeverAICompanionAPI.AppState())
     SAY(ForeverAICompanionAPI.Diagnose()[1])
     INBOX = { answers = { { id = "a1", ok = true, answer = "Plan.", data = { kind = "gear" } } } }
-    ADVANCE(40)`, { lenient: true, canCheckLater: false });
+    ADVANCE(40)
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`, { lenient: true, canCheckLater: false });
   const text = out.join('\n');
   assert.match(text, /60 app unknown/);
   assert.match(text, /bells NOT USED \(this game says yes to every sound file and cannot check later\)/);
   assert.match(text, /90 result gear ok=true/, 'the mailbox opened on the timer at 90 seconds brings it');
+  assert.match(text, /last answers: timer \(no bells\) at 90s \(after login\)/);
+});
+
+test('the diagnosis says how each answer was picked up: by its bell or by a timer', () => {
+  const out = game(`
+    ns.db.nextSig = 7
+    ns.db.plugins = { pending = { a1 = { name = "armory", kind = "talents", t = time(), timeout = 1260 } }, held = {} }
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SAY(ForeverAICompanionAPI.Diagnose()[4])
+    ns.Live:OnSent(true)
+    ADVANCE(20)
+    INBOX = { answers = { { id = "a1", ok = true, answer = "Build.", data = { kind = "talents" } } } }
+    RUNG[7] = true
+    ADVANCE(4)
+    -- A second question whose bell never rings: the safety timer brings it, 5 minutes after it was sent.
+    ns.db.plugins.pending.a2 = { name = "armory", kind = "gear", t = time(), timeout = 1260 }
+    ns.Live:OnSent(true)
+    INBOX = { answers = { { id = "a2", ok = true, answer = "Plan.", data = { kind = "gear" } } } }
+    ADVANCE(302)
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`);
+  assert.ok(out.includes('0 last answers: none picked up since login'), out.join('\n'));
+  assert.ok(out.includes('326 last answers: bell at 22s, timer (safety schedule) at 324s (after login)'), out.join('\n'));
+});
+
+test('the diagnosis keeps a short history of the heartbeat since login', () => {
+  // The app switching as it should: many changes, the oldest left out.
+  const switching = game(`
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SAY(ForeverAICompanionAPI.Diagnose()[5])
+    ns.Plugins:Watch("armory", true)
+    ADVANCE(60)
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`);
+  const text = switching.join('\n');
+  assert.match(text, /0 beat history: not checked since login/);
+  assert.match(text, /60 beat history: ([0-3] for \d+s, ){11}[0-3] since \d+s \(\d+ earlier changes left out, 31 checks from 0s after login, the last 0s ago\)/);
+  assert.match(text, /app: ready/, 'the history changes nothing in how the app is seen');
+
+  // What the live client may be doing: once played, both beats go on playing.
+  const stuck = game(`
+    INBOX = { answers = {} }
+    BEATS = function(name) return NOW < 7 and name == "beat1" or NOW >= 7 end
+    ns.Live:Init()
+    ns.Plugins:Watch("armory", true)
+    ADVANCE(30)
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`, { lenient: true });
+  // Checked a moment after playing: the checks fall half a second after the ticks.
+  assert.ok(stuck.some((l) => /^30 beat history: 1 for 8s, 3 since [89]s \(15 checks from [01]s after login, the last 2s ago\)$/.test(l)), stuck.join('\n'));
+  assert.ok(stuck.some((l) => /^30 app: unknown, beat 3/.test(l)), stuck.join('\n'));
+
+  const always = game(`
+    INBOX = { answers = {} }
+    BEATS = function() return true end
+    ns.Live:Init()
+    ns.Plugins:Watch("armory", true)
+    ADVANCE(20)
+    SAY(ForeverAICompanionAPI.Diagnose()[5])`, { lenient: true });
+  assert.equal(always.length, 1);
+  assert.match(always[0], /^20 beat history: always 3, never changed \(\d+ checks from [01]s after login, the last \ds ago\)$/);
 });

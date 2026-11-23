@@ -289,7 +289,10 @@ local L = {
   -- Lab
   NO_BASELINE = "Analyze the rotation first and ideas that change your numbers get measured by the simulator.",
   NO_IDEAS = "Nothing stood out in your talents, spells and items this time.",
-  MEASURED = "simulated: %s%% (%s to %s)",
+  -- What the simulator gives is the idea's worth if it works as described,
+  -- not proof that it does: it does not check the mechanic in the game.
+  MEASURED = "if it works: %s%% (%s to %s %s)",
+  MEASURED_HINT = "The figures are what an idea would be worth if the game behaves as described. \"How to test it\" is how to find out whether it does.",
   NEEDS = "Needs",
   GAIN = "Gain",
   HOW_TO_TEST = "How to test it",

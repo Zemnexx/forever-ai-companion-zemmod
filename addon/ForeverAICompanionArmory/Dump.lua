@@ -1,7 +1,7 @@
--- /armory dump: writes down what this client's talent functions answer, as
--- they answer it, into the addon's saved variables. The talent reader in
--- Scan.lua was written without access to the game; this is what it gets
--- corrected from. Nothing is sent anywhere: the file is the player's to pass
+-- /armory dump: writes down what this client's talent and spellbook
+-- functions answer, as they answer it, into the addon's saved variables. The
+-- readers in Scan.lua were written without access to the game; this is what
+-- they get corrected from. Nothing is sent anywhere: the file is the player's to pass
 -- on, and a dump is dropped again after a few days.
 local _, ns = ...
 local Util = ns.Util
@@ -260,6 +260,54 @@ local function traits()
   return out
 end
 
+-- The spellbook as the game lists it: every item of every skill line, so the
+-- way Scan.Spells picks a rank can be checked against it. Bounded, because the
+-- dump goes into the saved variables.
+local MAX_BOOK_ITEMS, MAX_BOOK_LINES = 250, 20
+
+local function spellbook()
+  local B = C_SpellBook
+  if type(B) ~= "table" then return "<no C_SpellBook>" end
+  local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+  local S = type(C_Spell) == "table" and C_Spell or {}
+  local tips = type(C_TooltipInfo) == "table" and C_TooltipInfo or {}
+  local out = { lines = {}, count = call(B.GetNumSpellBookSkillLines), items = 0 }
+  local function about(id)
+    if type(id) ~= "number" or Util.secret(id) then return nil end
+    return {
+      name = spellName(id), subtext = call(S.GetSpellSubtext, id),
+      override = call(S.GetOverrideSpell, id), findOverride = call(FindSpellOverrideByID, id),
+    }
+  end
+  local n = tonumber(safe(B.GetNumSpellBookSkillLines)) or 0
+  for i = 1, math.min(n, MAX_BOOK_LINES) do
+    local line = safe(B.GetSpellBookSkillLineInfo, i)
+    local entry = { info = plain(line) or "<nil>", items = {} }
+    local first = type(line) == "table" and (tonumber(line.itemIndexOffset) or 0) + 1 or 1
+    local count = type(line) == "table" and tonumber(line.numSpellBookItems) or 0
+    for j = first, first + count - 1 do
+      if out.items >= MAX_BOOK_ITEMS then
+        out.truncated = true
+        break
+      end
+      out.items = out.items + 1
+      local info = safe(B.GetSpellBookItemInfo, j, bank)
+      local item = { slot = j, info = plain(info) or "<nil>" }
+      if type(info) == "table" then
+        item.spell = about(info.spellID)
+        if info.actionID ~= info.spellID then item.action = about(info.actionID) end
+      end
+      -- The first two lines of the slot's own tooltip: the name and the rank the player sees.
+      local t = tip(tips.GetSpellBookItem, j, bank)
+      if type(t) == "table" and type(t.lines) == "table" then t.lines = { t.lines[1], t.lines[2] } end
+      item.slotTip = t
+      entry.items[#entry.items + 1] = item
+    end
+    out.lines[#out.lines + 1] = entry
+  end
+  return out
+end
+
 -- The dump ---------------------------------------------------------------------------
 
 function Dump.Collect()
@@ -273,10 +321,17 @@ function Dump.Collect()
   d.classic = part(classic)
   d.specs = part(specs)
   d.traits = part(traits)
+  d.spellbook = part(spellbook)
   -- What the Armory made of all that: /armory debug, and the trees as it sends them.
   d.read = part(function() return plain(ns.Scan.Diagnose()) end)
   d.talents = part(function() return plain(ns.Scan.Talents()) or "<nil>" end)
   d.specsOffered = part(function() return plain(ns.Scan.Specs()) end)
+  -- Each ability as it is sent: the id and rank picked for it.
+  d.spellsRead = part(function()
+    local out = {}
+    for i, s in ipairs(ns.Scan.Spells() or {}) do out[i] = { name = s.name, id = s.id, rank = s.rank } end
+    return out
+  end)
   return d
 end
 

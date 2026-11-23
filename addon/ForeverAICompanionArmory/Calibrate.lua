@@ -32,6 +32,7 @@ local MIN_GAP = 20
 -- kilobytes; 8 readings chosen to keep their spread are plenty for a line.
 local MAX_READINGS = 8
 local MAX_SPELLS = 30
+local CALIB_VERSION = 2 -- of the saved data (Calibrate.Data)
 -- Effect numbers followed per ability.
 local MAX_EFFECTS = 4
 -- What the rotation analysis gets: measured effects, and the length of a label.
@@ -276,8 +277,11 @@ function Calibrate.Data()
   local c = ns.Store and ns.Store:Char()
   if not c then return nil end
   local cal = c.calib
-  if type(cal) ~= "table" or cal.v ~= 1 then
-    cal = { v = 1, seq = 0, readings = {}, spells = {} }
+  -- Version 2: before it, the modern spellbook could be read at an ability's
+  -- first rank, under the same spell id and rank name as the right one, so
+  -- those readings are dropped rather than mixed with the ones after.
+  if type(cal) ~= "table" or cal.v ~= CALIB_VERSION then
+    cal = { v = CALIB_VERSION, seq = 0, readings = {}, spells = {} }
     c.calib = cal
   end
   return cal

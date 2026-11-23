@@ -560,7 +560,25 @@ local function spellTip(spellID, slot, bookType)
   return nil
 end
 
+-- The number in "Rank 4", or nil.
+local function rankNumber(text)
+  return type(text) == "string" and tonumber(text:match("^Rank (%d+)$")) or nil
+end
+
+-- The rank a tooltip itself shows: a line of its own under the name, or the
+-- right side of the name's line ("Blessing of Might  Rank 4").
+local function tipRank(lines)
+  for i = 1, math.min(lines and #lines or 0, 2) do
+    local n = lines[i]:match("^Rank (%d+)$") or lines[i]:match("  Rank (%d+)$")
+    if n then return "Rank " .. n end
+  end
+  return nil
+end
+
 local function spellEntry(name, rank, spellID, tabName, passive, lines)
+  -- The rank shown is the one of the tooltip used: where the spellbook's
+  -- name for the rank and the tooltip disagree, the numbers are the tooltip's.
+  rank = tipRank(lines) or rank
   local e = { name = name, id = spellID, tab = tabName }
   if rank and rank ~= "" then e.rank = rank end
   if passive then e.passive = true end
@@ -576,11 +594,104 @@ local function spellEntry(name, rank, spellID, tabName, passive, lines)
   return e
 end
 
+-- How the modern spellbook was read, for /armory debug: where the tooltips
+-- came from, and where the spellbook's rank and the tooltip's disagreed.
+Scan.spellSources = nil
+
+-- What an id turns into right now (a higher rank learned over a base spell,
+-- or a talent replacing it), where the client says so.
+local function override(id)
+  local o = C_Spell and num(safe(C_Spell.GetOverrideSpell, id))
+  if not o or o == id then o = num(safe(FindSpellOverrideByID, id)) end
+  return o and o ~= id and o or nil
+end
+
+-- The ids a spellbook entry could stand for, the likeliest first: what its
+-- spell is overridden by, then its own ids.
+local function entryIds(info)
+  local ids, seen = {}, {}
+  local function add(id)
+    if id and not seen[id] then
+      seen[id] = true
+      ids[#ids + 1] = id
+    end
+  end
+  local spellID, actionID = num(info.spellID), num(info.actionID)
+  add(spellID and override(spellID))
+  add(actionID and override(actionID))
+  add(spellID)
+  add(actionID)
+  return ids
+end
+
+local function sameLines(a, b)
+  if not a or not b or #a ~= #b then return false end
+  for i = 1, #a do
+    if a[i] ~= b[i] then return false end
+  end
+  return true
+end
+
+-- The tooltip of a spellbook slot, as the player sees it in their spellbook.
+local function slotTip(slot, bank)
+  if C_TooltipInfo and C_TooltipInfo.GetSpellBookItem then
+    local lines = dataLines(safe(C_TooltipInfo.GetSpellBookItem, slot, bank))
+    if lines and #lines > 1 then return lines end
+  end
+  local lines = tipLines(function(t) t:SetSpellBookItem(slot, bank) end)
+  if lines and #lines > 1 then return lines end
+  return nil
+end
+
+local function idTip(id)
+  if C_TooltipInfo and C_TooltipInfo.GetSpellByID then
+    local lines = dataLines(safe(C_TooltipInfo.GetSpellByID, id))
+    if lines and #lines > 1 then return lines end
+  end
+  local lines = tipLines(function(t) t:SetSpellByID(id) end)
+  if lines and #lines > 1 then return lines end
+  return nil
+end
+
+-- One ability at the entry chosen for it: the slot's own tooltip first, and
+-- the id whose tooltip is that one. Without the slot's tooltip, the id whose
+-- tooltip shows the highest rank (the override first when they tie).
+local function readEntry(c, bank, sources)
+  local ids = entryIds(c.info)
+  local lines = slotTip(c.slot, bank)
+  local from = lines and "slot" or nil
+  local id, sameRank, best, bestRank
+  for _, candidate in ipairs(ids) do
+    local t = idTip(candidate)
+    if t then
+      if lines and sameLines(t, lines) then
+        id = candidate
+        break
+      end
+      local r = rankNumber(tipRank(t)) or 0
+      if lines and not sameRank and r == (rankNumber(tipRank(lines)) or 0) then sameRank = candidate end
+      if not best or r > bestRank then best, bestRank = { id = candidate, lines = t }, r end
+    end
+  end
+  if not lines and best then lines, id, from = best.lines, best.id, "id" end
+  -- The slot's tooltip and no id with the very same one (a cooldown running,
+  -- say): the id whose tooltip shows the same rank, else the likeliest.
+  id = id or sameRank or ids[1]
+  local rank = clean(c.info.subName)
+  local shown = tipRank(lines)
+  if from then sources[from] = sources[from] + 1 else sources.none = sources.none + 1 end
+  if shown and rankNumber(rank) and shown ~= rank then sources.differ = sources.differ + 1 end
+  return spellEntry(c.name, rank, id, c.tab, c.info.isPassive and true or false, lines)
+end
+
 local function modernSpells()
   if not (C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and C_SpellBook.GetSpellBookItemInfo) then return nil end
   local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
   local types = Enum and Enum.SpellBookItemType or {}
-  local list, seen = {}, {}
+  -- One entry per ability: the spellbook may list every rank the character
+  -- knows, so the highest one is kept, by the number in "Rank N" where there
+  -- is one and else the later entry (ranks are listed lowest first).
+  local order, best = {}, {}
   for i = 1, num(safe(C_SpellBook.GetNumSpellBookSkillLines)) or 0 do
     local line = safe(C_SpellBook.GetSpellBookSkillLineInfo, i)
     if type(line) == "table" and not line.offSpecID and not line.shouldHide then
@@ -589,16 +700,29 @@ local function modernSpells()
         local info = safe(C_SpellBook.GetSpellBookItemInfo, j, bank)
         local name = type(info) == "table" and clean(info.name)
         local id = name and (num(info.spellID) or num(info.actionID))
-        local skip = not name or not id or id == AUTO_ATTACK or seen[name]
+        local skip = not name or not id or id == AUTO_ATTACK
           or (types.Flyout and info.itemType == types.Flyout)
           or (types.FutureSpell and info.itemType == types.FutureSpell)
-        if not skip and #list < MAX_SPELLS then
-          seen[name] = true
-          list[#list + 1] = spellEntry(name, clean(info.subName), id, clean(line.name), info.isPassive and true or false, spellTip(id))
+        if not skip then
+          local c = { name = name, info = info, slot = j, tab = clean(line.name), rank = rankNumber(clean(info.subName)) }
+          local old = best[name]
+          if not old then
+            order[#order + 1] = name
+            best[name] = c
+          elseif not (old.rank and c.rank and c.rank < old.rank) then
+            best[name] = c
+          end
         end
       end
     end
   end
+  local list, sources = {}, { slot = 0, id = 0, none = 0, differ = 0 }
+  for _, name in ipairs(order) do
+    if #list >= MAX_SPELLS then break end
+    local ok, e = pcall(readEntry, best[name], bank, sources)
+    if ok and e then list[#list + 1] = e end
+  end
+  Scan.spellSources = sources
   return #list > 0 and list or nil
 end
 
@@ -785,6 +909,23 @@ function Scan.Changed(what)
   if what == "spells" or not what then spellCache = nil end
 end
 
+-- Up to three abilities that have ranks, at the rank read for each, so the
+-- owner can hold it against the spellbook; and where the tooltips came from.
+function Scan.RanksLine(spells)
+  local shown = {}
+  for _, s in ipairs(spells or {}) do
+    if #shown >= 3 then break end
+    if rankNumber(s.rank) and not s.passive then shown[#shown + 1] = string.format("%s %s (%s)", s.name, s.rank, tostring(s.id)) end
+  end
+  local line = "ranks: " .. (#shown > 0 and table.concat(shown, ", ") or "no ability with a rank")
+  local src = Scan.spellSources
+  if src and Scan.how.spells and Scan.how.spells:find("^modern") then
+    line = line .. string.format("; tooltips: %d from the spellbook slot, %d by spell id, %d none", src.slot, src.id, src.none)
+    if src.differ > 0 then line = line .. string.format("; %d where the spellbook's rank and the tooltip's differ (the tooltip's is used)", src.differ) end
+  end
+  return line
+end
+
 -- What this client let the addon read, line by line (/armory debug).
 function Scan.Diagnose()
   Scan.Changed()
@@ -810,6 +951,7 @@ function Scan.Diagnose()
   end
   local spell = spells and spells[1]
   if spell then lines[#lines + 1] = string.format("first spell: %s (%s): %s", spell.name, tostring(spell.id), tostring(spell.tip or "(no tooltip)"):sub(1, 120)) end
+  if spells then lines[#lines + 1] = Scan.RanksLine(spells) end
   if combat and combat.mainHand then
     lines[#lines + 1] = string.format("main hand: %s-%s every %ss", tostring(combat.mainHand.min), tostring(combat.mainHand.max), tostring(combat.mainHand.speed))
   end

@@ -722,13 +722,22 @@ function Panels.Discover()
   caveats(blocks, result, "discover")
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
   if not data.baseline and not data.test then add(blocks, { t = "p", text = L.NO_BASELINE, color = "muted" }) end
+  -- The simulator takes an idea as the AI described it: say so once, where any idea has a figure.
+  for _, idea in ipairs(data.ideas or {}) do
+    if type(idea.measured) == "table" then
+      add(blocks, { t = "p", text = L.MEASURED_HINT, color = "muted" })
+      break
+    end
+  end
   for i, idea in ipairs(data.ideas or {}) do
     local title = string.format("%d. %s", i, idea.title)
     add(blocks, { t = "h", text = title })
     local tags = { L["IDEA_CONFIDENCE_" .. tostring(idea.confidence or "low"):upper()] }
     local color = "muted"
     if type(idea.measured) == "table" then
-      tags[#tags + 1] = string.format(L.MEASURED, signed(idea.measured.pct or 0), Util.fmt(idea.measured.base, 1), Util.fmt(idea.measured.value, 1))
+      local m = idea.measured
+      local unit = m.metric == "hps" and L.HPS or (m.metric == "tps" and L.TPS or L.DPS)
+      tags[#tags + 1] = string.format(L.MEASURED, signed(m.pct or 0), Util.fmt(m.base, 1), Util.fmt(m.value, 1), unit)
       color = (idea.measured.pct or 0) > 0 and "good" or "warn"
     end
     add(blocks, { t = "p", text = table.concat(tags, " · "), color = color })

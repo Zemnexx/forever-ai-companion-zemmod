@@ -105,6 +105,7 @@ end
 
 function Live:Init()
   local db = ns.db
+  self.startedAt = GetTime()
   db.nextSig = db.nextSig or 1
   self.failed = {}
   self:Calibrate()
@@ -136,7 +137,7 @@ function Live:Init()
   -- Pick up anything answered while we were away (a plugin's answer may have
   -- taken long enough to arrive after the game was closed).
   guarded("first mailbox", function()
-    if ns.Core:HasPending() or (ns.Plugins and ns.Plugins:AwaitingLate()) then Live:LoadNextSlot() end
+    if ns.Core:HasPending() or (ns.Plugins and ns.Plugins:AwaitingLate()) then Live:LoadNextSlot("at login") end
   end)()
   C_Timer.NewTicker(TICK, guarded("tick", function()
     Live.tickedAt = GetTime()
@@ -226,6 +227,7 @@ function Live:ApplyAppCheck(plays)
     app.state = "restart"
   else
     local pattern = (plays("beat1") and 1 or 0) + (plays("beat2") and 2 or 0)
+    pcall(self.NoteBeat, self, pattern, now)
     if pattern ~= app.pattern then
       if app.pattern and pattern ~= 0 and app.pattern ~= 0 then app.switched = true end
       app.pattern, app.changedAt = pattern, now
@@ -270,6 +272,23 @@ function Live:ApplyAppCheck(plays)
   return self:AppState()
 end
 
+-- The beat patterns seen since login (0 none, 1 beat1, 2 beat2, 3 both), one
+-- entry per change, for Live:Diagnose: whether this game notices a beat
+-- file going silent once it has played it is the open question there.
+local MAX_BEATS = 12
+function Live:NoteBeat(pattern, now)
+  local b = self.beats or { list = {}, checks = 0, dropped = 0, first = now }
+  self.beats = b
+  b.checks, b.last = b.checks + 1, now
+  local top = b.list[#b.list]
+  if top and top.p == pattern then return end
+  b.list[#b.list + 1] = { p = pattern, at = now }
+  if #b.list > MAX_BEATS then
+    table.remove(b.list, 1)
+    b.dropped = b.dropped + 1
+  end
+end
+
 -- Fields every request carries so the companion knows which signal to ring.
 function Live:RequestFields()
   local db = ns.db
@@ -292,6 +311,18 @@ end
 function Live:OnAnswer()
   ns.db.sigWait = nil
   ns.db.pendingReset = nil
+  self.answeredNow = true
+end
+
+-- How the last mailboxes that brought an answer came to be opened (the bell,
+-- a timer, login or by hand), for Live:Diagnose: whether the bells work in
+-- this game is the open question there.
+local MAX_PICKUPS = 5
+local function notePickup(self, why)
+  local list = self.pickups or {}
+  self.pickups = list
+  list[#list + 1] = { why = why or "by hand", at = GetTime() }
+  if #list > MAX_PICKUPS then table.remove(list, 1) end
 end
 
 function Live:Tick()
@@ -313,13 +344,13 @@ function Live:Tick()
           self.checkingSig = false
           if r[path] and SIG_PATH:format(db.nextSig) == path then
             db.nextSig = db.nextSig + 1
-            self:LoadNextSlot()
+            self:LoadNextSlot("bell")
           end
         end)
       end
     elseif playable(path) then
       db.nextSig = db.nextSig + 1
-      self:LoadNextSlot()
+      self:LoadNextSlot("bell")
       return
     end
   end
@@ -332,12 +363,13 @@ function Live:Tick()
     if not due then due = schedule[#schedule] + 240 * (self.scheduleIndex - #schedule) end
     if GetTime() - self.sentAt >= due then
       self.scheduleIndex = self.scheduleIndex + 1
-      self:LoadNextSlot()
+      self:LoadNextSlot(useSignals and "timer (safety schedule)" or "timer (no bells)")
     end
   end
 end
 
-function Live:LoadNextSlot()
+-- why: what opened it ("bell", "timer (...)", "at login"; nil by hand).
+function Live:LoadNextSlot(why)
   for i = 1, self.SLOTS do
     local name = slotName(i)
     if not IsAddOnLoaded(name) and not self.failed[name] then
@@ -349,7 +381,9 @@ function Live:LoadNextSlot()
       end
       if loaded then
         self.usedSlots = i
+        self.answeredNow = false
         ns.Core:ApplyInbox(_G.ForeverAICompanion_Inbox)
+        if self.answeredNow then pcall(notePickup, self, why) end
         return true
       end
       self.failed[name] = reason or "?"
@@ -407,9 +441,47 @@ function Live:Diagnose()
   local app = self.app
   lines[#lines + 1] = string.format("app: %s, beat %s, seen switching %s, last check %s", self:AppState(),
     tostring(app and app.pattern), tostring(app and app.switched or false), ago(app and app.lastCheck))
+  lines[#lines + 1] = self:PickupsLine(now)
+  lines[#lines + 1] = self:BeatsLine(now)
   if db.sigWait then lines[#lines + 1] = "bells: waiting for the app to start them over" end
   if self.lastError then lines[#lines + 1] = "transport error: " .. self.lastError end
   return lines
+end
+
+-- Seconds since login, for the lines below.
+local function since(self, t)
+  return string.format("%.0fs", t - (self.startedAt or 0))
+end
+
+-- "last answers: bell at 210s, timer (safety schedule) at 300s (after login)", oldest first.
+function Live:PickupsLine(now)
+  local list = self.pickups
+  if not list or #list == 0 then return "last answers: none picked up since login" end
+  local parts = {}
+  for i, p in ipairs(list) do parts[i] = string.format("%s at %s", p.why, since(self, p.at)) end
+  return "last answers: " .. table.concat(parts, ", ") .. " (after login)"
+end
+
+-- "beat history: 1 for 2s, 3 for the last 30s (14 checks from 4s after login)".
+function Live:BeatsLine(now)
+  local b = self.beats
+  if not b or #b.list == 0 then return "beat history: not checked since login" end
+  local span = string.format("%d check%s from %s after login, the last %.0fs ago", b.checks, b.checks == 1 and "" or "s",
+    since(self, b.first), now - b.last)
+  if #b.list == 1 and b.dropped == 0 then
+    return string.format("beat history: always %d, never changed (%s)", b.list[1].p, span)
+  end
+  local parts = {}
+  for i, e in ipairs(b.list) do
+    local nextAt = b.list[i + 1] and b.list[i + 1].at
+    if nextAt then
+      parts[i] = string.format("%d for %.0fs", e.p, nextAt - e.at)
+    else
+      parts[i] = string.format("%d since %s", e.p, since(self, e.at))
+    end
+  end
+  local dropped = b.dropped > 0 and string.format("%d earlier changes left out, ", b.dropped) or ""
+  return string.format("beat history: %s (%s%s)", table.concat(parts, ", "), dropped, span)
 end
 
 function Live:Status()
