@@ -9,7 +9,7 @@ import path from 'node:path';
 import { extractJson, text, texts } from '../src/armory/json.js';
 import { talentIndex, validateOrder, shapeBuild, takenTalents, distribution } from '../src/armory/talents.js';
 import { shapeGear, slotName, cleanWeights, equippable, leftOut } from '../src/armory/gear.js';
-import { runModel, shapeRotation, describeCondition, keepFromRun } from '../src/armory/rotation.js';
+import { runModel, shapeRotation, shapeBuffs, describeCondition, keepFromRun } from '../src/armory/rotation.js';
 import { applyIdea, measureIdea, shapeIdeas } from '../src/armory/discover.js';
 import { buildArmorySystem, buildArmoryMessage } from '../src/armory/prompts.js';
 import { MODEL_SPEC } from '../src/armory/model-spec.js';
@@ -238,6 +238,26 @@ test('stats with no measured worth are left out, and one spell held twice is tol
   assert.deepEqual(data.weights.normalized, { attackPower: 1, hitPct: 9.27 });
   assert.deepEqual(data.table.map((r) => r.name), ['Judgement (stunned)', 'Judgement', 'Holy Strike']);
   assert.deepEqual(keepFromRun(run).weights.perPoint, { attackPower: 0.09, hitPct: 0.85 }, 'the gear plan is not handed them either');
+});
+
+test('buffs to have on before a fight: only spells the character knows, under the game\'s names', () => {
+  const spells = [{ name: 'Retribution Aura', id: 7294 }, { name: 'Blessing of Might', id: 19740 }, { name: 'Seal of Command', id: 20375 }];
+  const buffs = shapeBuffs([
+    { name: 'retribution aura', why: 'Holy damage to whoever hits you', counted: false },
+    { name: 'Blessing of Might', why: 'More attack power', counted: true },
+    { name: 'Blessing of Kings', why: 'Not learned yet' },
+    { name: 'Blessing of Might', why: 'twice' },
+    'Seal of Command',
+  ], spells);
+  assert.deepEqual(buffs, [
+    { name: 'Retribution Aura', spellId: 7294, why: 'Holy damage to whoever hits you' },
+    { name: 'Blessing of Might', spellId: 19740, why: 'More attack power', counted: true },
+    { name: 'Seal of Command', spellId: 20375 },
+  ]);
+  assert.deepEqual(shapeBuffs(undefined, spells), []);
+  const run = runModel(MELEE_MODEL, { iterations: 20, seed: 3 });
+  assert.deepEqual(shapeRotation({ model: MELEE_MODEL, buffs: [{ name: 'Retribution Aura' }] }, run, { spells }).buffs, [{ name: 'Retribution Aura', spellId: 7294 }]);
+  assert.equal(shapeRotation({ model: MELEE_MODEL, buffs: [{ name: 'Made Up' }] }, run, { spells }).buffs, undefined);
 });
 
 test('a model that cannot run says what to fix', () => {

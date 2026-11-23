@@ -338,6 +338,22 @@ function Panels.Rotation()
     if #facts > 0 then add(blocks, { t = "p", text = table.concat(facts, " · "), color = "muted" }) end
   end
 
+  -- What to have on before the fight, and whether it is on right now.
+  if type(data.buffs) == "table" and #data.buffs > 0 then
+    add(blocks, { t = "h", text = L.BUFFS })
+    for _, buff in ipairs(data.buffs) do
+      local sub = {}
+      if buff.why and buff.why ~= "" then sub[#sub + 1] = buff.why end
+      if not buff.counted then sub[#sub + 1] = L.BUFF_NOT_COUNTED end
+      local on = Panels.BuffOn(buff.spellId, buff.name)
+      add(blocks, {
+        t = "row", icon = buff.spellId and Panels.SpellIcon(buff.spellId) or nil, spell = buff.spellId, title = buff.name,
+        sub = table.concat(sub, " · "), right = on == true and L.BUFF_ON or (on == false and L.BUFF_OFF or nil),
+        rightColor = on and "good" or "warn",
+      })
+    end
+  end
+
   if data.rotations and #data.rotations > 1 then
     add(blocks, { t = "h", text = L.COMPARED })
     local top = best.value > 0 and best.value or 1
@@ -400,6 +416,36 @@ function Panels.Rotation()
   notes(blocks, data.assumptions, L.ASSUMPTIONS)
   notes(blocks, data.notes, L.NOTES)
   return blocks
+end
+
+-- Whether the player has a buff on right now, by its name (a buff's id
+-- changes with its rank): true, false, or nil on a client that cannot tell.
+function Panels.BuffOn(spellId, name)
+  local could = false
+  local auras = type(C_UnitAuras) == "table" and C_UnitAuras or {}
+  if auras.GetAuraDataBySpellName and name then
+    local ok, aura = pcall(auras.GetAuraDataBySpellName, "player", name, "HELPFUL")
+    if ok then
+      could = true
+      if aura then return true end
+    end
+  end
+  if auras.GetPlayerAuraBySpellID and spellId then
+    local ok, aura = pcall(auras.GetPlayerAuraBySpellID, spellId)
+    if ok then
+      could = true
+      if aura then return true end
+    end
+  end
+  if not could and AuraUtil and AuraUtil.FindAuraByName and name then
+    local ok, found = pcall(AuraUtil.FindAuraByName, name, "player", "HELPFUL")
+    if ok then
+      could = true
+      if found then return true end
+    end
+  end
+  if could then return false end
+  return nil
 end
 
 function Panels.SpellIcon(spellId)

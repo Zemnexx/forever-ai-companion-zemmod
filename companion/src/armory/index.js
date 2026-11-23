@@ -161,7 +161,7 @@ const handlers = {
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
       // Simulated, but with parts the simulator had to drop: worth one correction.
       return {
-        result: shapeRotation(raw, run), keep: keepFromRun(run), score: 1000 - run.problems.length,
+        result: shapeRotation(raw, run, { spells: ctx.armory_spells }), keep: keepFromRun(run), score: 1000 - run.problems.length,
         retry: run.problems.length >= 3 ? run.problems : null,
       };
     });

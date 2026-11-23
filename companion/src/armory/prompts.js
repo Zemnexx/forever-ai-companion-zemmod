@@ -110,6 +110,7 @@ You do not estimate the numbers yourself. You write a combat model of this chara
 - Model what decides the result for the role in "request": the damaging (or healing) abilities, the buffs, debuffs and procs that change their numbers, and the resource. Leave utility out. Talents and gear effects that change the numbers go in as "modifiers", buffs or procs.
 - "fight", from the goal: raids = a boss 3 levels above a level-60 character (level 63, about 3700 armor), 180 seconds; dungeons = a boss 2 levels above the character, about 60 seconds; leveling, solo or pvp = an enemy of the character's level, about 25 seconds, armor of roughly 60 per level for a physical attacker. "targets" is 1 unless "request" asks for area damage.
 - Healers ("role": "healer"): "kind" is "healing". The rotations compare ways of spending the mana over the fight (the big heal on cooldown, an efficient rank cast back to back, a mix), and the simulator also builds a table of every ability's healing per second and per mana from your model, so include each rank worth comparing as its own ability.
+- "buffs": what the player should have on themselves before the fight starts, so they do not forget it: their own long-lasting buffs, auras, blessings, stances, forms, weapon enchants from spells and the like, chosen for this specialization and role from the spells they know. Only spells that are in "armory_spells", by that exact name; where the class has several of a kind (auras, blessings), the one to use. Not what the rotation list itself keeps up, and not other players' buffs or consumables. "why": a few words on what it gives. "counted": true when your model already includes its effect, false when the simulated numbers leave it out. An empty list when the class has nothing of the sort yet.
 - "rotations": 2 to 4 genuinely different candidates for the simulator to compare (with and without a filler, a different order between two cooldown abilities, a cooldown saved for the execute phase...), each a priority list. Every action carries a "note": a few words telling the player when to press it ("on cooldown", "at 60 rage or more", "keep it up on the target").
 
 ${MODEL_SPEC}
@@ -119,9 +120,10 @@ ${MODEL_SPEC}
   "summary": "2 or 3 sentences for the player on how the rotation works; the simulator adds the numbers",
   "assumptions": [ "what you had to assume or could not model, one per line" ],
   "notes": [ "what the numbers do not show: when to use the long cooldowns, what changes while moving..." ],
+  "buffs": [ { "name": "Retribution Aura", "why": "a few words", "counted": false } ],
   "model": { }
 }
-"model" is the combat model in the format above. "assumptions": up to 6. "notes": up to 5.`,
+"model" is the combat model in the format above. "assumptions": up to 6. "notes": up to 5. "buffs": up to 6.`,
 
   discover: (hasModel) => `## Task: find strong interactions
 Look for combinations within THIS character's reach that are stronger than they look: a talent that multiplies a gear proc, an item effect that feeds a class mechanic, two talents in different trees that scale each other, a rank or a spell used in an unusual way, a stat that crosses a threshold. WoW Forever is new and reworked, so its builds are not solved: read the actual descriptions in the data (talents, spells, and item effects in gear, inventory, bank and armory_seen) instead of repeating known Classic builds. A well-known strong build is worth one idea at most; the rest should be things a guide would not list.

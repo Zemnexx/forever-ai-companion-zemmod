@@ -51,6 +51,11 @@ on(SPELL_EVENTS, function()
   ns.Scan.Changed("spells")
 end)
 
+-- A buff went on or off: the rotation tab says which of its buffs are active.
+on({ "UNIT_AURA" }, function(_, unit)
+  if unit == "player" and ns.UI and ns.UI.IsShown and ns.UI:IsShown() then touch() end
+end)
+
 on({ "PLAYER_EQUIPMENT_CHANGED" }, function()
   ns.Items.Forget()
   touch()

@@ -115,9 +115,35 @@ function tableNames(rows) {
   });
 }
 
+// What to have on before a fight: the player's own buffs, auras, stances. The
+// AI names them; only a spell the character really knows (the spellbook the
+// addon read) is kept, under the game's own name and with its id, so the
+// addon can show its icon and whether it is on right now.
+const MAX_BUFFS = 6;
+export function shapeBuffs(raw, spells) {
+  const known = new Map();
+  for (const s of list(spells)) {
+    const name = str(s?.name, 80);
+    if (name && !known.has(name.toLowerCase())) known.set(name.toLowerCase(), { name, id: num(s.id) });
+  }
+  const out = [];
+  for (const b of list(raw)) {
+    const spell = known.get(str(typeof b === 'string' ? b : b?.name, 80).toLowerCase());
+    if (!spell || out.some((x) => x.name === spell.name)) continue;
+    const buff = { name: spell.name };
+    if (spell.id !== null) buff.spellId = spell.id;
+    const why = text(b?.why, 160);
+    if (why) buff.why = why;
+    if (b?.counted === true) buff.counted = true;
+    out.push(buff);
+    if (out.length >= MAX_BUFFS) break;
+  }
+  return out;
+}
+
 // The data the addon gets. raw: the AI's parsed answer ({ summary,
 // assumptions, notes, model }); run: runModel()'s result for raw.model.
-export function shapeRotation(raw, run) {
+export function shapeRotation(raw, run, { spells = [] } = {}) {
   const { model, sim } = run;
   const abilities = new Map(list(model.abilities).map((a) => [a.id, a]));
   const rawRotations = list(raw?.model?.rotations);
@@ -151,6 +177,8 @@ export function shapeRotation(raw, run) {
     assumptions: texts(raw?.assumptions, { max: 6, len: 400 }),
     notes: texts(raw?.notes, { max: 5, len: 400 }),
   };
+  const buffs = shapeBuffs(raw?.buffs, spells);
+  if (buffs.length) data.buffs = buffs;
   if (run.problems.length) data.modelIssues = run.problems.length;
   const worth = measured(run.weights?.perPoint);
   if (Object.keys(worth).length) {
