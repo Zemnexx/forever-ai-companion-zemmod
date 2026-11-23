@@ -31,6 +31,18 @@ local SCHEDULE_SAFETY = { 90, 240 }                   -- signals on: only as a s
 -- mailboxes while waiting, as each can be opened once per session.
 local SCHEDULE_SLOW_NO_SOUND = { 45, 90, 150, 240, 360, 540 }
 local SCHEDULE_SLOW_SAFETY = { 300, 720 }
+-- A game known not to notice bells (Live:AfterPickup): a chat question goes
+-- by SCHEDULE_NO_SOUND, and a plugin's request opens a mailbox every minute
+-- from one minute after sending for as long as the plugin waits, then every
+-- two minutes while its answer may only be late (Plugins:ListeningLate, 15
+-- minutes). Each opening uses one of the 50 mailboxes of the session: a
+-- typical analysis, ready after about 4 minutes, costs 4; a full 21-minute
+-- wait that never gets its answer costs 21, and 7 more while listening late.
+local SLOW_DEAF_EVERY = 60
+local LATE_DEAF_EVERY = 120
+-- A bell found silent at least this many seconds after the app published
+-- the answer (and so after it rang that bell) was missed by the game.
+local MISS_MARGIN = 2
 -- App status (see Live:CheckApp).
 local STATUS_PATH = "Interface\\AddOns\\ForeverAICompanion\\sig\\%s.wav"
 local APP_TICK = 2  -- the app switches its beat every 3 s: check faster than that
@@ -289,7 +301,9 @@ function Live:NoteBeat(pattern, now)
   end
 end
 
--- Fields every request carries so the companion knows which signal to ring.
+-- Fields every request carries so the companion knows which signal to ring,
+-- and the round of the bells (one per start over), which the request keeps
+-- with its bell for Live:Arrived.
 function Live:RequestFields()
   local db = ns.db
   if db.nextSig > self.SIGNALS then
@@ -297,8 +311,59 @@ function Live:RequestFields()
     db.nextSig = 1
     db.sigWait = true
     db.pendingReset = true
+    db.sigRound = (db.sigRound or 0) + 1
   end
-  return db.nextSig, db.pendingReset or nil
+  return db.nextSig, db.pendingReset or nil, db.sigRound or 0
+end
+
+-- An answer arrived for a request that asked for bell `sig` in bell round
+-- `round` (Core and Plugins call this for each one). Kept for the mailbox
+-- being opened, see Live:AfterPickup.
+function Live:Arrived(sig, round)
+  if type(sig) ~= "number" then return end
+  self.arrived = self.arrived or {}
+  self.arrived[#self.arrived + 1] = { sig = sig, round = round or 0 }
+end
+
+-- The bell waited for was played at `at` (time()) and found silent.
+local function noteSilent(self, sig, at)
+  self.silentBell = { sig = sig, round = ns.db.sigRound or 0, at = at }
+end
+
+-- Whether the game missed bell `sig`: it was found silent at least a moment
+-- after the app published this answer (inbox.updated, the same clock as
+-- time()), and the app rings the bell right after publishing. An answer
+-- published after the last check of its bell (one already waiting at login,
+-- or one picked up between the app ringing and the next check) is not
+-- counted, and neither is an inbox that does not say when it was written.
+function Live:BellMissed(sig, inbox)
+  local s = self.silentBell
+  local updated = type(inbox) == "table" and tonumber(inbox.updated) or nil
+  return s ~= nil and updated ~= nil and s.sig == sig and s.round == (ns.db.sigRound or 0)
+    and s.at >= updated + MISS_MARGIN
+end
+
+-- What an answer that a mailbox brought tells about the bells.
+-- Brought by its bell: the bells work (again), and a miss remembered from
+-- before is forgotten. Brought by a timer while the bells were listened for
+-- (bellsInUse) although its bell was missed: this game does not notice
+-- bells, remembered in the saved data so the next session starts knowing it.
+-- And whatever brought it other than its bell, the numbering moves past the
+-- bell its request asked for: the app has rung that one and counted past it,
+-- so waiting for it again would wait for a bell that never comes.
+function Live:AfterPickup(why, bellsInUse, inbox)
+  local db = ns.db
+  if why == "bell" then
+    db.bellsMissed = nil
+    return
+  end
+  local round = db.sigRound or 0
+  for _, a in ipairs(self.arrived or {}) do
+    if a.round == round then
+      if bellsInUse and self:BellMissed(a.sig, inbox) then db.bellsMissed = true end
+      if a.sig + 1 > db.nextSig then db.nextSig = a.sig + 1 end
+    end
+  end
 end
 
 -- slow: a plugin's request, answered in minutes rather than seconds.
@@ -340,11 +405,15 @@ function Live:Tick()
       -- Checked a moment later; the timer below still runs as a safety net.
       if not self.checkingSig then
         self.checkingSig = true
+        local sig, playedAt = db.nextSig, time()
         self:Probe({ path }, function(r)
           self.checkingSig = false
-          if r[path] and SIG_PATH:format(db.nextSig) == path then
+          if SIG_PATH:format(db.nextSig) ~= path then return end
+          if r[path] then
             db.nextSig = db.nextSig + 1
             self:LoadNextSlot("bell")
+          else
+            noteSilent(self, sig, playedAt)
           end
         end)
       end
@@ -352,24 +421,49 @@ function Live:Tick()
       db.nextSig = db.nextSig + 1
       self:LoadNextSlot("bell")
       return
+    else
+      noteSilent(self, db.nextSig, time())
     end
   end
 
-  if self.sentAt and waiting then
-    local schedule
-    if self.slow then schedule = useSignals and SCHEDULE_SLOW_SAFETY or SCHEDULE_SLOW_NO_SOUND
-    else schedule = useSignals and SCHEDULE_SAFETY or SCHEDULE_NO_SOUND end
-    local due = schedule[self.scheduleIndex]
-    if not due then due = schedule[#schedule] + 240 * (self.scheduleIndex - #schedule) end
-    if GetTime() - self.sentAt >= due then
-      self.scheduleIndex = self.scheduleIndex + 1
-      self:LoadNextSlot(useSignals and "timer (safety schedule)" or "timer (no bells)")
+  -- Bells known not to be heard here: the tighter timer, also for an answer
+  -- that is only late. Otherwise the timer is only a safety net for the bell.
+  local deaf = useSignals and db.bellsMissed and true or false
+  if waiting and (self.sentAt or deaf) then
+    if self:TimerDue(useSignals, deaf) then
+      self:LoadNextSlot(deaf and "timer (bells not heard)" or useSignals and "timer (safety schedule)" or "timer (no bells)", useSignals)
     end
+  elseif deaf and not waiting and GetTime() - (self.lastTryAt or self.startedAt or 0) >= LATE_DEAF_EVERY then
+    self:LoadNextSlot("timer (late, bells not heard)", true)
   end
 end
 
+-- Whether the timer opens a mailbox now (and if so, counts it as opened).
+function Live:TimerDue(useSignals, deaf)
+  local now = GetTime()
+  -- Waiting since before a /reload: no send time, so a mailbox a minute
+  -- after the last one.
+  if not self.sentAt then return now - (self.lastTryAt or self.startedAt or 0) >= SLOW_DEAF_EVERY end
+  local due
+  if deaf and self.slow then
+    due = SLOW_DEAF_EVERY * self.scheduleIndex
+  else
+    local schedule
+    if deaf then schedule = SCHEDULE_NO_SOUND
+    elseif self.slow then schedule = useSignals and SCHEDULE_SLOW_SAFETY or SCHEDULE_SLOW_NO_SOUND
+    else schedule = useSignals and SCHEDULE_SAFETY or SCHEDULE_NO_SOUND end
+    due = schedule[self.scheduleIndex]
+    if not due then due = schedule[#schedule] + 240 * (self.scheduleIndex - #schedule) end
+  end
+  if now - self.sentAt < due then return false end
+  self.scheduleIndex = self.scheduleIndex + 1
+  return true
+end
+
 -- why: what opened it ("bell", "timer (...)", "at login"; nil by hand).
-function Live:LoadNextSlot(why)
+-- bellsInUse: a timer that opened it while the bells were listened for.
+function Live:LoadNextSlot(why, bellsInUse)
+  self.lastTryAt = GetTime()
   for i = 1, self.SLOTS do
     local name = slotName(i)
     if not IsAddOnLoaded(name) and not self.failed[name] then
@@ -382,8 +476,15 @@ function Live:LoadNextSlot(why)
       if loaded then
         self.usedSlots = i
         self.answeredNow = false
-        ns.Core:ApplyInbox(_G.ForeverAICompanion_Inbox)
-        if self.answeredNow then pcall(notePickup, self, why) end
+        self.arrived = nil
+        local inbox = _G.ForeverAICompanion_Inbox
+        ns.Core:ApplyInbox(inbox)
+        if self.answeredNow then
+          pcall(notePickup, self, why)
+          local ok, err = pcall(self.AfterPickup, self, why, bellsInUse, inbox)
+          if not ok then self.lastError = "after an answer: " .. tostring(err) end
+        end
+        self.arrived = nil
         return true
       end
       self.failed[name] = reason or "?"
@@ -436,8 +537,12 @@ function Live:Diagnose()
   local lines = {
     string.format("answers: sound %s, bells %s, waiting for bell %d of %d%s, mailboxes opened %d of %d",
       playable(OK_PATH) and "on" or "OFF", how, sig, self.SIGNALS, rung, self.usedSlots or 0, self.SLOTS),
-    string.format("timers: last tick %s%s", ago(self.tickedAt), self.tickedAt and "" or " (NOT RUNNING)"),
   }
+  if db.bellsMissed then
+    lines[#lines + 1] = string.format("bells: NOT HEARD by this game (an answer came by timer after its bell had rung),"
+      .. " so mailboxes are opened by timer: %d of %d left this session", self:SlotsLeft(), self.SLOTS)
+  end
+  lines[#lines + 1] = string.format("timers: last tick %s%s", ago(self.tickedAt), self.tickedAt and "" or " (NOT RUNNING)")
   local app = self.app
   lines[#lines + 1] = string.format("app: %s, beat %s, seen switching %s, last check %s", self:AppState(),
     tostring(app and app.pattern), tostring(app and app.switched or false), ago(app and app.lastCheck))
@@ -446,6 +551,16 @@ function Live:Diagnose()
   if db.sigWait then lines[#lines + 1] = "bells: waiting for the app to start them over" end
   if self.lastError then lines[#lines + 1] = "transport error: " .. self.lastError end
   return lines
+end
+
+-- Mailboxes that can still be opened this session.
+function Live:SlotsLeft()
+  local n = 0
+  for i = 1, self.SLOTS do
+    local name = slotName(i)
+    if not IsAddOnLoaded(name) and not (self.failed and self.failed[name]) then n = n + 1 end
+  end
+  return n
 end
 
 -- Seconds since login, for the lines below.

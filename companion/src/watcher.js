@@ -39,6 +39,19 @@ export function readRequest(file) {
   return payload ? parseRequest(payload) : null;
 }
 
+// Rings the next bell after an answer was published, and logs which one and
+// which one the request asked for, to compare with the addon's own diagnosis
+// (/armory debug and the like). `wanted` says that part, in a few words.
+function ringNext(paths, cfg, state, log, wanted) {
+  if (state.nextSig > cfg.signals) {
+    log(`No bell rung: all ${cfg.signals} are used until the addon asks to start them over (${wanted}).`);
+    return;
+  }
+  ringSignal(paths, state.nextSig);
+  log(`Rang bell ${state.nextSig} (${wanted}).`);
+  state.nextSig++;
+}
+
 export async function handleRequest(req, {
   cfg, paths, state, system, save = saveState, log = () => {}, onEvent = () => {},
   contextCache = {}, saveCache = () => {}, probeMonitor = null, talk = null,
@@ -110,10 +123,7 @@ export async function handleRequest(req, {
 
   state.answers.push(answer);
   publishInbox(paths, cfg, state.answers, extra);
-  if (state.nextSig <= cfg.signals) {
-    ringSignal(paths, state.nextSig);
-    state.nextSig++;
-  }
+  ringNext(paths, cfg, state, log, `the request asked for ${req.sig ?? 'none'}`);
   save(state);
   return answer;
 }
@@ -175,10 +185,7 @@ export async function handlePluginRequest(req, {
 
   state.answers.push(answer);
   publishInbox(paths, cfg, state.answers, extra);
-  if (state.nextSig <= cfg.signals) {
-    ringSignal(paths, state.nextSig);
-    state.nextSig++;
-  }
+  ringNext(paths, cfg, state, log, `the request asked for ${req.sig ?? 'none'}`);
   save(state);
   return answer;
 }
@@ -264,10 +271,7 @@ export function startWatcher({ cfg, wowDir, log = () => {}, onEvent = () => {}, 
   const reportFailure = (message) => {
     state.failure = { at: Math.floor(Date.now() / 1000), message };
     publishInbox(paths, cfg, state.answers, { failedAt: state.failure.at, failMessage: message });
-    if (state.nextSig <= cfg.signals) {
-      ringSignal(paths, state.nextSig);
-      state.nextSig++;
-    }
+    ringNext(paths, cfg, state, log, 'for a request that could not be read');
     saveState(state);
     onEvent({ type: 'problem', message });
   };

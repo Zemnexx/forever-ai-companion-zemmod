@@ -15,7 +15,10 @@ const require = createRequire(import.meta.url);
 
 // lenient: a game that says yes to playing any file that exists (a Mac, and
 // WoW Forever 1.60.1 on Windows); canCheckLater: it has C_Sound.IsPlaying.
-function game(script, { lenient = false, canCheckLater = true } = {}) {
+// deaf: what the live client seems to do: once it has looked at a sound file
+// in a session, it goes on answering the same for it, so a bell the app rings
+// after the first check is never heard.
+function game(script, { lenient = false, canCheckLater = true, deaf = false } = {}) {
   const { lua, lauxlib, lualib, to_luastring } = require('fengari');
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
@@ -36,7 +39,14 @@ function game(script, { lenient = false, canCheckLater = true } = {}) {
     }
     AFTERS = {}
     RUNG, APP_OPEN = {}, true
-    local function really(file)
+    local really
+    local FROZEN = {}
+    local function heard(file)
+      if not ${deaf} then return really(file) end
+      if FROZEN[file] == nil then FROZEN[file] = really(file) end
+      return FROZEN[file]
+    end
+    function really(file)
       local name = file:match("sig\\\\(.-)%.wav$")
       if name == "beat1" or name == "beat2" then
         -- BEATS(name): a test's own idea of what the game plays.
@@ -50,10 +60,10 @@ function game(script, { lenient = false, canCheckLater = true } = {}) {
       PLAYED = PLAYED + 1
       if ${lenient} then
         -- Yes to anything; whether it really plays shows a moment later.
-        HANDLES[PLAYED] = really(file)
+        HANDLES[PLAYED] = heard(file)
         return true, PLAYED
       end
-      if really(file) then return true, PLAYED end
+      if heard(file) then return true, PLAYED end
       return false
     end
     if ${lenient && canCheckLater} then C_Sound = { IsPlaying = function(handle) return HANDLES[handle] == true end } end
@@ -89,6 +99,25 @@ function game(script, { lenient = false, canCheckLater = true } = {}) {
           end
         end
       end
+    end
+    -- The app's side, for the tests that need it: SEND stores a request as
+    -- Plugins:Request does (with the bell it asks for), ANSWER publishes the
+    -- answer and rings max(the app's counter, the request's bell), as
+    -- watcher.js does.
+    APP, REQS, ANSWERS = { sig = 1 }, {}, {}
+    function SEND(id, kind, timeout)
+      local sig, _, round = ns.Live:RequestFields()
+      ns.db.plugins = ns.db.plugins or { pending = {}, held = {} }
+      ns.db.plugins.pending[id] = { name = "armory", kind = kind, t = time(), timeout = timeout or 1260, sig = sig, sigRound = round }
+      REQS[id] = sig
+      ns.Live:OnSent(true)
+    end
+    function ANSWER(id, kind)
+      ANSWERS[#ANSWERS + 1] = { id = id, ok = true, answer = "Done.", data = { kind = kind } }
+      INBOX = { updated = time(), answers = ANSWERS }
+      APP.sig = math.max(APP.sig, REQS[id])
+      RUNG[APP.sig] = true
+      APP.rang, APP.sig = APP.sig, APP.sig + 1
     end
     ns.Plugins:Register("armory", { onResult = function(r)
       SAY(string.format("result %s ok=%s late=%s timedOut=%s", tostring(r.kind), tostring(r.ok), tostring(r.late), tostring(r.timedOut)))
@@ -285,4 +314,169 @@ test('the diagnosis keeps a short history of the heartbeat since login', () => {
     SAY(ForeverAICompanionAPI.Diagnose()[5])`, { lenient: true });
   assert.equal(always.length, 1);
   assert.match(always[0], /^20 beat history: always 3, never changed \(\d+ checks from [01]s after login, the last \ds ago\)$/);
+});
+
+// WoW Forever 1.60.1 on Windows, as measured there: the bell an answer rings
+// is never heard (the beat stays at "both" all session too), the mailboxes
+// work. Answers came only by the 5-minute safety timer.
+const mailboxes = (out) => out.filter((l) => /mailbox$/.test(l)).map((l) => Number(l.split(' ')[0]));
+const at = (out, re) => { const l = out.find((x) => re.test(x)); return l ? Number(l.split(' ')[0]) : null; };
+
+test('a game that does not hear bells is found out by a timer pickup, and the next request goes by a tighter timer', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    RUNG[1], RUNG[2] = true, true
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("a1", "talents")
+    ADVANCE(240)
+    ANSWER("a1", "talents")
+    SAY("the app answers a1 with bell " .. APP.rang)
+    ADVANCE(70)
+    SAY("missed " .. tostring(ns.db.bellsMissed) .. ", waiting for bell " .. ns.db.nextSig)
+    SEND("a2", "gear")
+    SAY("a2 asks for bell " .. REQS.a2)
+    ADVANCE(200)
+    ANSWER("a2", "gear")
+    SAY("the app answers a2 with bell " .. APP.rang)
+    ADVANCE(80)
+    SAY("waiting for bell " .. ns.db.nextSig .. ", the app rings " .. APP.sig .. " next")
+    for _, line in ipairs(ForeverAICompanionAPI.Diagnose()) do SAY(line) end`, { lenient: true, deaf: true });
+  const text = out.join('\n');
+  assert.ok(out.includes('240 the app answers a1 with bell 3'), text);
+  assert.equal(at(out, /result talents ok=true/), 300, 'the first one only by the safety timer');
+  assert.ok(out.includes('310 missed true, waiting for bell 4'), 'the miss is remembered, and the bell numbering moved past the one a1 asked for');
+  assert.ok(out.includes('310 a2 asks for bell 4'), text);
+  assert.ok(out.includes('510 the app answers a2 with bell 4'), 'the app rings the bell the addon waits for');
+  const second = at(out, /result gear ok=true/);
+  assert.ok(second > 510 && second <= 572, `picked up within about a minute of the answer, not at 5 minutes: ${second}\n${text}`);
+  assert.ok(out.includes('590 waiting for bell 5, the app rings 5 next'), text);
+  assert.ok(text.includes('last answers: timer (safety schedule) at 300s, timer (bells not heard) at ' + second + 's (after login)'), text);
+  // One for a1 at 5 minutes, then one a minute for a2: at 370, 430, 490 and 550.
+  assert.deepEqual(mailboxes(out), [300, 370, 430, 490, 550]);
+  assert.match(text, /590 bells: NOT HEARD by this game \(an answer came by timer after its bell had rung\), so mailboxes are opened by timer: 45 of 50 left this session/);
+});
+
+test('a game known not to hear bells starts the next session in the tighter mode', () => {
+  const out = game(`
+    ns.db.nextSig = 4
+    ns.db.bellsMissed = true
+    RUNG[1], RUNG[2], RUNG[3] = true, true, true
+    APP.sig = 4
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SAY(ForeverAICompanionAPI.Diagnose()[2])
+    SEND("a1", "talents")
+    ADVANCE(200)
+    ANSWER("a1", "talents")
+    ADVANCE(60)
+    SAY("missed " .. tostring(ns.db.bellsMissed) .. ", waiting for bell " .. ns.db.nextSig)
+    ADVANCE(300)
+    SAY("nothing waited for")`, { lenient: true, deaf: true });
+  const text = out.join('\n');
+  assert.ok(out.includes('0 bells: NOT HEARD by this game (an answer came by timer after its bell had rung), so mailboxes are opened by timer: 50 of 50 left this session'), text);
+  assert.equal(at(out, /result talents ok=true/), 240, text);
+  assert.deepEqual(mailboxes(out), [60, 120, 180, 240], 'one a minute while waiting, none once nothing is waited for');
+  assert.ok(out.includes('260 missed true, waiting for bell 5'), text);
+});
+
+test('a game that hears bells stays in normal mode, also when the timer takes an answer just before its bell is checked', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    RUNG[1], RUNG[2] = true, true
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("a1", "talents")
+    ADVANCE(240)
+    ANSWER("a1", "talents")
+    ADVANCE(4)
+    SAY("missed " .. tostring(ns.db.bellsMissed) .. ", waiting for bell " .. ns.db.nextSig)
+    -- Answered between two checks, half a second before the safety timer.
+    SEND("a2", "gear")
+    ADVANCE(299)
+    ANSWER("a2", "gear")
+    ADVANCE(10)
+    SAY("missed " .. tostring(ns.db.bellsMissed) .. ", waiting for bell " .. ns.db.nextSig .. ", the app rings " .. APP.sig .. " next")`, { lenient: true });
+  const text = out.join('\n');
+  assert.equal(at(out, /result talents ok=true/), 242, 'by its bell');
+  assert.ok(out.includes('244 missed nil, waiting for bell 4'), text);
+  assert.equal(at(out, /result gear ok=true/), 544, 'taken by the safety timer before its bell was checked');
+  assert.ok(out.includes('553 missed nil, waiting for bell 5, the app rings 5 next'), 'not counted as missed, and the bell is not waited for again');
+  assert.deepEqual(mailboxes(out), [242, 544], 'no mailbox for the bell the timer got ahead of');
+});
+
+test('a remembered miss is forgotten once a bell brings an answer', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    ns.db.bellsMissed = true
+    RUNG[1], RUNG[2] = true, true
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("a1", "talents")
+    ADVANCE(30)
+    ANSWER("a1", "talents")
+    ADVANCE(4)
+    SAY("missed " .. tostring(ns.db.bellsMissed))
+    SEND("a2", "gear")
+    ADVANCE(250)
+    SAY("waiting")`, { lenient: true });
+  const text = out.join('\n');
+  assert.equal(at(out, /result talents ok=true/), 32, text);
+  assert.ok(out.includes('34 missed nil'), text);
+  assert.deepEqual(mailboxes(out), [32], 'back to the safety timer: nothing at one minute');
+});
+
+test('in a game that does not hear bells, an answer that comes after the plugin gave up is picked up by a timer', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    ns.db.bellsMissed = true
+    RUNG[1], RUNG[2] = true, true
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("a1", "gear", 420)
+    ADVANCE(600)
+    ANSWER("a1", "gear")
+    ADVANCE(200)
+    SAY("waiting for bell " .. ns.db.nextSig)
+    ADVANCE(1200)
+    SAY("done")`, { lenient: true, deaf: true });
+  const text = out.join('\n');
+  assert.equal(at(out, /result gear ok=false late=nil timedOut=true/), 422, text);
+  assert.equal(at(out, /result gear ok=true late=true/), 660, text);
+  // A minute apart while the plugin waits, two minutes apart after it, none once the answer came.
+  assert.deepEqual(mailboxes(out), [60, 120, 180, 240, 300, 360, 420, 540, 660]);
+  assert.ok(out.includes('800 waiting for bell 4'), text);
+});
+
+test('the bell numbering keeps to the round it was asked in when the bells start over', () => {
+  const out = game(`
+    ns.db.nextSig = 498
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("old", "gear")
+    ns.db.nextSig = 501
+    SEND("new", "talents")
+    SAY("asks for " .. REQS.new .. ", start over " .. tostring(ns.db.pendingReset))
+    ANSWERS = { { id = "old", ok = true, answer = "x" }, { id = "new", ok = true, answer = "y" } }
+    INBOX = { updated = time(), answers = ANSWERS }
+    ns.Live:LoadNextSlot()
+    SAY("waiting for bell " .. ns.db.nextSig .. ", start over " .. tostring(ns.db.pendingReset))`);
+  assert.ok(out.includes('0 asks for 1, start over true'), out.join('\n'));
+  assert.ok(out.includes('0 waiting for bell 2, start over nil'), 'the old round\'s bell 498 does not count: ' + out.join('\n'));
+});
+
+test('a chat question in a game known not to hear bells goes by the no-sound schedule', () => {
+  const out = game(`
+    ns.db.nextSig = 3
+    ns.db.bellsMissed = true
+    RUNG[1], RUNG[2] = true, true
+    INBOX = { answers = {} }
+    ns.Live:Init()
+    SEND("a1", "talents")
+    ns.Live:OnSent(false)
+    ADVANCE(50)
+    ANSWER("a1", "talents")
+    ADVANCE(40)`, { lenient: true, deaf: true });
+  assert.deepEqual(mailboxes(out), [8, 20, 40, 76], out.join('\n'));
+  assert.equal(at(out, /result talents ok=true/), 76);
 });

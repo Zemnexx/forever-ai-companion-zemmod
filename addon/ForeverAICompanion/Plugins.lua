@@ -126,7 +126,7 @@ function Plugins:Request(name, opts)
   if Core.working or ns.Uplink.busy then return nil, L.WAIT_PREVIOUS end
 
   local id = string.format("%d%04d", time(), math.random(0, 9999))
-  local sig, resetSignals = ns.Live:RequestFields()
+  local sig, resetSignals, sigRound = ns.Live:RequestFields()
   local req = {
     v = 2,
     id = id,
@@ -142,7 +142,8 @@ function Plugins:Request(name, opts)
   }
   local plugin = { sections = sectionsOf(name, opts), context = opts.context ~= false, only = onlyOf(opts) }
   local timeout = math.min(math.max(tonumber(opts.timeout) or DEFAULT_TIMEOUT, 30), MAX_TIMEOUT)
-  local entry = { name = name, kind = opts.kind, t = now(), timeout = timeout }
+  -- sig: the bell this request asks for (Live:Arrived).
+  local entry = { name = name, kind = opts.kind, t = now(), timeout = timeout, sig = sig, sigRound = sigRound }
   s.pending[id] = entry
 
   local function status(state, detail)
@@ -242,7 +243,8 @@ end
 -- A request gave up waiting a short while ago: its answer may only be late
 -- (two rounds with the AI can take longer than the plugin said it would
 -- wait). Live keeps listening for the bell, without opening mailboxes on the
--- timer, so the answer is picked up when it comes.
+-- timer, so the answer is picked up when it comes; in a game known not to
+-- hear bells it opens one every two minutes instead (Live:Tick).
 function Plugins:ListeningLate(at)
   local s = store()
   if not s then return false end
@@ -271,6 +273,7 @@ function Plugins:ApplyInbox(inbox, data)
     local e = type(a) == "table" and a.id ~= nil and s.pending[a.id] or nil
     if e then
       s.pending[a.id] = nil
+      if ns.Live and ns.Live.Arrived then ns.Live:Arrived(e.sig, e.sigRound) end
       if e.viaVoice then ns.Voice.broken = nil end
       if type(data) == "table" then
         data.acked = data.acked or {}

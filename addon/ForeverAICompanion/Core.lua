@@ -633,7 +633,7 @@ function Core:Ask(question, extra, chatId, listen, again)
   -- The question belongs to the open chat (or to the given one, for resends).
   local chatData = ns.Chats:Get(chatId) or ns.Chats:Current()
   local id = again and again.id or string.format("%d%04d", time(), math.random(0, 9999))
-  local sig, resetSignals = ns.Live:RequestFields()
+  local sig, resetSignals, sigRound = ns.Live:RequestFields()
   local req = {
     v = 2,
     id = id,
@@ -651,6 +651,9 @@ function Core:Ask(question, extra, chatId, listen, again)
 
   local entry = again or { id = id, question = question, shown = shown, status = "pending", t = time(), listen = listen }
   if not again then ns.Chats:AddMessage(chatData, entry) end
+  -- The bell this request asks for, so an answer picked up some other way
+  -- keeps the bell numbering in step (Live:AfterPickup).
+  entry.sig, entry.sigRound = sig, sigRound
 
   req.chat = { id = chatData.id, title = chatData.title }
   if compact and not again then ns.Compact:Show(entry, chatData) end
@@ -751,6 +754,7 @@ function Core:ApplyInbox(inbox)
     if type(a) == "table" then entry, owner = self:FindEntry(a.id) end
     -- Pending, or given up waiting: an answer that arrives late is still shown.
     if entry and (entry.status == "pending" or entry.timedOut) then
+      if ns.Live.Arrived then ns.Live:Arrived(entry.sig, entry.sigRound) end
       entry.timedOut = nil
       -- It came back: the app got the question, so the voice works after all.
       if entry.viaVoice then ns.Voice.broken = nil end

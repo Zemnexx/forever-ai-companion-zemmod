@@ -12,6 +12,12 @@ Tanking and calibration for the Armory (its addon 0.3.0).
 - **Which build of the Armory is running.** The app stamps the Armory it installs with a short id of the files it carries (`## X-Build` in the `.toc`), and the Armory shows it next to its version. An installed copy with this build's stamp is not rewritten; one without it, or changed, is.
 - **How each answer got back.** `ForeverAICompanionAPI.Diagnose()` also tells whether the last answers were picked up by their bell or by a timer, and what the app's beat files looked like since login.
 
+### Fixed
+
+- **A game that never hears the bell gets its answers within about a minute.** On WoW Forever 1.60.1 the bell an answer rings was not heard at all (the game seems to go on answering for a sound file as it did the first time it looked at it in a session; not confirmed), so an Armory analysis that the app had ready after 4 minutes only showed at the 5-minute safety timer, and one that came after the wait was over never did. The addon now recognizes this by what happens: a timer brings an answer whose bell it had checked, and found silent, after the app published it. It remembers that in its saved data and from then on opens a mailbox every minute while a plugin waits, every two minutes while its answer may only be late, and by the no-sound schedule for a chat question. The first bell that brings an answer puts it back to normal. A game that hears its bells behaves exactly as before. The price is mailboxes, of which a session has 50: a typical analysis uses about 4, one that never gets its answer up to 28, after which the addon offers a reload as before.
+- **The bell numbering stays in step.** An answer picked up by a timer, at login or by hand moves the addon past the bell its request asked for, as the app already was. Before, the addon went on waiting for a bell the app had used.
+- **The app's log says which bell it rang** and which one the request asked for, to compare with the addon's own diagnosis.
+
 ## 2.3.0 (addon 1.17.0)
 
 The Armory: a second addon for your character's build, on top of the plugins of 2.2.0.

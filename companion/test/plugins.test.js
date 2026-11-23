@@ -360,6 +360,7 @@ test('game to app and back: the plugin\'s request is answered with data its addo
   assert.deepEqual(events.map((e) => e.type), ['question', 'answer']);
   assert.match(events[0].who, /Thora \(Warrior 14\)/);
   assert.ok(logs.some((m) => m.includes('Request for demo (count)')));
+  assert.ok(logs.includes('Rang bell 3 (the request asked for 3).'), 'which bell, to compare with the addon\'s diagnosis');
   assert.equal(await handlePluginRequest(req, env), null, 'answered once per id');
   assert.ok(fs.statSync(p.signal(3)).size > 44, 'the bell the addon is listening for');
   assert.equal(state.nextSig, 4);
