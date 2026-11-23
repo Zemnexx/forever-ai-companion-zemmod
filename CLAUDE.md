@@ -76,6 +76,16 @@ This fork is Windows only, doesn't publish to CurseForge and doesn't build on Gi
   - **Signed updates and guides**: upstream doesn't have them (they were left out of the first pull request). If they go in, the Mac zip needs its own `.sig`, `mac-update.js` has to check it, and the smoke test's update step must expect an unsigned update to be refused.
 - Normally kept out of a pull request: `CLAUDE.md`, `RELEASE_REPO` pointing at this fork (`companion/src/config.js`), this fork's version numbers, and `CHANGELOG.md` unless upstream wants one.
 
+## Versions
+
+- Raise the version for a change that is not a hotfix, or when enough fixes have gathered to justify a new number. A hotfix on its own keeps the number.
+- The app and the main addon each have their own: raise the one that changed.
+  - **App:** `VERSION` in `companion/src/app/controller.js`, and `version` in `companion/package.json` and the first two `"version"` lines of `companion/package-lock.json`.
+  - **Main addon:** `## Version` in `addon/ForeverAICompanion/ForeverAICompanion.toc`.
+- `CHANGELOG.md` gets the entry, headed with both numbers.
+- The app replaces an installed addon whose files differ from the ones it carries, so a hotfix reaches the game without a new number.
+- The Armory addon's version follows the same rule, in its own repository's `CLAUDE.md`.
+
 ## Commits
 
 - End every commit message with exactly `Co-Authored-By: Claude Code`. No `Claude-Session` line and no model names. This replaces the default attribution.
