@@ -6,8 +6,9 @@
 //
 //   talents   the AI proposes a build order; talents.js replays it under the
 //             game's rules so only legal points reach the player.
-//   gear      the AI researches upgrades and where they come from; the addon
-//             checks every item id against the game.
+//   gear      the AI researches upgrades and where they come from; item-ids.js
+//             checks their ids with Wowhead and looks up missing ones, and
+//             the addon checks every id against the game.
 //   rotation  the AI writes a combat model; sim/engine.js simulates the
 //             candidate rotations and measures stat weights.
 //   discover  the AI looks for strong interactions; ideas with a model patch
@@ -17,12 +18,14 @@
 // chat), asked with more effort and a longer timeout (config "armory").
 import { ask, canSearch } from '../providers.js';
 import { err, t } from '../i18n.js';
+import { playerLang } from '../prompt.js';
 import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.js';
 import { extractJson, list, num, str } from './json.js';
 import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
 import { equippable, leftOut, shapeGear } from './gear.js';
 import { keepFromRun, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
+import { fillIds } from './item-ids.js';
 import { openArmoryStore } from './store.js';
 import { sampleResult } from './sample.js';
 
@@ -70,6 +73,20 @@ export function armoryConfig(cfg) {
     claudeCode: { ...withModel(cfg.claudeCode), effort },
     codex: { ...withModel(cfg.codex), effort },
     openai: withModel(cfg.openai),
+  };
+}
+
+// The same AI for a gear plan's item id lookup (item-ids.js): a short,
+// bounded task, so the lowest effort, a small answer and little patience.
+export function lookupConfig(cfg) {
+  const base = armoryConfig(cfg);
+  const effort = ARMORY_EFFORTS[0];
+  return {
+    ...base,
+    timeoutMs: 120000,
+    anthropic: { ...base.anthropic, effort, maxTokens: 4000 },
+    claudeCode: { ...base.claudeCode, effort },
+    codex: { ...base.codex, effort },
   };
 }
 
@@ -134,7 +151,7 @@ const handlers = {
     })).result;
   },
 
-  async gear({ ctx, profile, system, ai, kept }) {
+  async gear({ ctx, profile, system, ai, kept, ids }) {
     const data = {
       request: profile,
       ...pick(ctx, [...BASE, 'gear', 'emptySlots', 'professions', 'reputations', 'lockouts', 'auctionPrices', 'armory_seen']),
@@ -143,11 +160,18 @@ const handlers = {
       talents: takenTalents(ctx.armory_talents) || undefined,
       armory_weights: kept?.weights || undefined,
     };
-    return (await converse(ai, system('gear'), data, (raw) => {
+    const plan = (await converse(ai, system('gear'), data, (raw) => {
       const result = shapeGear(raw, { without: profile.without });
       const picks = result.slots.reduce((n, s) => n + s.picks.length, 0);
       return { result: picks || result.summary ? result : null, score: picks, retry: picks ? null : ['"slots" has no usable picks'] };
     })).result;
+    // Ids checked and filled in afterwards; whatever goes wrong there, the plan stands.
+    try {
+      await ids(plan);
+    } catch {
+      // Picks keep whatever ids they had.
+    }
+    return plan;
   },
 
   async rotation({ ctx, profile, system, ai, store, charKey, iterations }) {
@@ -202,8 +226,9 @@ function summarize(kind, data) {
   return data.summary || kind;
 }
 
-// store: what is kept per character (store.js); tests pass their own.
-export function createArmory({ store = null, askImpl = ask } = {}) {
+// store: what is kept per character (store.js); tests pass their own, and
+// a fetch and a clock for the item id checks.
+export function createArmory({ store = null, askImpl = ask, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
   let opened = store;
   return {
     name: 'armory',
@@ -211,6 +236,7 @@ export function createArmory({ store = null, askImpl = ask } = {}) {
     // with the character's sections). env: { cfg, log, lang, guides, knowledge }.
     // Returns { text, data, model, usage }.
     async handle(req, { cfg, log = () => {}, guides = null, knowledge = '' } = {}) {
+      const started = now();
       const kind = str(req.ext?.kind, 40);
       if (!KINDS.includes(kind)) throw err('armoryUnknownKind', { kind });
       opened = opened || openArmoryStore();
@@ -240,6 +266,17 @@ export function createArmory({ store = null, askImpl = ask } = {}) {
         model = out.model || model;
         return out.text;
       };
+      // The id lookup counts toward the request's tokens, not its model line.
+      const idCfg = lookupConfig(cfg);
+      const lookup = async (system, messages) => {
+        const out = await askImpl(idCfg, system, messages, req);
+        usage = sum(usage, out.usage || null);
+        return out.text;
+      };
+      const ids = (plan) => fillIds(plan, {
+        ctx, lookup, canLookUp: searching, english: playerLang({ lang: req.lang, client: ctx.client }) === 'en',
+        fetchImpl, elapsed: () => now() - started, log,
+      });
       const guide = guides?.current?.() || undefined;
       const topics = guides?.topics?.() || undefined;
       const system = (k, extra = {}) => buildArmorySystem(k, {
@@ -247,7 +284,7 @@ export function createArmory({ store = null, askImpl = ask } = {}) {
         ...(guide ? { guide } : {}), ...(topics ? { topics } : {}), ...extra,
       });
 
-      const data = await handlers[kind]({ ctx, profile, system, ai, store: opened, charKey, kept, iterations, log });
+      const data = await handlers[kind]({ ctx, profile, system, ai, ids, store: opened, charKey, kept, iterations, log });
       // What was asked for, so the addon can tell a result for another build.
       data.asked = { spec: profile.spec, goal: profile.goal, role: profile.role, level: num(ctx.character?.level) ?? undefined };
       if (kind === 'gear' && profile.without) data.asked.without = profile.without;

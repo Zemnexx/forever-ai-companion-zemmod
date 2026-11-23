@@ -80,7 +80,7 @@ Recommend, slot by slot, the gear this character should go for next, for the spe
 - When "request" has "without", the player does not do those things: never give a pick whose "source.type" is one of them, and do not send them there in "summary", "next" or "notes" either. Plan the best gear from everything else (other dungeons, raids or quests that are still allowed, crafting, vendors, reputations, world drops, the auction house). A slot whose only upgrades come from what is left out is left out.
 - Up to 3 picks per slot, best first, only real upgrades over what they wear there. Leave out a slot with nothing meaningfully better.
 - Every pick says where it comes from. "source.type": "dungeon", "raid", "quest", "vendor", "reputation", "crafted", "pvp", "world" (a zone or world drop) or "auction" (bind on equip, so buyable). "source.where": the dungeon, raid or zone. "source.from": the boss, quest, vendor, recipe or faction. "source.note": drop chance, cost or requirement, when you know it.
-- "itemId" on every pick: it is what lets the player see the item itself in the game (its own tooltip with the real stats, a link, a comparison with what they wear). A pick without one is only a name in a list. Where an id comes from: the character data ("itemId" in gear, inventory, bank or armory_seen); the address of the item's page, which carries it (".../item=7717/ravager" is id 7717) and appears in search results as well as on pages; and, for an item that already existed in WoW Classic, the id you remember, since Forever kept those ids (only when the item names in the data are in English: the addon looks the id up in the game and drops it when the name there is not the one you gave). Once your picks are settled, look up ids that are still missing for the best pick of the most important slots (the weapon first) by searching the item's name with "wowhead forever": at most 5 such searches, sent together. Never make a number up: a pick you found no id for goes without "itemId".
+- "itemId" on every pick where you have it: it is what lets the player see the item itself in the game (its own tooltip with the real stats, a link, a comparison with what they wear). Where an id comes from: the character data ("itemId" in gear, inventory, bank or armory_seen); the address of an item page you came across anyway while researching, which carries it (".../item=7717/ravager" is id 7717) and appears in search results as well as on pages; and, for an item that already existed in WoW Classic, the id you remember, since Forever kept those ids (only when the item names in the data are in English: the addon looks the id up in the game and drops it when the name there is not the one you gave). Do not spend searches only on finding ids: the app looks up the ids that are missing after your answer, in a step of its own. Never make a number up: a pick you have no id for goes without "itemId".
 - "auction": true on picks that can be bought and sold (bind on equip), so the addon looks for them at the auction house.
 - "weights": what one point of each stat is worth to this build relative to the others, so the addon can score any item the player sees. Keys: the stat names exactly as they appear in the "stats" objects of gear and inventory in the data (e.g. "STRENGTH", "AGILITY", "STAMINA", "DAMAGE_PER_SECOND"), only stats that matter to the build. When "armory_weights" is in the data it was measured by simulating this character's rotation: use its numbers for the stats it covers (it says what one point of each is worth) and your judgment for the rest.
 - "confidence" per pick: "high" = the item is in the character data or you read it in a Forever source; "medium" = from a Forever guide's summary or a search snippet; "low" = from your memory of WoW Classic, not confirmed for Forever.
@@ -183,6 +183,28 @@ export function buildArmorySystem(kind, {
 // The one user message: the data, then a reminder of the only valid reply.
 export function buildArmoryMessage(data) {
   return `Character data (JSON):\n${JSON.stringify(data)}\n\nReply with the JSON object only.`;
+}
+
+// Item ids for a gear plan, looked up after the plan in a short conversation
+// of its own (item-ids.js): only the names, no character data.
+export function buildIdLookupSystem() {
+  return `You find item ids for World of Warcraft: Forever, a version of WoW launched in November 2026 that is newer than your training. A program reads your reply, so reply with ONE JSON object and nothing else: no text before or after it, no markdown fences, no comments inside it.
+
+## Task
+You get a JSON list of item names from WoW Forever. Find each item's id.
+- Search the item's name with "wowhead forever" (e.g. "Ravager wowhead forever"). The address of the item's page carries its id: ".../forever/item=7717/ravager" is id 7717. It appears in search results as well as on the pages, so a result is often enough without opening the page.
+- For an item that already existed in WoW Classic, the Classic id you remember is acceptable: Forever kept those ids.
+- Never make a number up. A name you found no id for is left out of the answer.
+- Ids listed as wrong were checked by the program and belong to another item or to none: do not give them again.
+
+## Answer format
+{ "ids": { "<item name exactly as given>": 12345 } }`;
+}
+
+// The one message of an id lookup: the names, and ids already known to be wrong.
+export function buildIdLookupMessage(names, wrong = new Map()) {
+  const bad = wrong.size ? `\n\nWrong ids, checked by the program (name: wrong id):\n${JSON.stringify(Object.fromEntries(wrong))}` : '';
+  return `Item names (JSON):\n${JSON.stringify(names)}${bad}\n\nReply with the JSON object only.`;
 }
 
 // Second round, when the first reply could not be used: what was wrong with it.

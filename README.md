@@ -303,6 +303,7 @@ Each player can also add their own knowledge from the app's dashboard (**Server 
 
 - **Your data only goes to the AI you chose.** This project has no servers: it never receives your questions, your data or your keys.
 - The app's only connection of its own is downloading the WoW Forever guide from this repository (a read, nothing is sent). Internet searches are made by the AI you chose, with its own tools.
+- **Gear plans (the Armory):** the app asks Wowhead's item tooltip service (`nether.wowhead.com`) whether the item ids in a plan are right. Only item id numbers are sent, nothing about you, your character or your PC.
 - API keys are stored only on your PC, in `%APPDATA%\ForeverAICompanion\config.json`, **encrypted with Windows DPAPI** for your Windows account: a copy of that file on another PC or account doesn't reveal them. Keys saved in plain text by earlier versions are encrypted the next time the app starts.
 - Updates and the downloaded guide are only used when signed with the project's key (see [Updating](#updating)).
 - **Invisible sending:** the silent voice's file used by elevated programs lives in `%ProgramFiles%\ForeverAICompanion`, which only administrators can change (installs from before this change are offered **Update invisible sending** to move it). The voice keeps only this app's own messages: anything else any program speaks with it is dropped without being written or logged.

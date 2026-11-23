@@ -352,6 +352,8 @@ const scripted = (...replies) => {
   return { askImpl, calls };
 };
 const cfg = { ...DEFAULTS, provider: 'anthropic', armory: { ...DEFAULTS.armory, iterations: 60 } };
+// No test reaches Wowhead: a gear plan's id checks get this instead.
+const noNetwork = async () => { throw new Error('no network in tests'); };
 
 test('a talent request: one answer, checked', async () => {
   const { askImpl, calls } = scripted({ name: 'Arms', summary: 'Bleeds.', order: [101, 101, 101, 102, 102, 103, 103, 103, 104, 104, 104, 201], keyTalents: [{ id: 104, why: 'x' }], respec: null });
@@ -402,7 +404,9 @@ test('a gear request passes on what the player left out, and drops a pick that i
   const { askImpl, calls } = scripted(answer);
   const req = request('gear');
   req.ext.input = { ...req.ext.input, without: ['raid', 'dungeon', 'pvp'] };
-  const out = await createArmory({ store: tmpStore(), askImpl }).handle(req, { cfg });
+  // Without web search, so no id lookup follows the plan (armory-ids.test.js covers it).
+  const offline = { ...cfg, webSearch: false };
+  const out = await createArmory({ store: tmpStore(), askImpl, fetchImpl: noNetwork }).handle(req, { cfg: offline });
   assert.equal(calls.length, 1);
   assert.deepEqual(JSON.parse(calls[0].messages[0].content.match(/\{[\s\S]*\}/)[0]).request.without, ['dungeon', 'raid']);
   assert.match(calls[0].system, /When "request" has "without"/);
@@ -411,7 +415,8 @@ test('a gear request passes on what the player left out, and drops a pick that i
   assert.deepEqual(out.data.asked.without, ['dungeon', 'raid']);
   // Nothing left out: the request and the answer are as before.
   const plain = scripted(answer);
-  const all = await createArmory({ store: tmpStore(), askImpl: plain.askImpl }).handle(request('gear'), { cfg });
+  const all = await createArmory({ store: tmpStore(), askImpl: plain.askImpl, fetchImpl: noNetwork }).handle(request('gear'), { cfg: offline });
+  assert.equal(plain.calls.length, 1);
   assert.equal(all.data.slots[0].picks.length, 2);
   assert.equal(all.data.asked.without, undefined);
   assert.equal(plain.calls[0].messages[0].content.includes('"without"'), false);
@@ -432,7 +437,8 @@ test('a rotation request is simulated, and its model kept for the gear plan and 
 
   // The gear plan gets the measured weights...
   const gear = scripted({ summary: 'g', weights: { STRENGTH: 2 }, slots: [{ slot: 'head', picks: [{ name: 'Bag Helm', itemId: 77, source: { type: 'world' }, confidence: 'high' }] }] });
-  const plan = await createArmory({ store, askImpl: gear.askImpl }).handle(request('gear'), { cfg });
+  const plan = await createArmory({ store, askImpl: gear.askImpl, fetchImpl: noNetwork }).handle(request('gear'), { cfg });
+  assert.equal(gear.calls.length, 1, 'an id from the character data needs no lookup');
   const sent = JSON.parse(gear.calls[0].messages[0].content.split('\n')[1]);
   assert.ok(sent.armory_weights.perPoint.attackPower > 0);
   assert.deepEqual(sent.inventory.map((i) => i.name), ['Bag Helm']);
@@ -471,7 +477,7 @@ test('a model the simulator cannot run is sent back, and fails clearly if it sta
 test('test mode answers every kind without an AI, through the same checks', async () => {
   const echo = { ...cfg, provider: 'echo' };
   const never = async () => { throw new Error('the AI must not be asked'); };
-  const armory = createArmory({ store: tmpStore(), askImpl: never });
+  const armory = createArmory({ store: tmpStore(), askImpl: never, fetchImpl: noNetwork });
   const talents = await armory.handle(request('talents'), { cfg: echo });
   assert.equal(talents.model, 'echo');
   assert.equal(talents.data.test, true);
