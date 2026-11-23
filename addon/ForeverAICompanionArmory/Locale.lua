@@ -5,7 +5,8 @@ local _, ns = ...
 
 local L = {
   TITLE = "Forever AI Armory",
-  HELP = "/armory opens the window. /armory talents, gear, rotation or lab opens that tab. /armory debug shows what the addon could read from the game. /armory dump saves the game's raw talent data to a file.",
+  HELP = "/armory opens the window. /armory talents, gear, rotation or lab opens that tab. /armory debug shows what the addon could read from the game. /armory dump saves the game's raw talent data to a file. /armory resetwindow puts the window back in the middle at its default size.",
+  WINDOW_RESET = "The window is back in the middle at its default size.",
   DUMP_DONE = "Saved what the game says about your talents (%d talent nodes).",
   DUMP_NEXT = "Now type /reload, then send this file from your game folder: WTF\\Account\\(your account)\\SavedVariables\\ForeverAICompanionArmory.lua",
   DUMP_FAILED = "Could not save the talent data: %s",

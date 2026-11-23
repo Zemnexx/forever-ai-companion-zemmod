@@ -13,12 +13,27 @@ local UI = {}
 ns.UI = UI
 
 UI.TABS = { "build", "talents", "gear", "rotation", "discover" }
+-- The window's size when nothing else was chosen, and the smallest it may
+-- be dragged to. 620 wide keeps the longest line about the app clear of the
+-- version text at the bottom, and the "Gear from:" row with its three boxes
+-- inside the page. 420 tall holds the five tabs of the side column (they
+-- need about 275) and still leaves the gear and rotation tabs a body of
+-- about 230 under their own row.
 local WIDTH, HEIGHT = 760, 560
+local MIN_WIDTH, MIN_HEIGHT = 620, 420
+-- The largest it may be is the screen, or this when the screen's size cannot be read.
+local CAP_WIDTH, CAP_HEIGHT = 1920, 1200
 local SIDE = 150          -- the tab column
 local PAD = 14
+local GRIP = 16           -- the resize grip in the bottom right corner
+-- How often the content is laid out again while the window is being resized.
+local RELAYOUT = 0.08
+
 -- What fits inside the page: the window, less the tab column, the margins
 -- around and inside the page, and the scroll bar.
-local BODY_WIDTH = WIDTH - SIDE - PAD * 5 - 22
+local function bodyWidth(width)
+  return math.max(width, MIN_WIDTH) - SIDE - PAD * 5 - 22
+end
 local BACKDROP = BackdropTemplateMixin and "BackdropTemplate" or nil
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 
@@ -236,11 +251,63 @@ local function settings()
   return ns.db.ui
 end
 
+local function sane(n)
+  return type(n) == "number" and n == n and n > 0 and n < math.huge
+end
+
+local function clamp(v, lo, hi)
+  return math.min(math.max(v, lo), hi)
+end
+
+-- The largest the window may be: the screen, in the window's own units.
+local function screen()
+  local ok, w, h = pcall(function() return UIParent:GetWidth(), UIParent:GetHeight() end)
+  if not (ok and sane(w)) then w = CAP_WIDTH end
+  if not (ok and sane(h)) then h = CAP_HEIGHT end
+  return math.max(w, MIN_WIDTH), math.max(h, MIN_HEIGHT)
+end
+
+-- Within the bounds whatever the client did: some cannot be told them.
+local function clampSize(w, h)
+  local maxW, maxH = screen()
+  return clamp(w, MIN_WIDTH, maxW), clamp(h, MIN_HEIGHT, maxH)
+end
+
+-- The size the player left the window at, on a screen that may be smaller now.
+local function savedSize()
+  local size = settings().size
+  if type(size) == "table" and sane(size[1]) and sane(size[2]) then return clampSize(size[1], size[2]) end
+  return clampSize(WIDTH, HEIGHT)
+end
+
+local function savePlace(f)
+  local point, _, relative, x, y = f:GetPoint(1)
+  settings().place = { point, relative, x, y }
+end
+
+-- Lets the window be resized, on a client that can: true when it can. The
+-- bounds are set again each time, as the screen may have changed.
+local function resizable(f)
+  if not (f.StartSizing and f.SetResizable) then return false end
+  if not pcall(f.SetResizable, f, true) then return false end
+  local maxW, maxH = screen()
+  if f.SetResizeBounds then
+    pcall(f.SetResizeBounds, f, MIN_WIDTH, MIN_HEIGHT, maxW, maxH)
+  else
+    if f.SetMinResize then pcall(f.SetMinResize, f, MIN_WIDTH, MIN_HEIGHT) end
+    if f.SetMaxResize then pcall(f.SetMaxResize, f, maxW, maxH) end
+  end
+  return true
+end
+
 function UI:Build()
   if self.frame then return end
   local f = CreateFrame("Frame", "ForeverAICompanionArmoryFrame", UIParent, BACKDROP)
   self.frame = f
-  f:SetSize(WIDTH, HEIGHT)
+  local width, height = savedSize()
+  f:SetSize(width, height)
+  self.bodyWidth = bodyWidth(width)
+  local bw = self.bodyWidth
   f:SetFrameStrata("HIGH")
   f:SetClampedToScreen(true)
   f:EnableMouse(true)
@@ -249,8 +316,7 @@ function UI:Build()
   f:SetScript("OnDragStart", f.StartMoving)
   f:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
-    local point, _, relative, x, y = self:GetPoint(1)
-    settings().place = { point, relative, x, y }
+    savePlace(self)
   end)
   fill(f, COLORS.window, COLORS.edge)
   local place = settings().place
@@ -308,7 +374,7 @@ function UI:Build()
   self.heading = heading
   local status = text(page, "GameFontHighlightSmall")
   status:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -5)
-  status:SetWidth(BODY_WIDTH - 150)
+  status:SetWidth(bw - 150)
   self.status = status
   self.analyze = button(page, L.ANALYZE, 140, function() UI:Analyze() end)
   self.analyze:SetPoint("TOPRIGHT", -PAD, -PAD)
@@ -323,7 +389,7 @@ function UI:Build()
   -- The gear tab's own row, above its plan: what the plan may send the player to do.
   local sources = CreateFrame("Frame", nil, page)
   sources:SetPoint("TOPLEFT", PAD, -64)
-  sources:SetSize(BODY_WIDTH, 24)
+  sources:SetSize(bw, 24)
   local from = text(sources, "GameFontHighlightSmall")
   from:SetPoint("LEFT", 0, 0)
   from:SetJustifyV("MIDDLE")
@@ -358,7 +424,7 @@ function UI:Build()
   -- The rotation tab's own row, in the same place: one enemy or several.
   local aoeRow = CreateFrame("Frame", nil, page)
   aoeRow:SetPoint("TOPLEFT", PAD, -64)
-  aoeRow:SetSize(BODY_WIDTH, 24)
+  aoeRow:SetSize(bw, 24)
   local aoe = CreateFrame("CheckButton", nil, aoeRow, "UICheckButtonTemplate")
   aoe:SetSize(24, 24)
   aoe:SetPoint("LEFT", -3, 0)
@@ -379,7 +445,7 @@ function UI:Build()
   scroll:SetPoint("TOPLEFT", PAD, -64)
   scroll:SetPoint("BOTTOMRIGHT", -PAD - 22, PAD)
   local body = CreateFrame("Frame", nil, scroll)
-  body:SetSize(BODY_WIDTH, 10)
+  body:SetSize(bw, 10)
   scroll:SetScrollChild(body)
   self.scroll, self.body = scroll, body
   self.pools = { text = {}, row = {}, bar = {}, action = {} }
@@ -393,13 +459,122 @@ function UI:Build()
   app:SetPoint("BOTTOMLEFT", PAD, 12)
   self.app = app
   local version = text(f, "GameFontDisableSmall", "RIGHT")
-  version:SetPoint("BOTTOMRIGHT", -PAD, 12)
   -- The app's stamp after the version tells one test build from another.
   version:SetText(L.TITLE .. " " .. tostring(ns.version or "") .. (ns.build and (" · " .. ns.build) or ""))
   self.version = version
+
+  -- The corner to resize it by, on a client that lets frames be resized.
+  -- The version text moves left of it.
+  if resizable(f) then
+    version:SetPoint("BOTTOMRIGHT", -(PAD + GRIP - 4), 12)
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(GRIP, GRIP)
+    grip:SetPoint("BOTTOMRIGHT", -3, 3)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function(_, mouse)
+      if mouse == nil or mouse == "LeftButton" then UI:StartResize() end
+    end)
+    grip:SetScript("OnMouseUp", function() UI:StopResize() end)
+    self.grip = grip
+  else
+    version:SetPoint("BOTTOMRIGHT", -PAD, 12)
+  end
+  f:SetScript("OnSizeChanged", function() UI:OnSizeChanged() end)
+  self:Layout()
+end
+
+-- Resizing ------------------------------------------------------------------------------
+
+function UI:StartResize()
+  local f = self.frame
+  if not f or self.sizing or not resizable(f) then return end
+  self.specDrop.list:Hide()
+  self.sizing = pcall(f.StartSizing, f, "BOTTOMRIGHT")
+end
+
+-- The drag ended: the size is kept, and the place too, as the game may have
+-- anchored the window by another corner to size it.
+function UI:StopResize()
+  local f = self.frame
+  if not f or not self.sizing then return end
+  self.sizing = false
+  pcall(f.StopMovingOrSizing, f)
+  local ok, w, h = pcall(function() return f:GetWidth(), f:GetHeight() end)
+  if ok and sane(w) and sane(h) then
+    local cw, ch = clampSize(w, h)
+    if cw ~= w or ch ~= h then f:SetSize(cw, ch) end
+    settings().size = { math.floor(cw + 0.5), math.floor(ch + 0.5) }
+  end
+  pcall(savePlace, f)
+  self:Layout()
+end
+
+-- While the corner is dragged the size changes on every frame: the content
+-- follows a few times a second, and exactly once the drag ends.
+function UI:OnSizeChanged()
+  if not self.sizing or not (C_Timer and C_Timer.After) then
+    self:Layout()
+    return
+  end
+  if self.layoutDue then return end
+  self.layoutDue = true
+  C_Timer.After(RELAYOUT, function()
+    UI.layoutDue = nil
+    if UI.sizing then UI:Layout() end
+  end)
+end
+
+-- Everything whose width comes from the window's, and the open tab drawn
+-- again at that width.
+function UI:Layout()
+  local f = self.frame
+  if not f or not self.profileChild then return end
+  local ok, w = pcall(f.GetWidth, f)
+  local bw = bodyWidth(ok and sane(w) and w or WIDTH)
+  self.bodyWidth = bw
+  self.status:SetWidth(bw - 150)
+  self.sources:SetWidth(bw)
+  self.aoeRow:SetWidth(bw)
+  self.body:SetWidth(bw)
+  self.profileChild:SetWidth(bw)
+  self.specRow:SetWidth(bw - 4)
+  self.notesBox:SetWidth(bw - 14)
+  for _, fs in ipairs(self.profileTexts) do fs:SetWidth(bw - 4) end
+  -- The list would stay where it opened.
+  self.specDrop.list:Hide()
+  if not self:IsShown() then return end
+  local drawn, why = pcall(function()
+    if self:Current() == "build" then self:RefreshProfile()
+    elseif self.blocks then self:Render(self.blocks) end
+  end)
+  if not drawn then UI.lastError = "resizing: " .. tostring(why) end
+end
+
+-- Back in the middle at the size it started with (/armory resetwindow).
+function UI:ResetWindow()
+  local f = self.frame
+  if f and self.sizing then self:StopResize() end
+  settings().place, settings().size = nil, nil
+  if not f then return end
+  f:ClearAllPoints()
+  f:SetPoint("CENTER")
+  f:SetSize(clampSize(WIDTH, HEIGHT))
+  self:Layout()
 end
 
 -- The build tab ---------------------------------------------------------------------
+
+-- The build tab's page: its fixed parts (labels, chips, boxes, buttons and
+-- the gaps between them) and its texts as tall as they wrap at this width,
+-- so a narrow window can still be scrolled to the bottom.
+local PROFILE_HEIGHT, PROFILE_FIXED = 450, 360
+function UI:ProfileHeight()
+  local h = PROFILE_FIXED
+  for _, fs in ipairs(self.profileTexts) do h = h + (fs:GetStringHeight() or 14) end
+  return math.max(PROFILE_HEIGHT, h)
+end
 
 function UI:BuildProfile(page)
   -- In a scroll frame of its own: the controls stay inside the page whatever
@@ -408,10 +583,10 @@ function UI:BuildProfile(page)
   holder:SetPoint("TOPLEFT", PAD, -64)
   holder:SetPoint("BOTTOMRIGHT", -PAD - 22, PAD)
   local p = CreateFrame("Frame", nil, holder)
-  p:SetSize(BODY_WIDTH, 450)
+  p:SetSize(self.bodyWidth, PROFILE_HEIGHT)
   holder:SetScrollChild(p)
-  self.profile = holder
-  local width = BODY_WIDTH - 4
+  self.profile, self.profileChild = holder, p
+  local width = self.bodyWidth - 4
 
   local intro = text(p, "GameFontHighlight")
   intro:SetPoint("TOPLEFT", 0, 0)
@@ -432,6 +607,7 @@ function UI:BuildProfile(page)
   local specRow = CreateFrame("Frame", nil, p)
   specRow:SetPoint("TOPLEFT", specLabel, "BOTTOMLEFT", 0, -6)
   specRow:SetSize(width, 24)
+  self.specRow = specRow
   local function setSpec(value)
     if ns.Store:SetProfile("spec", value ~= "" and value or nil) then UI:Refresh() end
   end
@@ -475,6 +651,8 @@ function UI:BuildProfile(page)
   notesHint:SetPoint("TOPLEFT", self.notesBox, "BOTTOMLEFT", 0, -4)
   notesHint:SetWidth(width)
   notesHint:SetText(L.NOTES_HINT)
+  -- The texts that wrap: they follow the width, and the page's height follows them.
+  self.profileTexts = { intro, notesHint }
 
   -- Everything at once, and where each analysis stands.
   self.all = button(p, L.ANALYZE_ALL, 190, function() UI:AnalyzeAll() end)
@@ -496,6 +674,7 @@ function UI:BuildProfile(page)
     line:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, i == 1 and -12 or -5)
     line:SetWidth(width)
     self.summary[kind] = line
+    table.insert(self.profileTexts, line)
     last = line
   end
 
@@ -564,6 +743,7 @@ function UI:RefreshProfile()
   self.optButton:SetChecked(settings().button and true or false)
   local blocked = ns.Advisor:Blocked()
   if blocked or ns.Advisor:AnyAsking() or self.queue then self.all:Disable() else self.all:Enable() end
+  self.profileChild:SetHeight(self:ProfileHeight())
 end
 
 -- Laying out blocks -------------------------------------------------------------------
@@ -582,7 +762,6 @@ end
 
 local function newRow(body)
   local r = CreateFrame("Button", nil, body)
-  r:SetWidth(BODY_WIDTH)
   local back = r:CreateTexture(nil, "BACKGROUND")
   back:SetAllPoints()
   r.back = back
@@ -625,7 +804,7 @@ end
 
 local function newBar(body)
   local b = CreateFrame("Frame", nil, body)
-  b:SetSize(BODY_WIDTH, 20)
+  b:SetHeight(20)
   local back = b:CreateTexture(nil, "BACKGROUND")
   back:SetAllPoints()
   back:SetColorTexture(COLORS.barBack[1], COLORS.barBack[2], COLORS.barBack[3], COLORS.barBack[4])
@@ -653,6 +832,7 @@ function UI:Render(blocks)
     self.used[kind] = 0
   end
   local body, y = self.body, 0
+  local bw = self.bodyWidth
   for _, block in ipairs(blocks) do
     local kind = block.t
     if kind == "h" or kind == "p" or kind == "note" then
@@ -662,12 +842,13 @@ function UI:Render(blocks)
       if kind == "h" then y = y + 8 end
       fs:ClearAllPoints()
       fs:SetPoint("TOPLEFT", body, "TOPLEFT", indent, -y)
-      fs:SetWidth(BODY_WIDTH - indent)
+      fs:SetWidth(bw - indent)
       fs:SetText((kind == "note" and "- " or "") .. tostring(block.text or ""))
       color(fs, kind == "h" and "gold" or block.color or "text")
       y = y + (fs:GetStringHeight() or 14) + (kind == "h" and 6 or 7)
     elseif kind == "row" then
       local r = take(self, "row", function() return newRow(body) end)
+      r:SetWidth(bw)
       r.link, r.spell, r.hint = block.link, block.spell, block.hint
       if block.icon then
         r.icon:SetTexture(block.icon)
@@ -680,12 +861,12 @@ function UI:Render(blocks)
       r.right:SetText(block.right or "")
       color(r.right, block.rightColor or "text")
       local rightWidth = block.right and ((r.right:GetStringWidth() or 0) + 14) or 0
-      local textWidth = BODY_WIDTH - (block.icon and 32 or 6) - 8 - rightWidth
+      local textWidth = bw - (block.icon and 32 or 6) - 8 - rightWidth
       r.title:SetWidth(textWidth)
       -- An item link draws in the color of its quality.
       r.title:SetText(block.link and block.link:find("|H") and block.link or tostring(block.title or ""))
       color(r.title, block.dim and "muted" or "text")
-      r.sub:SetWidth(BODY_WIDTH - (block.icon and 32 or 6) - 8)
+      r.sub:SetWidth(bw - (block.icon and 32 or 6) - 8)
       r.sub:SetText(block.sub or "")
       local back = block.highlight and COLORS.highlight or { 0, 0, 0, 0 }
       r.back:SetColorTexture(back[1], back[2], back[3], back[4])
@@ -698,7 +879,8 @@ function UI:Render(blocks)
       local b = take(self, "bar", function() return newBar(body) end)
       b:ClearAllPoints()
       b:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-      b.bar:SetWidth(math.max(1, BODY_WIDTH * math.min(math.max(tonumber(block.value) or 0, 0), 100) / 100))
+      b:SetWidth(bw)
+      b.bar:SetWidth(math.max(1, bw * math.min(math.max(tonumber(block.value) or 0, 0), 100) / 100))
       b.label:SetText(tostring(block.label or ""))
       b.right:SetText(tostring(block.right or ""))
       y = y + 23
@@ -812,6 +994,8 @@ function UI:Refresh()
       UI.lastError = tab .. " tab: " .. tostring(blocks)
       blocks = { { t = "p", text = tostring(blocks), color = "warn" } }
     end
+    -- Kept to be drawn again at another width while the window is resized.
+    self.blocks = blocks
     -- A block that cannot be drawn must not leave the rest of the window as it was.
     local drawn, why = pcall(self.Render, self, blocks)
     if not drawn then UI.lastError = tab .. " tab, drawing: " .. tostring(why) end
@@ -902,6 +1086,8 @@ function UI:OnShow()
 end
 
 function UI:OnHide()
+  -- Closed in the middle of a resize (Escape): the size so far is kept.
+  if self.sizing then self:StopResize() end
   local api = ns.Advisor.API()
   if api and api.WatchApp then api.WatchApp(ns.Advisor.PLUGIN, false) end
 end

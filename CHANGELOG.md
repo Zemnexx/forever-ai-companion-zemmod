@@ -11,6 +11,7 @@ Tanking and calibration for the Armory (its addon 0.3.0).
 - **Rotations for several enemies.** The Armory's Rotation tab can ask for area damage. The AI is told to model 3 targets, and the app simulates 3 even if its model says 1.
 - **Which build of the Armory is running.** The app stamps the Armory it installs with a short id of the files it carries (`## X-Build` in the `.toc`), and the Armory shows it next to its version. An installed copy with this build's stamp is not rewritten; one without it, or changed, is.
 - **How each answer got back.** `ForeverAICompanionAPI.Diagnose()` also tells whether the last answers were picked up by their bell or by a timer, and what the app's beat files looked like since login.
+- **The Armory's window can be resized** by a grip in its bottom right corner, between 620 by 420 and the size of the screen. Its text follows the new width, the size is kept with the window's place, and `/armory resetwindow` puts it back in the middle at its default size. The Armory stays 0.3.0.
 
 ### Fixed
 

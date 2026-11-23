@@ -165,6 +165,9 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     ns.UI:Toggle()
   elseif TABS[word] then
     ns.UI:Show(TABS[word])
+  elseif word == "resetwindow" then
+    ns.UI:ResetWindow()
+    Util.chat(L.WINDOW_RESET)
   elseif word == "debug" then
     -- What this client let the addon read: the first thing to share when a tab stays empty.
     Util.chat("version: " .. tostring(ns.version) .. (ns.build and (", build " .. ns.build) or ", no build stamp (not installed by the companion app)"))
