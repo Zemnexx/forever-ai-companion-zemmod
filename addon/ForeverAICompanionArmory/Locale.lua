@@ -4,7 +4,7 @@
 local _, ns = ...
 
 local L = {
-  TITLE = "Armory",
+  TITLE = "Forever AI Armory",
   HELP = "/armory opens the window. /armory talents, gear, rotation or lab opens that tab. /armory debug shows what the addon could read from the game. /armory dump saves the game's raw talent data to a file.",
   DUMP_DONE = "Saved what the game says about your talents (%d talent nodes).",
   DUMP_NEXT = "Now type /reload, then send this file from your game folder: WTF\\Account\\(your account)\\SavedVariables\\ForeverAICompanionArmory.lua",
@@ -31,7 +31,7 @@ local L = {
   COST_ALL = "The last runs of %d analyses used %sk tokens together, %sk of them cached.",
 
   -- The build tab
-  PROFILE_INTRO = "Tell the Armory what you are building. Every analysis is made for this specialization and purpose, from your character's real talents, spells and gear.",
+  PROFILE_INTRO = "Tell Forever AI Armory what you are building. Every analysis is made for this specialization and purpose, from your character's real talents, spells and gear.",
   SPEC = "Specialization",
   SPEC_CHOOSE = "Choose a specialization",
   GOAL = "What for",
@@ -47,7 +47,7 @@ local L = {
   NOTES_LABEL = "Anything else",
   NOTES_HINT = "For example: a close-range battlemage build, dual wield, no engineering.",
   PICK_SPEC = "Choose a specialization in the Build tab first.",
-  OPTION_TOOLTIP = "Show the Armory score on item tooltips",
+  OPTION_TOOLTIP = "Show the Forever AI Armory score on item tooltips",
   OPTION_BUTTON = "Show the minimap button",
 
   -- Status
@@ -71,7 +71,7 @@ local L = {
   FAILED = "The analysis failed. Try again.",
   ALREADY_ASKING = "That analysis is already on its way.",
   COMPANION_BUSY = "Forever AI Companion is still sending something. Try again in a moment.",
-  NEED_COMPANION = "The Armory needs Forever AI Companion 1.17 or newer and its app. Update both, then restart the game.",
+  NEED_COMPANION = "This needs Forever AI Companion 1.17 or newer and its app. Update both, then restart the game.",
   NO_TALENT_DATA = "This game client did not let the addon read your talents. Type /armory debug and share what it shows.",
   NO_SPELL_DATA = "This game client did not let the addon read your spellbook. Type /armory debug and share what it shows.",
   TEST_MODE = "Test mode: the companion app has no AI chosen, so this result is a placeholder that only shows the connection works.",
@@ -169,7 +169,7 @@ local L = {
   SLOT_MAINHAND = "Main hand",
   SLOT_OFFHAND = "Off hand",
   SLOT_RANGED = "Ranged",
-  TOOLTIP_SCORE = "Armory score: %s",
+  TOOLTIP_SCORE = "Forever AI Armory score: %s",
   TOOLTIP_DELTA = "(%s vs equipped)",
   TOOLTIP_EFFECTS = "+ %d effects not counted",
   TOOLTIP_EFFECT = "+ 1 effect not counted",
@@ -213,7 +213,7 @@ local L = {
 
   -- Calibration: how each ability scales, measured from the character's own tooltips
   CAL_HEADING = "Measured on your character",
-  CAL_NOTHING = "Nothing measured yet. The Armory reads your tooltips each time your gear, level or buffs change your attack or spell power, out of combat, and after a few such changes it can tell how each ability scales.",
+  CAL_NOTHING = "Nothing measured yet. Forever AI Armory reads your tooltips each time your gear, level or buffs change your attack or spell power, out of combat, and after a few such changes it can tell how each ability scales.",
   CAL_HINT = "Worked out from your own tooltips as your stats changed (%d readings kept). Rotation analyses use these in place of the AI's own guesses.",
   CAL_PER = "+%s %s per point of %s",
   CAL_PER_PLAIN = "+%s per point of %s",

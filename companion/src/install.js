@@ -247,14 +247,14 @@ export function installedArmoryBuild(wowDir) {
 
 // Writes the Armory's files, and removes Lua files an older version left behind.
 export function installArmory(wowDir, { files = armoryFiles(), log = () => {} } = {}) {
-  if (!files[ARMORY_TOC]) throw new Error('This copy of the app does not carry the Armory addon.');
+  if (!files[ARMORY_TOC]) throw new Error('This copy of the app does not carry the Forever AI Armory addon.');
   const dir = armoryDir(wowDir);
   fs.mkdirSync(dir, { recursive: true });
   for (const name of fs.readdirSync(dir)) {
     if (/\.(lua|toc|xml)$/i.test(name) && !(name in files)) fs.rmSync(path.join(dir, name), { force: true });
   }
   for (const [name, content] of Object.entries(stampedArmoryFiles(files))) fs.writeFileSync(path.join(dir, name), content);
-  log(`Armory ${bundledArmoryVersion(files)} (build ${armoryBuildId(files)}) installed in: ${dir}`);
+  log(`Forever AI Armory ${bundledArmoryVersion(files)} (build ${armoryBuildId(files)}) installed in: ${dir}`);
   return dir;
 }
 
@@ -282,10 +282,10 @@ export function ensureArmory(wowDir, { files = armoryFiles(), log = () => {} } =
   if (!bundled) return true;
   if (installed !== bundled) {
     installArmory(wowDir, { files });
-    log(`Armory updated to ${bundled}`);
+    log(`Forever AI Armory updated to ${bundled}`);
   } else if (!sameArmoryFiles(wowDir, files)) {
     installArmory(wowDir, { files });
-    log(`Armory ${bundled} replaced: its files were not the ones this app carries`);
+    log(`Forever AI Armory ${bundled} replaced: its files were not the ones this app carries`);
   }
   return true;
 }

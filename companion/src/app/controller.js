@@ -172,7 +172,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     try {
       ensureArmory(cfg.wowDir, { log });
     } catch (e) {
-      log(`Could not update the Armory: ${e.message}`);
+      log(`Could not update Forever AI Armory: ${e.message}`);
     }
     watchLegacyAddon();
     if (!addonOk()) { watcherError = t('needAddon'); return; }
@@ -435,7 +435,7 @@ export function createController({ log = () => {}, onUpdateAvailable = () => {} 
     uninstallArmory() {
       if (!wowDirValid()) throw err('needGameFolder');
       uninstallArmory(cfg.wowDir);
-      log('Armory removed.');
+      log('Forever AI Armory removed.');
       return {};
     },
     // How the Armory's analyses are asked: how thorough, and with which model

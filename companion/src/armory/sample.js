@@ -30,7 +30,7 @@ function sampleTalents({ ctx, profile }) {
   return shapeBuild(index, {
     name: 'Test build',
     summary: 'A legal build made without an AI: the first talents of each tree in order. Choose an AI in the companion app for a real recommendation.',
-    notes: ['This only shows that the Armory and the app can talk to each other.'],
+    notes: ['This only shows that Forever AI Armory and the app can talk to each other.'],
   }, checked);
 }
 

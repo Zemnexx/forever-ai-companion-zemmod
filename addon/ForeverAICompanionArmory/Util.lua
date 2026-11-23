@@ -105,5 +105,5 @@ function Util.charKey()
 end
 
 function Util.chat(msg)
-  print("|cff66ccffArmory:|r " .. tostring(msg))
+  print("|cff66ccffForever AI Armory:|r " .. tostring(msg))
 end

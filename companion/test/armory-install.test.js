@@ -62,7 +62,7 @@ test('installing copies the files next to the main addon; removing takes them aw
   assert.equal(fs.existsSync(dir), false);
   assert.equal(installedArmoryVersion(wow), null);
   // A copy of the app built without the Armory says so.
-  assert.throws(() => installArmory(wow, { files: {} }), /does not carry the Armory/);
+  assert.throws(() => installArmory(wow, { files: {} }), /does not carry the Forever AI Armory addon/);
 });
 
 test('an installed Armory follows the app\'s version; one that is not installed is left alone', (t) => {
@@ -80,7 +80,7 @@ test('an installed Armory follows the app\'s version; one that is not installed 
   assert.equal(installedArmoryVersion(wow), bundledArmoryVersion());
   assert.equal(fs.existsSync(path.join(armoryDir(wow), 'Gone.lua')), false, 'Lua files of the old version are removed');
   assert.equal(fs.readFileSync(path.join(armoryDir(wow), 'notes.txt'), 'utf8'), 'mine', 'anything else in the folder is left');
-  assert.deepEqual(logs, [`Armory updated to ${bundledArmoryVersion()}`]);
+  assert.deepEqual(logs, [`Forever AI Armory updated to ${bundledArmoryVersion()}`]);
   // Already current: nothing is written.
   const before = fs.statSync(path.join(armoryDir(wow), 'Core.lua')).mtimeMs;
   assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
@@ -94,7 +94,7 @@ test('an installed Armory follows the app\'s version; one that is not installed 
   assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
   assert.equal(fs.readFileSync(path.join(armoryDir(wow), 'Core.lua'), 'utf8'), core);
   assert.equal(fs.existsSync(path.join(armoryDir(wow), 'Scan.lua')), true, 'a file that was missing is back');
-  assert.equal(logs[1], `Armory ${bundledArmoryVersion()} replaced: its files were not the ones this app carries`);
+  assert.equal(logs[1], `Forever AI Armory ${bundledArmoryVersion()} replaced: its files were not the ones this app carries`);
   assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
   assert.equal(logs.length, 2);
 });

@@ -144,7 +144,7 @@ Turn on **Voice questions** in the app's dashboard. It needs invisible sending, 
 - **Follow-up questions** work the same way: they go to the open chat, so the assistant knows what you were talking about.
 - The microphone is open only while you talk (at most 30 seconds), and Windows shows when it's in use. The recording goes to OpenAI to be turned into text and is never saved; OpenAI charges your API key per minute of audio.
 
-### The Armory (optional second addon)
+### Forever AI Armory (optional second addon)
 
 [Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) is a separate addon for your character's build: the talent build for the specialization you choose, a gear plan with where to find each upgrade, rotations ranked by a simulator inside this app, and interactions between your talents, spells and items that the simulator can measure. It has no connection of its own: it asks through this addon, and the app answers with the AI you already chose.
 
