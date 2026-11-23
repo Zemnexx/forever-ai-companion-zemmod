@@ -2,6 +2,12 @@
 
 Standing rules from the owner of this fork. They apply to every session on this repository.
 
+## Who does what
+
+- **Planning is done by the main session:** reading the request, deciding what to change and why, breaking the work into tasks, reviewing what comes back, and talking to the owner.
+- **Coding tasks are done by an Opus subagent.** The main session hands each one over with what to change, the files involved and how to check it, and reviews the result before it is committed.
+- The main session may still read code, run tests, build and make the commit. Documentation such as this file is not a coding task.
+
 ## Delivering a test build
 
 When the user asks for a build to test:
