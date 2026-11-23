@@ -10,7 +10,9 @@
 //             checks their ids with Wowhead and looks up missing ones, and
 //             the addon checks every id against the game.
 //   rotation  the AI writes a combat model; sim/engine.js simulates the
-//             candidate rotations and measures stat weights.
+//             candidate rotations and measures stat weights. What the addon
+//             measured of how abilities scale (scaling.js) goes to the AI,
+//             and the model is compared with it afterwards.
 //   discover  the AI looks for strong interactions; ideas with a model patch
 //             are measured against the stored baseline.
 //
@@ -26,6 +28,7 @@ import { equippable, leftOut, shapeGear } from './gear.js';
 import { keepFromRun, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
 import { fillIds } from './item-ids.js';
+import { compareScaling, shapeScaling } from './scaling.js';
 import { openArmoryStore } from './store.js';
 import { sampleResult } from './sample.js';
 
@@ -184,10 +187,12 @@ const handlers = {
   },
 
   async rotation({ ctx, profile, system, ai, store, charKey, iterations }) {
+    const scaling = shapeScaling(ctx.armory_scaling);
     const data = {
       request: profile,
       ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'gear', 'buffs', 'pet']),
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
+      armory_scaling: scaling || undefined,
     };
     // A tank's rotations are ranked by threat, and survival is estimated with
     // the defensive numbers the game gave (never the AI's).
@@ -195,9 +200,13 @@ const handlers = {
     const verdict = await converse(ai, system('rotation'), data, (raw) => {
       const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
+      const result = shapeRotation(raw, run, { spells: ctx.armory_spells });
+      // The model's scaling next to what was measured (only reported, not changed).
+      const compared = scaling ? compareScaling(run.model, scaling) : null;
+      if (compared) result.scaling = compared;
       // Simulated, but with parts the simulator had to drop: worth one correction.
       return {
-        result: shapeRotation(raw, run, { spells: ctx.armory_spells }), keep: keepFromRun(run), score: 1000 - run.problems.length,
+        result, keep: keepFromRun(run), score: 1000 - run.problems.length,
         retry: run.problems.length >= 3 ? run.problems : null,
       };
     });
@@ -219,6 +228,7 @@ const handlers = {
       bank: ctx.bank?.items ? { seenAt: ctx.bank.seenAt, items: equippable(ctx.bank.items) } : undefined,
       armory_model: base || undefined,
       armory_weights: kept?.weights || undefined,
+      armory_scaling: shapeScaling(ctx.armory_scaling) || undefined,
     };
     return (await converse(ai, system('discover', { hasModel: !!base }), data, (raw) => {
       const result = shapeIdeas(raw, base, { iterations, metric: kept?.metric });

@@ -8,6 +8,10 @@ ns.Core = Core
 
 local TALENT_EVENTS = { "CHARACTER_POINTS_CHANGED", "PLAYER_TALENT_UPDATE", "TRAIT_CONFIG_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_LEVEL_UP" }
 local SPELL_EVENTS = { "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB" }
+-- What changes the stats a tooltip scales with (Calibrate.lua). Several of
+-- these may be missing on this client; the others still come.
+local STAT_EVENTS = { "PLAYER_EQUIPMENT_CHANGED", "UNIT_ATTACK_POWER", "UNIT_RANGED_ATTACK_POWER", "UNIT_STATS",
+  "SPELL_POWER_CHANGED", "PLAYER_DAMAGE_DONE_MODS", "PLAYER_ENTERING_WORLD" }
 
 local byEvent = {}
 local frame = CreateFrame("Frame")
@@ -78,12 +82,15 @@ on({ "PLAYER_LOGIN" }, function()
   -- Where the points stand at login: nothing to say about those.
   points.loginAt = now()
   pcall(Core.WatchPoints)
+  pcall(ns.Calibrate.Poke, "PLAYER_LOGIN")
 end)
 
 on(TALENT_EVENTS, function(event)
   ns.Scan.Changed("talents")
   touch()
   pcall(Core.WatchPoints)
+  -- Talents and levels change tooltip numbers: readings start a new group.
+  pcall(ns.Calibrate.Poke, event, true)
   -- The new point may be handed over a moment after the level.
   if event == "PLAYER_LEVEL_UP" and C_Timer and C_Timer.After then
     C_Timer.After(2, function() pcall(Core.WatchPoints) end)
@@ -95,13 +102,27 @@ on({ "TRAIT_TREE_CURRENCY_INFO_UPDATED" }, function()
   Core.WatchPoints()
 end)
 
-on(SPELL_EVENTS, function()
+on(SPELL_EVENTS, function(event)
   ns.Scan.Changed("spells")
+  pcall(ns.Calibrate.Poke, event, true)
+end)
+
+-- Calibration: a reading once the stats settle, never in combat.
+on(STAT_EVENTS, function(event, unit)
+  if event:find("^UNIT_") and unit ~= "player" then return end
+  ns.Calibrate.Poke(event)
+end)
+
+on({ "PLAYER_REGEN_ENABLED" }, function()
+  ns.Calibrate.CombatEnded()
 end)
 
 -- A buff went on or off: the rotation tab says which of its buffs are active.
-on({ "UNIT_AURA" }, function(_, unit)
-  if unit == "player" and ns.UI and ns.UI.IsShown and ns.UI:IsShown() then touch() end
+-- A buff also changes the stats calibration reads.
+on({ "UNIT_AURA" }, function(event, unit)
+  if unit ~= "player" then return end
+  if ns.UI and ns.UI.IsShown and ns.UI:IsShown() then touch() end
+  ns.Calibrate.Poke(event)
 end)
 
 on({ "PLAYER_EQUIPMENT_CHANGED" }, function()
@@ -148,6 +169,8 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     -- What this client let the addon read: the first thing to share when a tab stays empty.
     Util.chat("version: " .. tostring(ns.version) .. (ns.build and (", build " .. ns.build) or ", no build stamp (not installed by the companion app)"))
     for _, line in ipairs(ns.Scan.Diagnose()) do Util.chat(line) end
+    local calibrated, line = pcall(ns.Calibrate.Diagnose)
+    Util.chat(calibrated and line or ("calibration: " .. tostring(line)))
     Util.chat("companion: " .. tostring(ns.Advisor:Blocked() or ("ready, app " .. tostring(ns.Advisor:AppState()))))
     -- Whether answers can get back, as the main addon sees it (its newer versions tell).
     local api = ns.Advisor.API()

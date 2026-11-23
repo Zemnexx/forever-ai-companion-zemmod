@@ -401,12 +401,174 @@ local function survival(blocks, sv)
   add(blocks, { t = "p", text = L.SURVIVAL_HINT, color = "muted" })
 end
 
+-- Calibration --------------------------------------------------------------------
+
+local CAL_STATS = { attackPower = L.CAL_AP, rangedAttackPower = L.CAL_RAP, spellPower = L.CAL_SP, healingPower = L.CAL_HP }
+-- Abilities named in one line before "and 4 more".
+local CAL_NAMES = 6
+-- Measured abilities listed one per line.
+local CAL_LINES = 12
+
+local function statText(stat, school)
+  if stat == "spellPower" and school then
+    return string.format(L.CAL_SCHOOL_SP, school:sub(1, 1):upper() .. school:sub(2))
+  end
+  return CAL_STATS[stat] or tostring(stat)
+end
+
+-- "Holy damage", "healing over time", or nothing for a number of another kind.
+local function effectNoun(effect)
+  local noun
+  if effect.k == "damage" then noun = effect.w and string.format(L.CAL_SCHOOL_DAMAGE, effect.w) or L.CAL_DAMAGE
+  elseif effect.k == "heal" then noun = L.CAL_HEALING
+  elseif effect.k == "absorb" then noun = L.CAL_ABSORB end
+  if noun and effect.dot then noun = string.format(L.CAL_OVER_TIME, noun) end
+  return noun
+end
+
+local function perText(value, noun, stat)
+  local v = Util.fmt(value, 2)
+  return noun and string.format(L.CAL_PER, v, noun, stat) or string.format(L.CAL_PER_PLAIN, v, stat)
+end
+
+-- What one measured effect says, in a few words.
+local function effectText(effect)
+  local f = effect.fit
+  if f.s == "scales" then
+    local stats = {}
+    for stat in pairs(f.per) do stats[#stats + 1] = stat end
+    table.sort(stats)
+    local parts = {}
+    for i, stat in ipairs(stats) do
+      parts[#parts + 1] = perText(f.per[stat], i == 1 and effectNoun(effect) or nil, statText(stat, stat == "spellPower" and f.school or nil))
+    end
+    return table.concat(parts, L.CAL_AND)
+  elseif f.s == "flat" then
+    local names = {}
+    for _, t in ipairs(f.tested) do names[#names + 1] = statText(t.stat, t.school) end
+    return string.format(L.CAL_FLAT, table.concat(names, L.CAL_OR))
+  end
+  local names, top = {}, 0
+  for _, c in ipairs(f.candidates) do
+    names[#names + 1] = statText(c.stat, c.school)
+    if c.per > top then top = c.per end
+  end
+  return string.format(L.CAL_AMBIGUOUS, Util.fmt(top, 2), table.concat(names, L.CAL_OR))
+end
+
+-- "A, B, C and 4 more".
+local function nameList(names)
+  if #names <= CAL_NAMES then return table.concat(names, ", ") end
+  local shown = {}
+  for i = 1, CAL_NAMES do shown[i] = names[i] end
+  return string.format(L.CAL_MORE, table.concat(shown, ", "), #names - CAL_NAMES)
+end
+
+-- One line per measured ability: "Judgement: +0.43 Holy damage per point of
+-- spell power (5 readings)". The others are named together.
+function Panels.Calibration()
+  local blocks = {}
+  local ok, report = pcall(ns.Calibrate.Report)
+  report = ok and report or {}
+  local lines, notYet, unclear = {}, {}, {}
+  for _, item in ipairs(report) do
+    local parts, seen, readings, old = {}, {}, 0, nil
+    for _, effect in ipairs(item.effects) do
+      if ns.Calibrate.IsMeasured(effect) then
+        local text = effectText(effect)
+        if not seen[text] then
+          seen[text] = true
+          parts[#parts + 1] = text
+        end
+        readings = math.max(readings, effect.fit.n or 0)
+        old = old or effect.old
+      end
+    end
+    if #parts > 0 then
+      local line = item.name .. ": " .. table.concat(parts, "; ") .. " " .. string.format(L.CAL_READINGS, readings)
+      if old then line = line .. " " .. string.format(L.CAL_OLD, old) end
+      lines[#lines + 1] = line
+    else
+      local moved = false
+      for _, effect in ipairs(item.effects) do
+        if effect.fit.s == "unclear" then moved = true end
+      end
+      if moved then unclear[#unclear + 1] = item.name else notYet[#notYet + 1] = item.name end
+    end
+  end
+  add(blocks, { t = "h", text = L.CAL_HEADING })
+  if #lines == 0 then
+    add(blocks, { t = "p", text = L.CAL_NOTHING, color = "muted" })
+    return blocks
+  end
+  for i = 1, math.min(#lines, CAL_LINES) do add(blocks, { t = "note", text = lines[i] }) end
+  -- Lines past the limit are named with the ones still waiting.
+  for i = CAL_LINES + 1, #lines do notYet[#notYet + 1] = lines[i]:match("^(.-):") end
+  if #unclear > 0 then add(blocks, { t = "p", text = string.format(L.CAL_UNCLEAR, nameList(unclear)), color = "muted" }) end
+  if #notYet > 0 then add(blocks, { t = "p", text = string.format(L.CAL_NOT_YET, nameList(notYet)), color = "muted" }) end
+  local cal = ns.Calibrate.Data()
+  add(blocks, { t = "p", text = string.format(L.CAL_HINT, cal and #cal.readings or 0), color = "muted" })
+  return blocks
+end
+
+-- Whether measurements came in that the rotation shown did not have: one
+-- that was not sent then, or that has moved by more than its noise since.
+function Panels.ScalingStale(data)
+  if type(data) ~= "table" or data.test then return false end
+  local ok, now = pcall(ns.Calibrate.Measured)
+  if not ok then return false end
+  local sent = type(data.scaling) == "table" and type(data.scaling.entries) == "table" and data.scaling.entries or {}
+  for _, m in ipairs(now) do
+    local found = false
+    for _, e in ipairs(sent) do
+      local measured = tonumber(e.measured)
+      if e.name == m.name and e.kind == m.kind and e.stat == m.stat and measured
+        and math.abs(measured - m.perPoint) <= math.max(0.02, 0.15 * math.abs(m.perPoint)) then
+        found = true
+        break
+      end
+    end
+    if not found then return true end
+  end
+  return false
+end
+
+-- Which abilities of the rotation shown were checked against a measurement
+-- by the app, and where the AI's model said something else.
+local function scalingUsed(blocks, scaling)
+  if type(scaling) ~= "table" or type(scaling.entries) ~= "table" or #scaling.entries == 0 then return end
+  local used, seen, differs = {}, {}, {}
+  for _, e in ipairs(scaling.entries) do
+    if e.model ~= nil and type(e.name) == "string" then
+      if e.agrees and not seen[e.name] then
+        seen[e.name] = true
+        used[#used + 1] = e.name
+      elseif e.agrees == false then
+        differs[#differs + 1] = string.format(L.CAL_DIFFERS, e.name, Util.fmt(tonumber(e.model) or 0, 2), statText(e.stat), Util.fmt(tonumber(e.measured) or 0, 2))
+      end
+    end
+  end
+  if #used > 0 then add(blocks, { t = "p", text = string.format(L.CAL_USED, nameList(used)), color = "good" }) end
+  for _, line in ipairs(differs) do add(blocks, { t = "note", text = line }) end
+  if #used == 0 and #differs == 0 then add(blocks, { t = "p", text = L.CAL_NONE_USED, color = "muted" }) end
+end
+
+local function calibration(blocks, data)
+  for _, b in ipairs(Panels.Calibration()) do add(blocks, b) end
+  if data then scalingUsed(blocks, data.scaling) end
+end
+
 function Panels.Rotation()
   local blocks = {}
   local result = ns.Store:Result("rotation")
-  if not result or type(result.data) ~= "table" then return blocks end
+  -- Without a rotation yet, what calibration measured so far.
+  if not result or type(result.data) ~= "table" then
+    calibration(blocks)
+    return blocks
+  end
   local data = result.data
   caveats(blocks, result, "rotation")
+  if Panels.ScalingStale(data) then add(blocks, { t = "p", text = L.STALE_SCALING, color = "warn" }) end
   -- Ticked or unticked since: this rotation is for the other kind of fight.
   local aoe = type(data.asked) == "table" and data.asked.aoe == true
   if aoe ~= ns.Store:Aoe() then
@@ -511,6 +673,7 @@ function Panels.Rotation()
   if data.modelIssues then add(blocks, { t = "p", text = string.format(L.MODEL_ISSUES, data.modelIssues), color = "warn" }) end
   notes(blocks, data.assumptions, L.ASSUMPTIONS)
   notes(blocks, data.notes, L.NOTES)
+  calibration(blocks, data)
   return blocks
 end
 

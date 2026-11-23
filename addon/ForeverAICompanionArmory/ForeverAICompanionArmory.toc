@@ -13,6 +13,8 @@ Locale.lua
 Util.lua
 Store.lua
 Scan.lua
+Fit.lua
+Calibrate.lua
 Dump.lua
 Items.lua
 Build.lua

@@ -8,6 +8,8 @@
 --   gear      what is worn and owned, the talents taken, items seen in the game
 --   rotation  the spellbook with tooltips, combat numbers, talents, gear effects
 --   discover  all of the above
+-- Rotations and interactions also carry what calibration measured of how
+-- this character's abilities scale (Calibrate.lua), once there is something.
 -- What the AI is told to do with it is written in the app, not here.
 local _, ns = ...
 local L = ns.L
@@ -35,6 +37,12 @@ local WAIT = 1260
 
 -- only: sections of the main addon's snapshot to send. sections: the
 -- Armory's own data. timeout: seconds to wait for the answer.
+-- What calibration measured, or nil: a failure there never stops a request.
+function Advisor.Scaling()
+  local ok, section = pcall(ns.Calibrate.Section)
+  return ok and section or nil
+end
+
 local REQUESTS = {
   talents = {
     only = with("gear"), timeout = WAIT,
@@ -47,13 +55,18 @@ local REQUESTS = {
   },
   rotation = {
     only = with("gear", "buffs", "pet"), timeout = WAIT,
-    sections = function() return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat() } end,
+    sections = function()
+      return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), scaling = Advisor.Scaling() }
+    end,
     needs = "spells",
   },
   discover = {
     only = with("gear", "inventory", "bank", "buffs", "pet"), timeout = WAIT,
     sections = function()
-      return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), seen = ns.Scan.Seen() }
+      return {
+        talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), seen = ns.Scan.Seen(),
+        scaling = Advisor.Scaling(),
+      }
     end,
   },
 }
