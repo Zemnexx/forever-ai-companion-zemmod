@@ -100,7 +100,7 @@ const pick = (ctx, keys) => {
 };
 const BASE = ['character', 'specialization', 'stats', 'skills'];
 
-function profileOf(req) {
+function profileOf(req, kind) {
   const input = req.ext?.input && typeof req.ext.input === 'object' ? req.ext.input : {};
   const goal = str(input.goal, 20).toLowerCase();
   const role = str(input.role, 20).toLowerCase();
@@ -109,7 +109,8 @@ function profileOf(req) {
     goal: ['leveling', 'dungeons', 'raids', 'pvp', 'solo'].includes(goal) ? goal : 'leveling',
     role: ['dps', 'tank', 'healer'].includes(role) ? role : 'dps',
     notes: str(input.notes, 400) || undefined,
-    aoe: input.aoe === true || undefined,
+    // Rotations only: the player ticked fighting several enemies at once.
+    aoe: (kind === 'rotation' && input.aoe === true) || undefined,
     // Gear plans only: dungeons, raids or questing the player left out.
     without: leftOut(input.without).length ? leftOut(input.without) : undefined,
   };
@@ -136,6 +137,14 @@ async function converse(ai, system, data, check) {
   }
   if (!raw || !verdict.result) throw err(verdict.fatal || 'armoryNoJson');
   return verdict;
+}
+
+// Targets the player asked for: a model written for one enemy when the
+// player ticked several at once is simulated against AOE_TARGETS all the same.
+const AOE_TARGETS = 3;
+function withTargets(model, profile) {
+  if (!profile.aoe || !model || typeof model !== 'object' || (num(model.fight?.targets) || 1) >= 2) return model;
+  return { ...model, fight: { ...(model.fight && typeof model.fight === 'object' ? model.fight : {}), targets: AOE_TARGETS } };
 }
 
 const handlers = {
@@ -181,7 +190,7 @@ const handlers = {
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
     };
     const verdict = await converse(ai, system('rotation'), data, (raw) => {
-      const run = runModel(raw.model, { iterations });
+      const run = runModel(withTargets(raw.model, profile), { iterations });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
       // Simulated, but with parts the simulator had to drop: worth one correction.
       return {
@@ -241,7 +250,7 @@ export function createArmory({ store = null, askImpl = ask, fetchImpl = globalTh
       if (!KINDS.includes(kind)) throw err('armoryUnknownKind', { kind });
       opened = opened || openArmoryStore();
       const ctx = req.context && typeof req.context === 'object' ? req.context : {};
-      const profile = profileOf(req);
+      const profile = profileOf(req, kind);
       const charKey = str(req.charKey, 80);
       const kept = opened.get(charKey);
       const iterations = Math.min(Math.max(num(cfg.armory?.iterations) || 300, 50), 2000);
@@ -288,6 +297,7 @@ export function createArmory({ store = null, askImpl = ask, fetchImpl = globalTh
       // What was asked for, so the addon can tell a result for another build.
       data.asked = { spec: profile.spec, goal: profile.goal, role: profile.role, level: num(ctx.character?.level) ?? undefined };
       if (kind === 'gear' && profile.without) data.asked.without = profile.without;
+      if (kind === 'rotation' && profile.aoe) data.asked.aoe = true;
       if (JSON.stringify(data).length > MAX_DATA_BYTES) throw err('armoryTooBig');
       return { text: summarize(kind, data), data, model, usage };
     },

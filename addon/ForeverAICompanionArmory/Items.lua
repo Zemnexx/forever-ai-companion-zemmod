@@ -159,6 +159,15 @@ function Items.Equipped(slot)
   return id and safe(GetInventoryItemLink, "player", id) or nil
 end
 
+-- The item id worn in a slot, or nil.
+function Items.EquippedId(slot)
+  local link = Items.Equipped(slot)
+  local id = type(link) == "string" and not Util.secret(link) and tonumber(link:match("item:(%d+)"))
+  if id then return id end
+  local slotId = Items.SLOT_IDS[slot]
+  return slotId and num(safe(GetInventoryItemID, "player", slotId)) or nil
+end
+
 -- A candidate against what is worn where it would go. Returns
 -- { score, delta, slot } (delta against the weakest of its slots; a two-hander
 -- against main hand and off hand together), or nil when it can't be scored.
@@ -188,6 +197,16 @@ end
 
 -- Items seen while playing ----------------------------------------------------------
 
+local GetItemInfoInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+local MAX_WAITING = 60
+
+-- What became of the items looked at this session, for /armory debug: the
+-- owner's saved data once showed none kept after sessions of looting, and
+-- without these numbers nobody could tell where they were lost.
+Items.seenStats = { looked = 0, kept = 0, events = {} }
+-- id -> { link, src, since }: items the game had not loaded yet when seen.
+local waiting = {}
+
 local function zone()
   local name = safe(GetInstanceInfo)
   local inInstance = safe(IsInInstance)
@@ -195,36 +214,107 @@ local function zone()
   return safe(GetRealZoneText) or safe(GetZoneText)
 end
 
--- Remembers an equippable item of green quality or better. src: where it was seen.
-function Items.See(link, src)
-  if type(link) ~= "string" or Util.secret(link) then return false end
+local function skip(id, name, why)
+  Items.seenStats.skipped = string.format("%s: %s", tostring(name or ("item " .. tostring(id or "?"))), why)
+  return false
+end
+
+-- Where an item goes, known at once on clients that have it (no loading
+-- needed): an item that is not worn is skipped without waiting for the rest.
+local function instantEquipLoc(id)
+  if type(GetItemInfoInstant) ~= "function" then return nil end
+  local ok, all = pcall(function() return { GetItemInfoInstant(id) } end)
+  return ok and type(all) == "table" and all[4] or nil
+end
+
+-- Remembers an equippable item of green quality or better. src: where it was
+-- seen. An item the game has not loaded yet (it answers nothing the first
+-- time) waits for GET_ITEM_INFO_RECEIVED, see Items.OnSeenInfo.
+-- again: this is the second look at an item that was waiting (not counted twice).
+function Items.See(link, src, again)
+  if type(link) ~= "string" then return false end
+  if not again then Items.seenStats.looked = Items.seenStats.looked + 1 end
+  if Util.secret(link) then return skip(nil, nil, "hidden by the game (secret value)") end
   local id = tonumber(link:match("item:(%d+)"))
-  if not id then return false end
+  if not id then return skip(nil, link, "no item id in the link") end
+  local instant = instantEquipLoc(id)
+  if type(instant) == "string" and not Items.SLOTS_FOR[instant] then return skip(id, link:match("%[(.-)%]"), "not something to wear") end
   local ok, all = pcall(function() return { GetItemInfo(link) } end)
-  if not ok or type(all) ~= "table" or type(all[1]) ~= "string" then return false end
+  if not ok then return skip(id, nil, "the game's item function failed: " .. tostring(all)) end
+  if type(all) ~= "table" or type(all[1]) ~= "string" then
+    if again then return skip(id, link:match("%[(.-)%]"), "the game never described it") end
+    -- Not loaded yet: asked for, and looked at again when it arrives.
+    if not waiting[id] and Util.count(waiting) < MAX_WAITING then
+      waiting[id] = { link = link, src = src, since = GetTime and GetTime() or 0 }
+      if RequestLoad then pcall(RequestLoad, id) end
+    end
+    return skip(id, link:match("%[(.-)%]"), "waiting for the game to load it")
+  end
   local quality, equipLoc = num(all[3]) or 0, all[9]
-  if quality < 2 or type(equipLoc) ~= "string" or not Items.SLOTS_FOR[equipLoc] then return false end
+  if quality < 2 then return skip(id, all[1], string.format("quality %d, below uncommon", quality)) end
+  if type(equipLoc) ~= "string" or not Items.SLOTS_FOR[equipLoc] then return skip(id, all[1], "not something to wear (" .. tostring(equipLoc) .. ")") end
   ns.Store:Remember(id, { n = all[1], s = equipLoc, l = num(all[4]), r = num(all[5]), q = quality, y = all[7] }, src)
+  Items.seenStats.kept = Items.seenStats.kept + 1
   return true
+end
+
+-- GET_ITEM_INFO_RECEIVED for an item seen before the game had loaded it.
+function Items.OnSeenInfo(id, success)
+  id = tonumber(id)
+  local w = id and waiting[id]
+  if not w then return false end
+  waiting[id] = nil
+  if success == false then return skip(id, w.link:match("%[(.-)%]"), "the game has no such item") end
+  if not ns.db then return false end
+  return Items.See(w.link, w.src, true)
+end
+
+-- Items still waiting, after dropping those the game never answered for.
+function Items.Waiting(seconds)
+  local now = GetTime and GetTime() or 0
+  for id, w in pairs(waiting) do
+    if now - (w.since or now) > (seconds or 60) then waiting[id] = nil end
+  end
+  return Util.count(waiting)
+end
+
+-- An item link for a slot, from the link function or else from the item id.
+local function linkOr(linkFn, idFn, ...)
+  local link = safe(linkFn, ...)
+  if type(link) == "string" then return link end
+  local id = num(safe(idFn, ...))
+  return id and id > 0 and ("item:" .. id) or nil
 end
 
 local function seeLootWindow()
   local where = zone()
   local from = safe(UnitExists, "target") and safe(UnitIsDead, "target") and safe(UnitName, "target") or nil
   local src = "loot: " .. tostring(from and (from .. ", " .. tostring(where)) or where)
-  for i = 1, num(safe(GetNumLootItems)) or 0 do Items.See(safe(GetLootSlotLink, i), src) end
+  for i = 1, math.min(num(safe(GetNumLootItems)) or 0, 30) do Items.See(safe(GetLootSlotLink, i), src) end
 end
 
 local function seeMerchant()
   local npc = safe(UnitName, "npc") or safe(UnitName, "target")
-  local src = "vendor: " .. tostring(npc) .. ", " .. tostring(zone())
-  for i = 1, num(safe(GetMerchantNumItems)) or 0 do Items.See(safe(GetMerchantItemLink, i), src) end
+  local src = "vendor: " .. (type(npc) == "string" and (npc .. ", ") or "") .. tostring(zone())
+  for i = 1, math.min(num(safe(GetMerchantNumItems)) or 0, 120) do
+    Items.See(linkOr(GetMerchantItemLink, GetMerchantItemID, i), src)
+  end
+end
+
+-- A quest reward's link, or its id: the sixth answer of GetQuestItemInfo on
+-- newer clients, there before the link is.
+local function questItem(kind, i)
+  local link = safe(GetQuestItemLink, kind, i)
+  if type(link) == "string" then return link end
+  local ok, all = pcall(function() return { GetQuestItemInfo(kind, i) } end)
+  local id = ok and type(all) == "table" and num(all[6]) or nil
+  return id and id > 0 and ("item:" .. id) or nil
 end
 
 local function seeQuest()
   local src = "quest: " .. tostring(safe(GetTitleText) or "?") .. ", " .. tostring(zone())
-  for i = 1, num(safe(GetNumQuestChoices)) or 0 do Items.See(safe(GetQuestItemLink, "choice", i), src) end
-  for i = 1, num(safe(GetNumQuestRewards)) or 0 do Items.See(safe(GetQuestItemLink, "reward", i), src) end
+  for i = 1, math.min(num(safe(GetNumQuestChoices)) or 0, 10) do Items.See(questItem("choice", i), src) end
+  for i = 1, math.min(num(safe(GetNumQuestRewards)) or 0, 10) do Items.See(questItem("reward", i), src) end
 end
 
 local function seeAuctions()
@@ -239,16 +329,24 @@ local function seeAuctions()
   end
 end
 
+-- The modern client fires LOOT_READY before LOOT_OPENED (and the default
+-- window may start taking the items with auto loot in between), a vendor's
+-- list can fill after MERCHANT_SHOW, and a quest's rewards after its window
+-- opens: each of these is looked at again.
 local SEE = {
+  LOOT_READY = seeLootWindow,
   LOOT_OPENED = seeLootWindow,
   MERCHANT_SHOW = seeMerchant,
+  MERCHANT_UPDATE = seeMerchant,
   QUEST_DETAIL = seeQuest,
   QUEST_COMPLETE = seeQuest,
+  QUEST_ITEM_UPDATE = seeQuest,
   AUCTION_HOUSE_BROWSE_RESULTS_UPDATED = seeAuctions,
   AUCTION_ITEM_LIST_UPDATE = seeAuctions,
 }
 
--- Loot other players link in the chat frame while in a group counts too.
+-- Loot in the chat frame: the player's own ("You receive loot"), and what
+-- others in the group link.
 local function seeChatLoot(message)
   if type(message) ~= "string" or Util.secret(message) then return end
   local src = "loot: " .. tostring(zone())
@@ -257,12 +355,30 @@ end
 
 function Items.OnEvent(event, ...)
   if not ns.db then return end
+  local stats = Items.seenStats
+  stats.events[event] = (stats.events[event] or 0) + 1
+  local ok, err
   if event == "CHAT_MSG_LOOT" then
-    pcall(seeChatLoot, ...)
+    ok, err = pcall(seeChatLoot, ...)
   elseif SEE[event] then
-    pcall(SEE[event])
+    ok, err = pcall(SEE[event])
   end
+  if ok == false then stats.error = event .. ": " .. tostring(err) end
 end
 
-Items.EVENTS = { "LOOT_OPENED", "MERCHANT_SHOW", "QUEST_DETAIL", "QUEST_COMPLETE", "CHAT_MSG_LOOT",
-                 "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_ITEM_LIST_UPDATE" }
+-- One line for /armory debug: what was looked at this session, what was
+-- kept, and why the last one was not.
+function Items.SeenDiagnosis()
+  local stats = Items.seenStats
+  local events = {}
+  for event, n in pairs(stats.events) do events[#events + 1] = event .. " " .. n end
+  table.sort(events)
+  local line = string.format("items this session: looked at %d, kept %d, %d waiting for the game", stats.looked, stats.kept, Items.Waiting())
+  if stats.skipped then line = line .. "; last skipped: " .. stats.skipped end
+  line = line .. "; events: " .. (#events > 0 and table.concat(events, ", ") or "none yet")
+  if stats.error then line = line .. "; error: " .. stats.error end
+  return line
+end
+
+Items.EVENTS = { "LOOT_READY", "LOOT_OPENED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "QUEST_DETAIL", "QUEST_COMPLETE", "QUEST_ITEM_UPDATE",
+                 "CHAT_MSG_LOOT", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_ITEM_LIST_UPDATE" }

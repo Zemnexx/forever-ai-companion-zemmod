@@ -26,6 +26,9 @@ local L = {
   ANALYZING = "Working...",
   ANALYZE_ALL = "Analyze everything",
   ANALYZE_ALL_TIP = "Asks for the talent build, the rotation, the gear plan and the interactions, one after the other. Four analyses use a good share of tokens on your AI plan.",
+  COST_TITLE = "What the last analysis used",
+  COST_LAST = "%sk tokens, %sk of them cached (cached ones count for far less).",
+  COST_ALL = "The last runs of %d analyses used %sk tokens together, %sk of them cached.",
 
   -- The build tab
   PROFILE_INTRO = "Tell the Armory what you are building. Every analysis is made for this specialization and purpose, from your character's real talents, spells and gear.",
@@ -73,6 +76,8 @@ local L = {
   NO_SPELL_DATA = "This game client did not let the addon read your spellbook. Type /armory debug and share what it shows.",
   TEST_MODE = "Test mode: the companion app has no AI chosen, so this result is a placeholder that only shows the connection works.",
   OTHER_BUILD = "This was made for %s. Analyze again for the build chosen now.",
+  STALE_LEVEL = "This was made at level %d and you are level %d now. Analyze again for numbers that fit your level.",
+  STALE_WEAPON = "This was made with another weapon in your main hand. Analyze again for the one you have now.",
   NOTES = "Notes",
 
   -- The companion app, at the bottom of the window
@@ -90,6 +95,8 @@ local L = {
   APP_UNKNOWN = "status unknown",
 
   -- Talents
+  NUDGE = "New talent point: %s (%s) is next in your build.",
+  NUDGE_NO_TREE = "New talent point: %s is next in your build.",
   NEXT_POINTS = "Next points",
   BUILD_COMPLETE = "Every point of this build is spent.",
   BUILD_PROGRESS = "%d of %d points spent.",
@@ -168,6 +175,10 @@ local L = {
   TOOLTIP_EFFECT = "+ 1 effect not counted",
 
   -- Rotation
+  AOE = "Several enemies at once",
+  AOE_TIP = "Tick for a rotation made for fighting a group of enemies together (area damage), then analyze again. Unticked, it is made for one enemy at a time.",
+  OTHER_AOE_ONE = "This rotation was made for one enemy at a time. Analyze again for fighting several at once.",
+  OTHER_AOE_MANY = "This rotation was made for fighting several enemies at once. Analyze again for one enemy at a time.",
   DPS = "damage per second",
   HPS = "healing per second",
   AUTO_ONLY = "Auto attacks only: nothing else was worth pressing in the simulation.",

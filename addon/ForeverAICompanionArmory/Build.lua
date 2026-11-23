@@ -80,3 +80,14 @@ end
 function Build.LevelOf(n)
   return n + 9
 end
+
+-- The talent a build has next for the character: its name and its tree's,
+-- or nil when the build is complete or the game does not name that talent.
+-- ranks and section: as Scan.Ranks reads them.
+function Build.NextTalent(order, ranks, section)
+  local first = Build.Progress(order, ranks or {}).next[1]
+  if not first then return nil end
+  local talent = Build.Index(section)[first.id]
+  if not talent or not talent.name then return nil end
+  return talent.name, talent.tree
+end

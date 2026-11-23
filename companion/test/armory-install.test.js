@@ -11,7 +11,8 @@ import path from 'node:path';
 import { ARMORY_ADDON, ARMORY_SRC, DEFAULTS, loadConfig, wowPaths } from '../src/config.js';
 import { armoryFiles } from '../src/assets.js';
 import {
-  ARMORY_TOC, armoryDir, bundledArmoryVersion, ensureArmory, install, installArmory, installedArmoryVersion, uninstall, uninstallArmory,
+  ARMORY_TOC, armoryBuildId, armoryDir, bundledArmoryVersion, ensureArmory, install, installArmory, installedArmoryBuild, installedArmoryVersion,
+  sameArmoryFiles, stampedArmoryFiles, uninstall, uninstallArmory,
 } from '../src/install.js';
 import { ARMORY_EFFORTS, armoryConfig, armoryModel, armoryPatch } from '../src/armory/index.js';
 import { createServer } from '../src/app/server.js';
@@ -96,6 +97,46 @@ test('an installed Armory follows the app\'s version; one that is not installed 
   assert.equal(logs[1], `Armory ${bundledArmoryVersion()} replaced: its files were not the ones this app carries`);
   assert.equal(ensureArmory(wow, { log: (m) => logs.push(m) }), true);
   assert.equal(logs.length, 2);
+});
+
+test('the app stamps the Armory it installs with a short id of its files', (t) => {
+  const wow = tempWow();
+  t.after(() => fs.rmSync(wow, { recursive: true, force: true }));
+  const files = armoryFiles();
+  const id = armoryBuildId(files);
+  assert.match(id, /^[0-9a-f]{8}$/);
+  assert.equal(armoryBuildId({ ...files }), id, 'the same files give the same id');
+  assert.equal(armoryBuildId(Object.fromEntries(Object.entries(files).reverse())), id, 'in whatever order they come');
+  assert.notEqual(armoryBuildId({ ...files, 'Core.lua': `${files['Core.lua']} ` }), id, 'one changed character gives another');
+  assert.notEqual(armoryBuildId({ 'a.lua': 'bc' }), armoryBuildId({ 'a.luab': 'c' }), 'names and contents cannot run into each other');
+
+  // The .toc as written: the stamp after the version line; nothing else changes.
+  const toc = stampedArmoryFiles(files)[ARMORY_TOC];
+  assert.match(toc, new RegExp(`^## Version: ${bundledArmoryVersion()}\\n## X-Build: ${id}$`, 'm'));
+  assert.equal(toc.replace(`## X-Build: ${id}\n`, ''), files[ARMORY_TOC]);
+  assert.equal(stampedArmoryFiles({ ...files, [ARMORY_TOC]: toc })[ARMORY_TOC].match(/X-Build/g).length, 1, 'never stamped twice');
+  const crlf = stampedArmoryFiles({ ...files, [ARMORY_TOC]: files[ARMORY_TOC].replace(/\n/g, '\r\n') })[ARMORY_TOC];
+  assert.ok(crlf.includes(`\r\n## X-Build: `), 'with the file\'s own line endings');
+
+  installArmory(wow);
+  assert.equal(installedArmoryBuild(wow), id);
+  assert.equal(fs.readFileSync(path.join(armoryDir(wow), ARMORY_TOC), 'utf8'), toc);
+  // A stamped copy is up to date: nothing is written on the next start.
+  assert.equal(sameArmoryFiles(wow), true);
+  const before = fs.statSync(path.join(armoryDir(wow), ARMORY_TOC)).mtimeMs;
+  const logs = [];
+  ensureArmory(wow, { log: (m) => logs.push(m) });
+  assert.deepEqual(logs, []);
+  assert.equal(fs.statSync(path.join(armoryDir(wow), ARMORY_TOC)).mtimeMs, before);
+  // A real difference is still one, the .toc's included.
+  fs.writeFileSync(path.join(armoryDir(wow), 'UI.lua'), '-- changed');
+  assert.equal(sameArmoryFiles(wow), false);
+  installArmory(wow);
+  fs.writeFileSync(path.join(armoryDir(wow), ARMORY_TOC), files[ARMORY_TOC]);
+  assert.equal(installedArmoryBuild(wow), null, 'a copy put there by hand has no stamp');
+  assert.equal(sameArmoryFiles(wow), false);
+  ensureArmory(wow);
+  assert.equal(installedArmoryBuild(wow), id);
 });
 
 test('uninstalling the app takes the Armory with it', (t) => {

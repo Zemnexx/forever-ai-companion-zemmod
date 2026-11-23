@@ -50,15 +50,38 @@ local function text(parent, font, justify)
   return fs
 end
 
-local function hint(frame, title, body)
+-- A tooltip whose text is worked out when it opens: texts() returns the
+-- title and the body, or nothing for no tooltip at all.
+local function hintWith(frame, texts)
   frame:SetScript("OnEnter", function(self)
     if not GameTooltip then return end
+    local title, body = texts()
+    if not title then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(title, 1, 1, 1)
     if body then GameTooltip:AddLine(body, 0.8, 0.8, 0.8, true) end
     GameTooltip:Show()
   end)
   frame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+end
+
+local function hint(frame, title, body)
+  hintWith(frame, function() return title, body end)
+end
+
+-- What the last run of an analysis used: its tokens and how many of them
+-- were cached, or nil when there is no earlier run that says.
+local function cost(kind)
+  local result = ns.Store:Result(kind)
+  local tokens = result and result.tokens
+  if type(tokens) ~= "table" then return nil end
+  local total = (Util.num(tokens.i) or 0) + (Util.num(tokens.o) or 0)
+  if total <= 0 then return nil end
+  return total, Util.num(tokens.c) or 0
+end
+
+local function thousands(n)
+  return Util.fmt(n / 1000, 1)
 end
 
 -- A flat toggle: a choice among a few (the goal, the role, a talent tree).
@@ -289,6 +312,13 @@ function UI:Build()
   self.status = status
   self.analyze = button(page, L.ANALYZE, 140, function() UI:Analyze() end)
   self.analyze:SetPoint("TOPRIGHT", -PAD, -PAD)
+  hintWith(self.analyze, function()
+    local tab = UI:Current()
+    if tab == "build" then return nil end
+    local total, cached = cost(tab)
+    if not total then return nil end
+    return L.COST_TITLE, string.format(L.COST_LAST, thousands(total), thousands(cached))
+  end)
 
   -- The gear tab's own row, above its plan: what the plan may send the player to do.
   local sources = CreateFrame("Frame", nil, page)
@@ -325,6 +355,26 @@ function UI:Build()
   sources:Hide()
   self.sources = sources
 
+  -- The rotation tab's own row, in the same place: one enemy or several.
+  local aoeRow = CreateFrame("Frame", nil, page)
+  aoeRow:SetPoint("TOPLEFT", PAD, -64)
+  aoeRow:SetSize(BODY_WIDTH, 24)
+  local aoe = CreateFrame("CheckButton", nil, aoeRow, "UICheckButtonTemplate")
+  aoe:SetSize(24, 24)
+  aoe:SetPoint("LEFT", -3, 0)
+  local aoeLabel = text(aoe, "GameFontHighlightSmall")
+  aoeLabel:SetPoint("LEFT", aoe, "RIGHT", 1, 0)
+  aoeLabel:SetJustifyV("MIDDLE")
+  aoeLabel:SetText(L.AOE)
+  if aoe.SetHitRectInsets then aoe:SetHitRectInsets(0, -((aoeLabel:GetStringWidth() or 120)), 0, 0) end
+  aoe:SetScript("OnClick", function(self)
+    ns.Store:SetAoe(self:GetChecked() and true or false)
+    UI:Refresh()
+  end)
+  hint(aoe, L.AOE, L.AOE_TIP)
+  aoeRow:Hide()
+  self.aoeRow, self.aoeCheck = aoeRow, aoe
+
   local scroll = CreateFrame("ScrollFrame", "ForeverAICompanionArmoryScroll", page, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", PAD, -64)
   scroll:SetPoint("BOTTOMRIGHT", -PAD - 22, PAD)
@@ -344,7 +394,9 @@ function UI:Build()
   self.app = app
   local version = text(f, "GameFontDisableSmall", "RIGHT")
   version:SetPoint("BOTTOMRIGHT", -PAD, 12)
-  version:SetText(L.TITLE .. " " .. tostring(ns.version or ""))
+  -- The app's stamp after the version tells one test build from another.
+  version:SetText(L.TITLE .. " " .. tostring(ns.version or "") .. (ns.build and (" · " .. ns.build) or ""))
+  self.version = version
 end
 
 -- The build tab ---------------------------------------------------------------------
@@ -427,7 +479,16 @@ function UI:BuildProfile(page)
   -- Everything at once, and where each analysis stands.
   self.all = button(p, L.ANALYZE_ALL, 190, function() UI:AnalyzeAll() end)
   self.all:SetPoint("TOPLEFT", notesHint, "BOTTOMLEFT", 0, -12)
-  hint(self.all, L.ANALYZE_ALL, L.ANALYZE_ALL_TIP)
+  hintWith(self.all, function()
+    -- With what the last run of each analysis used, added up.
+    local total, cached, runs = 0, 0, 0
+    for _, kind in ipairs(ns.Store.KINDS) do
+      local t, c = cost(kind)
+      if t then total, cached, runs = total + t, cached + c, runs + 1 end
+    end
+    if runs == 0 then return L.ANALYZE_ALL, L.ANALYZE_ALL_TIP end
+    return L.ANALYZE_ALL, L.ANALYZE_ALL_TIP .. "\n\n" .. string.format(L.COST_ALL, runs, thousands(total), thousands(cached))
+  end)
   self.summary = {}
   local last = self.all
   for i, kind in ipairs(ns.Store.KINDS) do
@@ -715,19 +776,27 @@ function UI:Refresh()
     self.analyze:Hide()
     self.scroll:Hide()
     self.sources:Hide()
+    self.aoeRow:Hide()
     self.profile:Show()
     self:RefreshProfile()
   else
     self.profile:Hide()
-    -- The gear tab has its row of sources between the status and the plan.
-    local gear = tab == "gear"
-    self.scroll:SetPoint("TOPLEFT", PAD, gear and -94 or -64)
+    -- The gear tab has its row of sources between the status and the plan,
+    -- the rotation tab its choice of one enemy or several.
+    local gear, rotation = tab == "gear", tab == "rotation"
+    self.scroll:SetPoint("TOPLEFT", PAD, (gear or rotation) and -94 or -64)
     if gear then
       local on = ns.Store:GearSources()
       for source, c in pairs(self.sourceChecks) do c:SetChecked(on[source] and true or false) end
       self.sources:Show()
     else
       self.sources:Hide()
+    end
+    if rotation then
+      self.aoeCheck:SetChecked(ns.Store:Aoe())
+      self.aoeRow:Show()
+    else
+      self.aoeRow:Hide()
     end
     self.scroll:Show()
     self.analyze:Show()

@@ -66,10 +66,33 @@ function Panels.Status(kind)
   return text, "muted"
 end
 
--- A result made for another build than the one chosen now, or in test mode.
-local function caveats(blocks, result)
+-- Levels a character may gain before a result is said to be out of date.
+local STALE_LEVELS = 2
+-- The tabs whose numbers depend on the weapon in hand.
+local BY_WEAPON = { rotation = true, gear = true }
+
+-- Why a result no longer fits the character, one line per reason: levels
+-- gained since it was made, or another main-hand weapon (rotation and gear).
+local function stale(blocks, result, kind)
+  local data = result.data
+  if data.test then return end
+  local asked = type(data.asked) == "table" and tonumber(data.asked.level)
+  local level = Util.num(Util.safe(UnitLevel, "player"))
+  if asked and level and level - asked >= STALE_LEVELS then
+    add(blocks, { t = "p", text = string.format(L.STALE_LEVEL, asked, level), color = "warn" })
+  end
+  -- Results saved before the weapon was remembered say nothing about it.
+  if BY_WEAPON[kind] and result.weapon ~= nil and (ns.Items.EquippedId("mainHand") or 0) ~= result.weapon then
+    add(blocks, { t = "p", text = L.STALE_WEAPON, color = "warn" })
+  end
+end
+
+-- A result made for another build than the one chosen now, or in test mode,
+-- or one the character has outgrown.
+local function caveats(blocks, result, kind)
   local data = result.data
   if data.test then add(blocks, { t = "p", text = L.TEST_MODE, color = "warn" }) end
+  stale(blocks, result, kind)
   local now, was = ns.Store:Profile(), data.asked or result.profile or {}
   if (was.spec and now.spec and was.spec ~= now.spec) or (was.goal and was.goal ~= now.goal) or (was.role and was.role ~= now.role) then
     add(blocks, { t = "p", text = string.format(L.OTHER_BUILD, profileText(was)), color = "warn" })
@@ -88,7 +111,7 @@ function Panels.Talents()
   local result = ns.Store:Result("talents")
   if not result or type(result.data) ~= "table" then return blocks end
   local data = result.data
-  caveats(blocks, result)
+  caveats(blocks, result, "talents")
   add(blocks, { t = "h", text = string.format("%s  (%s)", data.name ~= "" and data.name or L.KIND_TALENTS, tostring(data.spec or "?")) })
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
 
@@ -249,7 +272,7 @@ function Panels.Gear()
   local result = ns.Store:Result("gear")
   if not result or type(result.data) ~= "table" then return blocks end
   local data = result.data
-  caveats(blocks, result)
+  caveats(blocks, result, "gear")
   -- Dungeons, raids or questing left out since this plan was made: its picks
   -- from there are hidden at once; the rest of it is still the old plan.
   local without = sourceSet(ns.Store:GearWithout())
@@ -320,7 +343,12 @@ function Panels.Rotation()
   local result = ns.Store:Result("rotation")
   if not result or type(result.data) ~= "table" then return blocks end
   local data = result.data
-  caveats(blocks, result)
+  caveats(blocks, result, "rotation")
+  -- Ticked or unticked since: this rotation is for the other kind of fight.
+  local aoe = type(data.asked) == "table" and data.asked.aoe == true
+  if aoe ~= ns.Store:Aoe() then
+    add(blocks, { t = "p", text = aoe and L.OTHER_AOE_MANY or L.OTHER_AOE_ONE, color = "warn" })
+  end
   local unit = data.metric == "hps" and L.HPS or L.DPS
   local best = data.rotations and data.rotations[1]
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
@@ -460,7 +488,7 @@ function Panels.Discover()
   local result = ns.Store:Result("discover")
   if not result or type(result.data) ~= "table" then return blocks end
   local data = result.data
-  caveats(blocks, result)
+  caveats(blocks, result, "discover")
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
   if not data.baseline and not data.test then add(blocks, { t = "p", text = L.NO_BASELINE, color = "muted" }) end
   for i, idea in ipairs(data.ideas or {}) do

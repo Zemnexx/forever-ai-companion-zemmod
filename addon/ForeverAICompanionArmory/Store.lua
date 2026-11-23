@@ -97,19 +97,34 @@ function Store:GearWithout()
   return #out > 0 and out or nil
 end
 
--- A result: { data, at, model, tokens, text, forProfile }.
+-- Whether this character's rotation is asked for fighting several enemies at once.
+function Store:Aoe()
+  local c = self:Char()
+  return c ~= nil and c.aoe == true
+end
+
+function Store:SetAoe(on)
+  local c = self:Char()
+  if c then c.aoe = on and true or nil end
+end
+
+-- A result: { data, at, model, tokens, text, profile, weapon }.
 function Store:Result(kind)
   local c = self:Char()
   return c and c.results[kind] or nil
 end
 
-function Store:SaveResult(kind, result)
+-- weapon: the item id in the main hand when it was asked (0 for none), or
+-- nil to take the one equipped now. Kept so the tab can tell when the
+-- rotation or the gear plan was made for another weapon.
+function Store:SaveResult(kind, result, weapon)
   local c = self:Char()
   if not c then return end
   local p = self:Profile()
+  if weapon == nil and ns.Items and ns.Items.EquippedId then weapon = ns.Items.EquippedId("mainHand") or 0 end
   c.results[kind] = {
     data = result.data, text = result.text, model = result.model, tokens = result.tokens,
-    at = time(), profile = { spec = p.spec, goal = p.goal, role = p.role },
+    at = time(), profile = { spec = p.spec, goal = p.goal, role = p.role }, weapon = weapon,
   }
 end
 

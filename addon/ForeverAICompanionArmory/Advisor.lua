@@ -111,10 +111,13 @@ function Advisor:Ask(kind)
   if spec.needs == "spells" and not sections.spells then return false, L.NO_SPELL_DATA end
 
   local started = time()
-  ns.Store:SetAsking(kind, { state = "preparing", t = started })
+  -- The weapon in hand now: a result for another one is said to be out of date.
+  ns.Store:SetAsking(kind, { state = "preparing", t = started, weapon = ns.Items.EquippedId("mainHand") or 0 })
   local input = { spec = profile.spec, goal = profile.goal, role = profile.role, notes = profile.notes }
   -- The gear plan stays away from what the player left out (dungeons, raids or questing).
   if kind == "gear" then input.without = ns.Store:GearWithout() end
+  -- The rotation for fighting several enemies at once, when the player ticked it.
+  if kind == "rotation" and ns.Store:Aoe() then input.aoe = true end
   local id, why = a.Request(self.PLUGIN, {
     kind = kind,
     input = input,
@@ -173,7 +176,7 @@ function Advisor:OnResult(result)
     return
   end
   if result.ok and type(result.data) == "table" then
-    ns.Store:SaveResult(kind, result)
+    ns.Store:SaveResult(kind, result, asking and asking.weapon)
     ns.Store:SetAsking(kind, nil)
     if kind == "gear" then
       ns.Items.Forget()

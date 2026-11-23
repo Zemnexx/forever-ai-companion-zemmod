@@ -30,7 +30,42 @@ on({ "ADDON_LOADED" }, function(_, name)
   ns.Store:Init()
   local meta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
   ns.version = meta and Util.safe(meta, ADDON, "Version") or ""
+  -- The companion app stamps the copy it installs (## X-Build), so a test
+  -- build can be told from another with the same version. A copy installed
+  -- by hand has none.
+  local build = meta and Util.safe(meta, ADDON, "X-Build")
+  ns.build = type(build) == "string" and build:match("^%x+$") and build or nil
 end)
+
+-- Talent points: one line in the chat when a point is gained ---------------------------
+
+-- Points read in the first seconds after login are where the character
+-- already stood (the game may hand them over late), not points gained.
+local SETTLE = 15
+local points = {}
+
+local function now()
+  return GetTime and GetTime() or 0
+end
+
+-- Unspent points now, compared with the last count: a gain names the
+-- build's next talent, once.
+function Core.WatchPoints()
+  local ranks, section = ns.Scan.Ranks()
+  local available = section and Util.num(section.available)
+  if not available then return end
+  local before = points.known
+  points.known = available
+  if before == nil or available <= before then return end
+  if points.loginAt and now() - points.loginAt < SETTLE then return end
+  local result = ns.Store:Result("talents")
+  local data = result and result.data
+  -- A test-mode build is a placeholder, not a plan to follow.
+  if type(data) ~= "table" or data.test or type(data.order) ~= "table" then return end
+  local name, tree = ns.Build.NextTalent(data.order, ranks, section)
+  if not name then return end
+  Util.chat(tree and string.format(L.NUDGE, name, tree) or string.format(L.NUDGE_NO_TREE, name))
+end
 
 on({ "PLAYER_LOGIN" }, function()
   if not ns.db then ns.Store:Init() end
@@ -40,11 +75,24 @@ on({ "PLAYER_LOGIN" }, function()
   if not ns.Advisor:Init() then Util.chat(L.NEED_COMPANION) end
   pcall(ns.Tooltip.Init, ns.Tooltip)
   pcall(ns.Button.Init, ns.Button)
+  -- Where the points stand at login: nothing to say about those.
+  points.loginAt = now()
+  pcall(Core.WatchPoints)
 end)
 
-on(TALENT_EVENTS, function()
+on(TALENT_EVENTS, function(event)
   ns.Scan.Changed("talents")
   touch()
+  pcall(Core.WatchPoints)
+  -- The new point may be handed over a moment after the level.
+  if event == "PLAYER_LEVEL_UP" and C_Timer and C_Timer.After then
+    C_Timer.After(2, function() pcall(Core.WatchPoints) end)
+  end
+end)
+
+-- The modern client's own event for a change of unspent points.
+on({ "TRAIT_TREE_CURRENCY_INFO_UPDATED" }, function()
+  Core.WatchPoints()
 end)
 
 on(SPELL_EVENTS, function()
@@ -62,6 +110,8 @@ on({ "PLAYER_EQUIPMENT_CHANGED" }, function()
 end)
 
 on({ "GET_ITEM_INFO_RECEIVED" }, function(_, itemId, success)
+  -- An item seen before the game had loaded it is looked at again.
+  pcall(ns.Items.OnSeenInfo, itemId, success)
   if ns.Items.OnItemInfo(itemId, success) then touch() end
 end)
 
@@ -96,6 +146,7 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     ns.UI:Show(TABS[word])
   elseif word == "debug" then
     -- What this client let the addon read: the first thing to share when a tab stays empty.
+    Util.chat("version: " .. tostring(ns.version) .. (ns.build and (", build " .. ns.build) or ", no build stamp (not installed by the companion app)"))
     for _, line in ipairs(ns.Scan.Diagnose()) do Util.chat(line) end
     Util.chat("companion: " .. tostring(ns.Advisor:Blocked() or ("ready, app " .. tostring(ns.Advisor:AppState()))))
     -- Whether answers can get back, as the main addon sees it (its newer versions tell).

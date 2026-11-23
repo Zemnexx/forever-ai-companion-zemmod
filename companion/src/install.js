@@ -8,6 +8,7 @@
 // and the old folders are removed once the game is closed (a game started
 // before the update keeps the old addon loaded and still gets its answers,
 // see inbox.js).
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ADDON_NAME, ARMORY_ADDON, LEGACY_NAME, wowPaths } from './config.js';
@@ -204,6 +205,46 @@ export function installedArmoryVersion(wowDir) {
   return fs.existsSync(toc) ? addonVersion(fs.readFileSync(toc, 'utf8')) : null;
 }
 
+// A short id of the Armory's files this app carries: the first 8 hex digits
+// of a SHA-256 over every file's name and contents, in name order. Every test
+// build shows the same version, so the addon shows this id after it to tell
+// which build is running.
+export function armoryBuildId(files = armoryFiles()) {
+  const hash = crypto.createHash('sha256');
+  for (const name of Object.keys(files).sort()) {
+    hash.update(`${name}\0`);
+    hash.update(String(files[name]));
+    hash.update('\0');
+  }
+  return hash.digest('hex').slice(0, 8);
+}
+
+// The files as installed: the .toc carries the build id ("## X-Build"),
+// which the addon reads with the game's addon metadata function.
+export function stampedArmoryFiles(files = armoryFiles()) {
+  const toc = files[ARMORY_TOC];
+  if (!toc) return files;
+  const eol = toc.includes('\r\n') ? '\r\n' : '\n';
+  const line = `## X-Build: ${armoryBuildId(files)}`;
+  const plain = toc.replace(/^## X-Build:.*(\r?\n|$)/m, '');
+  // After the version line, or else before the first line that is not a tag.
+  const stamped = /^## Version:.*$/m.test(plain)
+    ? plain.replace(/^(## Version:.*)$/m, `$1${eol}${line}`)
+    : `${line}${eol}${plain}`;
+  return { ...files, [ARMORY_TOC]: stamped };
+}
+
+// The build id of the installed Armory, or null (none installed, or one
+// installed by hand without a stamp).
+export function installedArmoryBuild(wowDir) {
+  try {
+    const toc = fs.readFileSync(path.join(armoryDir(wowDir), ARMORY_TOC), 'utf8');
+    return (toc.match(/^## X-Build:\s*([0-9a-f]+)\s*$/m) || [])[1] || null;
+  } catch {
+    return null;
+  }
+}
+
 // Writes the Armory's files, and removes Lua files an older version left behind.
 export function installArmory(wowDir, { files = armoryFiles(), log = () => {} } = {}) {
   if (!files[ARMORY_TOC]) throw new Error('This copy of the app does not carry the Armory addon.');
@@ -212,15 +253,16 @@ export function installArmory(wowDir, { files = armoryFiles(), log = () => {} } 
   for (const name of fs.readdirSync(dir)) {
     if (/\.(lua|toc|xml)$/i.test(name) && !(name in files)) fs.rmSync(path.join(dir, name), { force: true });
   }
-  for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
-  log(`Armory ${bundledArmoryVersion(files)} installed in: ${dir}`);
+  for (const [name, content] of Object.entries(stampedArmoryFiles(files))) fs.writeFileSync(path.join(dir, name), content);
+  log(`Armory ${bundledArmoryVersion(files)} (build ${armoryBuildId(files)}) installed in: ${dir}`);
   return dir;
 }
 
-// True when every file of the Armory this app carries is installed as it is here.
+// True when every file of the Armory this app carries is installed as it is
+// here, its .toc with this build's stamp.
 export function sameArmoryFiles(wowDir, files = armoryFiles()) {
   const dir = armoryDir(wowDir);
-  return Object.entries(files).every(([name, content]) => {
+  return Object.entries(stampedArmoryFiles(files)).every(([name, content]) => {
     try {
       return fs.readFileSync(path.join(dir, name), 'utf8') === content;
     } catch {

@@ -779,12 +779,16 @@ function Scan.Diagnose()
   local talents, spells, combat = Scan.Talents(), Scan.Spells(), Scan.Combat()
   Scan.Seen()
   Scan.Specs()
+  local ok, looked = pcall(ns.Items.SeenDiagnosis)
+  looked = ok and tostring(looked) or ("items this session: " .. tostring(looked))
   local lines = {
     "talents: " .. tostring(Scan.how.talents),
     "specializations: " .. tostring(Scan.how.specs),
     "spells: " .. tostring(Scan.how.spells),
     "combat: " .. tostring(Scan.how.combat),
     "items seen: " .. tostring(Scan.how.seen),
+    -- How the items were looked at this session, and why the last one was not kept.
+    looked,
     "tooltips: " .. ((C_TooltipInfo and "C_TooltipInfo" or "") .. (scanTip() and " hidden tooltip" or "")),
   }
   local sample = talents and talents.trees[1] and talents.trees[1].talents[1]

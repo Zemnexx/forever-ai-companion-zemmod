@@ -453,6 +453,35 @@ test('a rotation request is simulated, and its model kept for the gear plan and 
   assert.equal(found.data.baseline, true);
 });
 
+test('a rotation for several enemies at once reaches the AI, the simulator and the answer', async () => {
+  const req = request('rotation');
+  req.ext.input = { ...req.ext.input, aoe: true };
+  // The AI forgets to set the targets: the simulator still fights three.
+  const { askImpl, calls } = scripted({ summary: 's', model: MELEE_MODEL });
+  const out = await createArmory({ store: tmpStore(), askImpl }).handle(req, { cfg });
+  const sent = JSON.parse(calls[0].messages[0].content.split('\n')[1]);
+  assert.equal(sent.request.aoe, true);
+  assert.match(calls[0].system, /"aoe": true in "request": the player fights groups of enemies at once\. Set "fight\.targets" to 3/);
+  assert.equal(out.data.fight.targets, 3);
+  assert.deepEqual(out.data.asked, { spec: 'Arms', goal: 'raids', role: 'dps', level: 14, aoe: true });
+  // A model that already fights several keeps its number.
+  const five = scripted({ summary: 's', model: { ...MELEE_MODEL, fight: { ...MELEE_MODEL.fight, targets: 5 } } });
+  assert.equal((await createArmory({ store: tmpStore(), askImpl: five.askImpl }).handle(req, { cfg })).data.fight.targets, 5);
+  // Unticked: one target, and nothing about it in the request or the answer.
+  const one = scripted({ summary: 's', model: MELEE_MODEL });
+  const single = await createArmory({ store: tmpStore(), askImpl: one.askImpl }).handle(request('rotation'), { cfg });
+  assert.equal(single.data.fight.targets, 1);
+  assert.equal(single.data.asked.aoe, undefined);
+  assert.equal(one.calls[0].messages[0].content.includes('"aoe"'), false);
+  // Only rotations take it.
+  const talents = request('talents');
+  talents.ext.input = { ...talents.ext.input, aoe: true };
+  const t = scripted({ name: 'Arms', summary: 'Bleeds.', order: [101, 101, 101, 102, 102, 103, 103, 103, 104, 104, 104, 201] });
+  const build = await createArmory({ store: tmpStore(), askImpl: t.askImpl }).handle(talents, { cfg });
+  assert.equal(build.data.asked.aoe, undefined);
+  assert.equal(t.calls[0].messages[0].content.includes('"aoe"'), false);
+});
+
 test('a class that fights with a pet is told the pet is not simulated', async () => {
   const hunter = request('rotation');
   hunter.context.character.classToken = 'HUNTER';
