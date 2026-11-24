@@ -285,17 +285,62 @@ local function savePlace(f)
   settings().place = { point, relative, x, y }
 end
 
--- Lets the window be resized, on a client that can: true when it can. The
--- bounds are set again each time, as the screen may have changed.
-local function resizable(f)
-  if not (f.StartSizing and f.SetResizable) then return false end
-  if not pcall(f.SetResizable, f, true) then return false end
+-- A number that can be used as a position: unlike a size it may be zero or negative.
+local function finite(n)
+  return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+end
+
+-- The window is sized by hand, following the cursor, on a client that has
+-- what that needs. The game's own sizing is not used: in the live client it
+-- made the window jump the moment the grip was pressed.
+local function canSize(f)
+  return type(GetCursorPosition) == "function" and f.GetEffectiveScale and f.GetLeft and f.GetTop
+    and f.ClearAllPoints and true or false
+end
+
+-- The cursor in screen pixels, or nothing.
+local function cursor()
+  local ok, x, y = pcall(GetCursorPosition)
+  if ok and finite(x) and finite(y) then return x, y end
+end
+
+-- Everything a drag starts from, or nothing when any of it cannot be read:
+-- the window must not move or change size when it starts.
+local function dragStart(f)
+  local x, y = cursor()
+  if not x then return nil end
+  local scale, w, h, left, top = f:GetEffectiveScale(), f:GetWidth(), f:GetHeight(), f:GetLeft(), f:GetTop()
+  if not (sane(scale) and sane(w) and sane(h) and finite(left) and sane(top)) then return nil end
+  -- The largest it may grow to from where its top left corner is. It is never
+  -- made smaller or larger than it was by pressing the grip: a click that does
+  -- not move the mouse leaves it exactly as it was.
   local maxW, maxH = screen()
-  if f.SetResizeBounds then
-    pcall(f.SetResizeBounds, f, MIN_WIDTH, MIN_HEIGHT, maxW, maxH)
-  else
-    if f.SetMinResize then pcall(f.SetMinResize, f, MIN_WIDTH, MIN_HEIGHT) end
-    if f.SetMaxResize then pcall(f.SetMaxResize, f, maxW, maxH) end
+  maxW, maxH = math.max(math.min(maxW - left, maxW), w), math.max(math.min(top, maxH), h)
+  return { x = x, y = y, scale = scale, w0 = w, h0 = h, w = w, h = h, left = left, top = top,
+    minW = math.min(MIN_WIDTH, w), minH = math.min(MIN_HEIGHT, h), maxW = maxW, maxH = maxH, since = 0, due = false }
+end
+
+-- The size the cursor asks for. The screen's y grows upwards and the window
+-- grows downwards, so a cursor moved down makes it taller.
+local function dragSize(drag, x, y)
+  local w = drag.w0 + (x - drag.x) / drag.scale
+  local h = drag.h0 - (y - drag.y) / drag.scale
+  return clamp(w, drag.minW, drag.maxW), clamp(h, drag.minH, drag.maxH)
+end
+
+-- One step of a drag: false when it is over, as the button is no longer held
+-- (released somewhere the grip did not hear) or the cursor cannot be read.
+local function follow(f, drag)
+  if type(IsMouseButtonDown) == "function" then
+    local ok, down = pcall(IsMouseButtonDown, "LeftButton")
+    if ok and not down then return false end
+  end
+  local x, y = cursor()
+  if not x then return false end
+  local w, h = dragSize(drag, x, y)
+  if w ~= drag.w or h ~= drag.h then
+    f:SetSize(w, h)
+    drag.w, drag.h, drag.due = w, h, true
   end
   return true
 end
@@ -463,9 +508,9 @@ function UI:Build()
   version:SetText(L.TITLE .. " " .. tostring(ns.version or "") .. (ns.build and (" · " .. ns.build) or ""))
   self.version = version
 
-  -- The corner to resize it by, on a client that lets frames be resized.
+  -- The corner to resize it by, on a client that has what sizing by hand needs.
   -- The version text moves left of it.
-  if resizable(f) then
+  if canSize(f) then
     version:SetPoint("BOTTOMRIGHT", -(PAD + GRIP - 4), 12)
     local grip = CreateFrame("Button", nil, f)
     grip:SetSize(GRIP, GRIP)
@@ -487,20 +532,52 @@ end
 
 -- Resizing ------------------------------------------------------------------------------
 
+-- The grip was pressed: the window is anchored by its top left corner where
+-- it already is, so that only its right and bottom edges follow the cursor.
 function UI:StartResize()
-  local f = self.frame
-  if not f or self.sizing or not resizable(f) then return end
+  local f, grip = self.frame, self.grip
+  if not f or not grip or self.sizing then return end
+  local ok, drag = pcall(dragStart, f)
+  if not (ok and drag) then return end
+  if not pcall(function()
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", drag.left, drag.top)
+  end) then return end
   self.specDrop.list:Hide()
-  self.sizing = pcall(f.StartSizing, f, "BOTTOMRIGHT")
+  self.sizing = drag
+  grip:SetScript("OnUpdate", function(_, elapsed) UI:OnResizeUpdate(elapsed) end)
 end
 
--- The drag ended: the size is kept, and the place too, as the game may have
--- anchored the window by another corner to size it.
+-- Every frame while the grip is held. The content follows the size a few
+-- times a second, and exactly once when the drag ends. Anything that goes
+-- wrong ends the drag rather than leave it running.
+function UI:OnResizeUpdate(elapsed)
+  local f, drag = self.frame, self.sizing
+  if not (f and drag) then
+    self:StopResize()
+    return
+  end
+  local ok, going = pcall(follow, f, drag)
+  if not (ok and going) then
+    if not ok then UI.lastError = "resizing: " .. tostring(going) end
+    self:StopResize()
+    return
+  end
+  drag.since = drag.since + (tonumber(elapsed) or 0)
+  if drag.due and drag.since >= RELAYOUT then
+    drag.since, drag.due = 0, false
+    self:Layout()
+  end
+end
+
+-- The drag ended: the size is kept, and the place too, as the window is now
+-- anchored by its top left corner.
 function UI:StopResize()
-  local f = self.frame
+  local f, grip = self.frame, self.grip
+  -- The per frame script goes first, whatever happens after.
+  if grip then pcall(grip.SetScript, grip, "OnUpdate", nil) end
   if not f or not self.sizing then return end
   self.sizing = false
-  pcall(f.StopMovingOrSizing, f)
   local ok, w, h = pcall(function() return f:GetWidth(), f:GetHeight() end)
   if ok and sane(w) and sane(h) then
     local cw, ch = clampSize(w, h)
@@ -511,19 +588,9 @@ function UI:StopResize()
   self:Layout()
 end
 
--- While the corner is dragged the size changes on every frame: the content
--- follows a few times a second, and exactly once the drag ends.
+-- A change of size from anything but the grip (a drag lays itself out).
 function UI:OnSizeChanged()
-  if not self.sizing or not (C_Timer and C_Timer.After) then
-    self:Layout()
-    return
-  end
-  if self.layoutDue then return end
-  self.layoutDue = true
-  C_Timer.After(RELAYOUT, function()
-    UI.layoutDue = nil
-    if UI.sizing then UI:Layout() end
-  end)
+  if not self.sizing then self:Layout() end
 end
 
 -- Everything whose width comes from the window's, and the open tab drawn
