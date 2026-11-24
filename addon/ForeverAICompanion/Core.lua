@@ -803,9 +803,11 @@ end
 -- the open chat with its earlier turns.
 local LISTEN_TIMEOUT = 40 -- seconds: the app stops recording at 30 at the latest
 
-function Core:Listen(chatId)
+-- hold: asked by holding the talk key. The app then waits for the key to be
+-- let go instead of ending the question at the first pause.
+function Core:Listen(chatId, hold)
   if self.listening then return end
-  local id = self:Ask(nil, nil, chatId, true)
+  local id = self:Ask(nil, hold and { hold = true } or nil, chatId, true)
   if not id then return end
   local l = { id = id }
   self.listening = l
@@ -850,7 +852,7 @@ end
 
 -- Key binding (Bindings.xml): down starts, up stops.
 function Core:TalkKey(keystate)
-  if keystate == "up" then self:StopListening() else self:Listen() end
+  if keystate == "up" then self:StopListening() else self:Listen(nil, true) end
 end
 
 function ForeverAICompanion_Talk(keystate)

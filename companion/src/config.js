@@ -86,7 +86,7 @@ export const DEFAULTS = {
     apiKey: null,
     baseUrl: 'https://api.openai.com/v1',
     maxSeconds: 30,
-    silenceMs: 1500,
+    silenceMs: 2000, // a pause this long ends a question asked with the Talk button
   },
 
   // Where the up-to-date WoW Forever guide is published (see src/guide.js).

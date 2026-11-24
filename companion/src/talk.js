@@ -8,6 +8,10 @@
 // another question is being answered); finish(req) waits for the recording
 // and transcribes it, with the request's character data as vocabulary.
 // stop(id) ends a recording early (the talk key was released).
+//
+// A question asked by holding the talk key ("hold" in the request) ends when
+// the key is let go, not at a pause: only a long one (HOLD_PAUSE_MS, in case
+// the release never arrives). Clicking Talk ends at a pause (silenceMs).
 import { err } from './i18n.js';
 import { playerLang } from './prompt.js';
 import { DEFAULT_STT_BASE_URL, DEFAULT_STT_MODEL, transcribe, vocabularyPrompt } from './stt.js';
@@ -15,6 +19,7 @@ import { wavFromPcm } from './vad.js';
 
 // Shorter than this sounds like a cough or a click, not a question.
 const MIN_SPEECH_MS = 300;
+export const HOLD_PAUSE_MS = 6000;
 
 // The key used for transcription: the voice settings' own, else the ChatGPT one.
 export function talkKey(cfg) {
@@ -28,7 +33,7 @@ export function talkSettings(cfg) {
     model: t.model || DEFAULT_STT_MODEL,
     baseUrl: t.baseUrl || DEFAULT_STT_BASE_URL,
     maxMs: Math.min(60, Math.max(5, Number(t.maxSeconds) || 30)) * 1000,
-    silenceMs: Math.min(4000, Math.max(600, Number(t.silenceMs) || 1500)),
+    silenceMs: Math.min(4000, Math.max(600, Number(t.silenceMs) || 2000)),
     keySource: t.apiKey ? 'own' : cfg.keys?.chatgpt ? 'chatgpt' : null,
   };
 }
@@ -51,8 +56,9 @@ export function createTalk({ getCfg, getMic, log = () => {}, transcribeImpl = tr
     if (!s.enabled) rec = { done: Promise.reject(err('talkOff')), stop() {} };
     else if (!talkKey(cfg)) rec = { done: Promise.reject(err('talkNeedsKey')), stop() {} };
     else {
-      log('Voice question: listening.');
-      rec = micNow().record({ maxMs: s.maxMs, silenceMs: s.silenceMs });
+      const hold = req.hold === true;
+      log(`Voice question: listening${hold ? ' (talk key held)' : ''}.`);
+      rec = micNow().record({ maxMs: s.maxMs, silenceMs: hold ? Math.max(HOLD_PAUSE_MS, s.silenceMs) : s.silenceMs });
     }
     rec.done.catch(() => {});
     recordings.set(id, rec);

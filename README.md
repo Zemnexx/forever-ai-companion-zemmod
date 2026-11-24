@@ -139,7 +139,7 @@ Coming from version 1.5.0 or earlier, the app and the addon move to new folder n
 
 Turn on **Voice questions** in the app's dashboard. It needs invisible sending, a microphone and an OpenAI API key; the key you saved for ChatGPT works, or you can add one just for this.
 
-- **Hold your talk key, say the question, let go.** Pick the key in WoW's key bindings: *Forever AI Companion > Talk to your assistant*. Or click **Talk** next to the chat window's text box, then click it again (or just stop talking).
+- **Hold your talk key, say the question, let go.** Pick the key in WoW's key bindings: *Forever AI Companion > Talk to your assistant*. While you hold it, pausing to think doesn't end the question. Or click **Talk** next to the chat window's text box, then click it again (or stop talking for 2 seconds).
 - A short beep means the app is listening. Your words show up as the question, and the answer arrives as if you had typed it.
 - **Follow-up questions** work the same way: they go to the open chat, so the assistant knows what you were talking about.
 - The microphone is open only while you talk (at most 30 seconds), and Windows shows when it's in use. The recording goes to OpenAI to be turned into text and is never saved; OpenAI charges your API key per minute of audio.

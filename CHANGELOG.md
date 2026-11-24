@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.14)
+## 2.1.2 (addon 1.16.15)
 
 ### Added
 
@@ -37,6 +37,10 @@
 
 ### Fixed
 
+- **Voice questions no longer stop in the middle.** The app ended a question at the first pause of 1.5 seconds, even while you held the talk key, and quieter words (the end of a sentence, a softer voice) could count as that pause, so it beeped and sent only the first half. Now:
+  - holding the talk key, the question ends when you let go, pauses included (after 6 seconds of quiet it ends anyway, in case the release didn't reach the app);
+  - clicking **Talk**, a pause of 2 seconds ends it (or click Talk again);
+  - once you're talking, softer words still count as speech.
 - **Your saved data survives Forever's blank realm name.** Since the game's build 71037 the realm's name comes back blank, so the addon started a new, empty store for your character and lost track of what it had saved before (Eastern Kingdoms flight points, quest turn-ins, auction prices, the assistant you chose). Each character's data is now kept by the character's own game id, which doesn't depend on the realm's name, and the first time the old stores are merged into it (the newer copy wins). Auction prices are kept per server and faction. A blank realm is no longer sent to the AI.
 - **Recipes are saved on WoW Forever.** Its profession window gives the profession's name through a different game function than the addon used, so no recipe was ever saved and the AI only knew your skill levels. Open each profession window once (Blacksmithing, Mining's smelting, Cooking, First Aid...) to save them.
 - **The bank is remembered as you left it.** The addon saved the bank when you opened it and when its main slots changed, but not when you took things out of the bags inside the bank (or put them in), so the AI could count items you had already taken out. It now saves after every change while the bank is open, an emptied bank included. Open your bank once to refresh what it remembers.
