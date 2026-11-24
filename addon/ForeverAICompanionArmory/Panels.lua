@@ -8,7 +8,8 @@
 --   { t = "p", text, color }                   a paragraph ("muted", "warn", "good" or nil)
 --   { t = "note", text }                       a bullet
 --   { t = "row", icon, title, right, sub,      an entry with an icon: link = item link (hover and click),
---     link, spell, quality }                   spell = spell id (hover)
+--     link, spell, quality,                    spell = spell id (hover), talent = talent id (hover;
+--     talent, talentTo, compact }              talentTo = the rank planned there), compact = one tight line
 --   { t = "bar", label, value, right }         a bar filled to value (0-100)
 --   { t = "action", text, id }                 a button; UI.lua knows what each id does
 --   { t = "gap" }
@@ -101,9 +102,21 @@ end
 
 -- Talents ---------------------------------------------------------------------------
 
-local function talentRow(index, id, right, sub)
-  local talent = index[id] or {}
-  return { t = "row", icon = ns.Scan.icons[id], title = talent.name or ("#" .. tostring(id)), right = right, sub = sub }
+-- A talent's row. Hovering it shows the talent's tooltip (Tooltip.lua) when
+-- the game has that talent; to: the rank the plan takes it to there.
+local function talentRow(index, id, right, sub, to)
+  local talent = index[id]
+  return { t = "row", icon = ns.Scan.icons[id], title = talent and talent.name or ("#" .. tostring(id)), right = right, sub = sub,
+    talent = talent and id or nil, talentTo = talent and to or nil }
+end
+
+-- How many points the build puts in talent `id` in all.
+local function plannedRank(order, id)
+  local n = 0
+  for _, v in ipairs(order or {}) do
+    if v == id then n = n + 1 end
+  end
+  return n > 0 and n or nil
 end
 
 function Panels.Talents()
@@ -135,7 +148,7 @@ function Panels.Talents()
         local first, last = ns.Build.LevelOf(step.n), ns.Build.LevelOf(step.n + step.count - 1)
         sub = sub .. " · " .. (first == last and string.format(L.AT_LEVEL, first) or string.format(L.AT_LEVELS, first, last))
       end
-      local row = talentRow(index, step.id, right, sub)
+      local row = talentRow(index, step.id, right, sub, step.to)
       -- The points that can be spent right now stand out.
       if i == 1 and available > 0 then row.highlight = true end
       add(blocks, row)
@@ -154,24 +167,25 @@ function Panels.Talents()
   if type(data.keyTalents) == "table" and #data.keyTalents > 0 then
     add(blocks, { t = "h", text = L.KEY_TALENTS })
     for _, k in ipairs(data.keyTalents) do
-      local row = talentRow(index, k.id, nil, k.why)
+      local row = talentRow(index, k.id, nil, k.why, plannedRank(data.order, k.id))
       if not index[k.id] and k.name then row.title = k.name end
       add(blocks, row)
     end
   end
   notes(blocks, data.notes, L.NOTES)
 
-  -- The whole order, one line per run of points in the same talent.
-  local lines = {}
-  for _, run in ipairs(ns.Build.Runs(data.order)) do
+  -- The whole order, one compact row per run of points in the same talent,
+  -- so every talent of the build can be hovered for its tooltip.
+  local runs = ns.Build.Runs(data.order)
+  if #runs > 0 then add(blocks, { t = "h", text = L.FULL_ORDER }) end
+  for _, run in ipairs(runs) do
     local talent = index[run.id] or {}
     local levels = run.first == run.last and tostring(ns.Build.LevelOf(run.first))
       or (ns.Build.LevelOf(run.first) .. "-" .. ns.Build.LevelOf(run.last))
-    lines[#lines + 1] = string.format("%s  %s %d/%d", levels, talent.name or ("#" .. run.id), run.to, talent.max or run.to)
-  end
-  if #lines > 0 then
-    add(blocks, { t = "h", text = L.FULL_ORDER })
-    add(blocks, { t = "p", text = table.concat(lines, "\n"), color = "muted" })
+    local row = talentRow(index, run.id, nil, nil, run.to)
+    row.icon, row.compact, row.dim = nil, true, true
+    row.title = string.format("%s  %s %d/%d", levels, talent.name or ("#" .. run.id), run.to, talent.max or run.to)
+    add(blocks, row)
   end
   return blocks
 end

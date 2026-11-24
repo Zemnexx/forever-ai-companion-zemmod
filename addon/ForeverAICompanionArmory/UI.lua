@@ -848,7 +848,13 @@ local function newRow(body)
   r.sub:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
   color(r.sub, "muted")
   r:SetScript("OnEnter", function(self)
-    if not GameTooltip or not (self.link or self.spell or self.hint) then return end
+    if not GameTooltip then return end
+    if self.talent then
+      -- A talent: its own tooltip, or none (Tooltip.lua never throws).
+      if ns.Tooltip and ns.Tooltip.ShowTalent then ns.Tooltip.ShowTalent(self, self.talent, self.talentTo) end
+      return
+    end
+    if not (self.link or self.spell or self.hint) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     local ok
     if self.link then ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.link)
@@ -917,6 +923,11 @@ function UI:Render(blocks)
       local r = take(self, "row", function() return newRow(body) end)
       r:SetWidth(bw)
       r.link, r.spell, r.hint = block.link, block.spell, block.hint
+      r.talent, r.talentTo = block.talent, block.talentTo
+      -- A compact row is one line of text (the whole talent order): only as
+      -- tall as that line, so the list stays dense and each line can be hovered.
+      local compact = block.compact and true or false
+      local top = compact and -3 or -5
       if block.icon then
         r.icon:SetTexture(block.icon)
         r.icon:Show()
@@ -924,7 +935,9 @@ function UI:Render(blocks)
         r.icon:Hide()
       end
       r.title:ClearAllPoints()
-      r.title:SetPoint("TOPLEFT", block.icon and 32 or 6, -5)
+      r.title:SetPoint("TOPLEFT", block.icon and 32 or 6, top)
+      r.right:ClearAllPoints()
+      r.right:SetPoint("TOPRIGHT", -6, top - 1)
       r.right:SetText(block.right or "")
       color(r.right, block.rightColor or "text")
       local rightWidth = block.right and ((r.right:GetStringWidth() or 0) + 14) or 0
@@ -934,14 +947,20 @@ function UI:Render(blocks)
       r.title:SetText(block.link and block.link:find("|H") and block.link or tostring(block.title or ""))
       color(r.title, block.dim and "muted" or "text")
       r.sub:SetWidth(bw - (block.icon and 32 or 6) - 8)
-      r.sub:SetText(block.sub or "")
+      local sub = not compact and block.sub ~= "" and block.sub or nil
+      r.sub:SetText(sub or "")
       local back = block.highlight and COLORS.highlight or { 0, 0, 0, 0 }
       r.back:SetColorTexture(back[1], back[2], back[3], back[4])
-      local height = 8 + (r.title:GetStringHeight() or 14) + ((block.sub and block.sub ~= "") and ((r.sub:GetStringHeight() or 12) + 2) or 0) + 4
-      r:SetHeight(math.max(height, 30))
+      local titleHeight = r.title:GetStringHeight() or 14
+      if compact then
+        r:SetHeight(math.max(titleHeight + 6, 18))
+      else
+        local height = 8 + titleHeight + (sub and ((r.sub:GetStringHeight() or 12) + 2) or 0) + 4
+        r:SetHeight(math.max(height, 30))
+      end
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-      y = y + r:GetHeight() + 2
+      y = y + r:GetHeight() + (compact and 0 or 2)
     elseif kind == "bar" then
       local b = take(self, "bar", function() return newBar(body) end)
       b:ClearAllPoints()

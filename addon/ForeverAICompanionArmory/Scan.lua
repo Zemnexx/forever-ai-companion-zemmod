@@ -22,6 +22,10 @@ local Scan = {}
 ns.Scan = Scan
 
 Scan.icons = {}   -- talent id -> icon (for the window; not sent)
+-- talent id -> what its tooltip needs (for the window; not sent): name, max
+-- and rank, with entryID, spellID and nodeID on the modern trees, or tab
+-- and index on the classic ones.
+Scan.shows = {}
 Scan.how = {}     -- part -> how it was read (Diagnose)
 
 local MAX_DESC = 420
@@ -163,6 +167,67 @@ local function traitDescription(entryID, rank, name)
   return s ~= "" and s or nil
 end
 
+-- A side of a tooltip line as text to show, or nil when it is empty.
+local function side(s)
+  s = clean(s)
+  if not s then return nil end
+  s = s:gsub("\r", ""):gsub("^%s+", ""):gsub("%s+$", "")
+  return s ~= "" and s or nil
+end
+
+-- { r, g, b } from a color the game hands over (a ColorMixin), or nil.
+local function rgb(c)
+  if type(c) ~= "table" then return nil end
+  local r, g, b = num(c.r), num(c.g), num(c.b)
+  if not (r and g and b) and type(c.GetRGB) == "function" then
+    local ok, cr, cg, cb = pcall(c.GetRGB, c)
+    if ok then r, g, b = num(cr), num(cg), num(cb) end
+  end
+  return r and g and b and { r, g, b } or nil
+end
+
+-- The lines of a modern talent's tooltip at a rank, to show them line by
+-- line: { left, right, text, leftColor, rightColor }, where text is both
+-- sides as one line (to compare lines). Without a first line that only
+-- repeats the name and without the lines the descriptions leave out too.
+-- nil when the game gives none.
+function Scan.TraitLines(entryID, rank, name)
+  local get = C_TooltipInfo and C_TooltipInfo.GetTraitEntry
+  if type(get) ~= "function" or not entryID then return nil end
+  local data = safe(get, entryID, math.max(rank or 0, 1))
+  if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+  local out = {}
+  for _, line in ipairs(data.lines) do
+    if type(line) == "table" then
+      local left, right = side(line.leftText), side(line.rightText)
+      local text = joinSides(left, right)
+      if text and not (#out == 0 and text == name) and not isNoise(text) then
+        out[#out + 1] = { left = left or "", right = right, text = text, leftColor = rgb(line.leftColor), rightColor = rgb(line.rightColor) }
+      end
+    end
+  end
+  return #out > 0 and out or nil
+end
+
+-- The points in a talent right now, read from the game when it is hovered
+-- (the window may have been drawn before a point was spent), else as the
+-- last scan read them.
+function Scan.TalentRank(id)
+  local how = Scan.shows[id]
+  if not how then return nil end
+  local rank
+  if how.tab then
+    local r = results(GetTalentInfo, how.tab, how.index)
+    rank = r and num(r[5])
+  elseif how.nodeID and C_ClassTalents and C_Traits then
+    local configID = safe(C_ClassTalents.GetActiveConfigID)
+    local node = configID and safe(C_Traits.GetNodeInfo, configID, how.nodeID)
+    rank = type(node) == "table" and (num(node.activeRank) or num(node.ranksPurchased)) or nil
+  end
+  rank = rank or how.rank or 0
+  return math.max(math.min(rank, how.max or rank), 0)
+end
+
 -- Talents --------------------------------------------------------------------------
 
 -- The classic names of each class's trees, in the order they stand from left
@@ -227,6 +292,7 @@ local function classicTalents(light)
           rank = math.min(num(t[5]) or 0, max), max = max,
         }
         Scan.icons[talent.id] = t[2]
+        Scan.shows[talent.id] = { tab = tab, index = i, name = name, max = max, rank = talent.rank }
         if not light then
           local lines = talentTip(tab, i)
           talent.desc = lines and description(lines) or nil
@@ -348,6 +414,7 @@ local function traitTalents(light)
             end
           end
           Scan.icons[nodeID] = safe(getIcon, spellID)
+          Scan.shows[nodeID] = { nodeID = nodeID, entryID = entryID, spellID = spellID, name = name, max = max, rank = talent.rank }
           if not light then
             -- At the rank the player has; and what it becomes with every point in it.
             local desc = traitDescription(entryID, talent.rank, name)
@@ -948,6 +1015,9 @@ function Scan.Diagnose()
   if sample then
     lines[#lines + 1] = string.format("first talent: %s %d/%d row %d: %s", sample.name, sample.rank, sample.max, sample.row,
       tostring(sample.desc or "(no description)"):sub(1, 120))
+    -- How the window's rows show a talent's tooltip on this client.
+    local ok, way = pcall(function() return ns.Tooltip.TalentWay(sample.id) end)
+    lines[#lines + 1] = "talent tooltips: " .. (ok and tostring(way) or "none (" .. tostring(way) .. ")")
   end
   local spell = spells and spells[1]
   if spell then lines[#lines + 1] = string.format("first spell: %s (%s): %s", spell.name, tostring(spell.id), tostring(spell.tip or "(no tooltip)"):sub(1, 120)) end

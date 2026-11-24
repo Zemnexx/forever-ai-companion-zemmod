@@ -109,6 +109,9 @@ local L = {
   MISPLACED_HINT = "These points are not part of the recommended build. It still shows what to take next; a reset at your class trainer would move them.",
   KEY_TALENTS = "What defines the build",
   FULL_ORDER = "Full order by level",
+  -- A talent's tooltip, where the game has no text of its own for these.
+  TALENT_RANK = "Rank %d/%d",
+  TALENT_RANK_AT = "Rank %d/%d:",
 
   -- Gear
   WEIGHTS = "Stat weights",
