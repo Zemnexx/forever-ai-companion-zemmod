@@ -1,6 +1,24 @@
 # Changelog
 
-## 2.1.2 (addon 1.16.15)
+## 2.2.0 (addon 1.17.1)
+
+### Added
+
+- **Other addons can ask the app through this one.** The addon now has a small public API (`ForeverAICompanionAPI`, in `Plugins.lua`) that a second addon can use to send the app a request and get data back, over the same channels and with the same per-PC request code as a question. The app answers such a request only when it has a plugin of that name (`companion/src/plugins.js`), and what a plugin tells the AI is written in the app, never taken from the request. This version carries no plugin yet: it is the groundwork for one. See [Plugins](README.md#plugins-other-addons-asking-through-this-one) in the README.
+  - A plugin's own data is sent only when it changed, like your character's.
+  - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in. An answer that is only late is still picked up.
+  - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
+  - Mailboxes are opened less often while waiting for a plugin's answer, which can take minutes, so they last as long as before.
+
+### Fixed
+
+- **Voice questions no longer stop in the middle.** The app ended a question at the first pause of 1.5 seconds, even while you held the talk key, and quieter words (the end of a sentence, a softer voice) could count as that pause, so it beeped and sent only the first half. Now:
+  - holding the talk key, the question ends when you let go, pauses included (after 6 seconds of quiet it ends anyway, in case the release didn't reach the app);
+  - clicking **Talk**, a pause of 2 seconds ends it (or click Talk again);
+  - once you're talking, softer words still count as speech.
+- **Answers with certain field names no longer break the mailbox.** A table key that is a Lua keyword (`for`, `end`...) was written bare into the mailbox file, which the game could not load. No answer had such a key until now.
+
+## 2.1.2 (addon 1.16.14)
 
 ### Added
 
@@ -37,10 +55,6 @@
 
 ### Fixed
 
-- **Voice questions no longer stop in the middle.** The app ended a question at the first pause of 1.5 seconds, even while you held the talk key, and quieter words (the end of a sentence, a softer voice) could count as that pause, so it beeped and sent only the first half. Now:
-  - holding the talk key, the question ends when you let go, pauses included (after 6 seconds of quiet it ends anyway, in case the release didn't reach the app);
-  - clicking **Talk**, a pause of 2 seconds ends it (or click Talk again);
-  - once you're talking, softer words still count as speech.
 - **Your saved data survives Forever's blank realm name.** Since the game's build 71037 the realm's name comes back blank, so the addon started a new, empty store for your character and lost track of what it had saved before (Eastern Kingdoms flight points, quest turn-ins, auction prices, the assistant you chose). Each character's data is now kept by the character's own game id, which doesn't depend on the realm's name, and the first time the old stores are merged into it (the newer copy wins). Auction prices are kept per server and faction. A blank realm is no longer sent to the AI.
 - **Recipes are saved on WoW Forever.** Its profession window gives the profession's name through a different game function than the addon used, so no recipe was ever saved and the AI only knew your skill levels. Open each profession window once (Blacksmithing, Mining's smelting, Cooking, First Aid...) to save them.
 - **The bank is remembered as you left it.** The addon saved the bank when you opened it and when its main slots changed, but not when you took things out of the bags inside the bank (or put them in), so the AI could count items you had already taken out. It now saves after every change while the bank is open, an emptied bank included. Open your bank once to refresh what it remembers.
