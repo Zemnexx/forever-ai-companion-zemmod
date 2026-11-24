@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.0 (addon 1.17.0)
+## 2.4.0 (addon 1.17.1)
 
 Tanking and calibration for the Armory (its addon 0.3.0).
 
@@ -19,6 +19,7 @@ Tanking and calibration for the Armory (its addon 0.3.0).
 - **A game that never hears the bell gets its answers within about a minute.** On WoW Forever 1.60.1 the bell an answer rings was not heard at all (the game seems to go on answering for a sound file as it did the first time it looked at it in a session; not confirmed), so an Armory analysis that the app had ready after 4 minutes only showed at the 5-minute safety timer, and one that came after the wait was over never did. The addon now recognizes this by what happens: a timer brings an answer whose bell it had checked, and found silent, after the app published it. It remembers that in its saved data and from then on opens a mailbox every minute while a plugin waits, every two minutes while its answer may only be late, and by the no-sound schedule for a chat question. The first bell that brings an answer puts it back to normal. A game that hears its bells behaves exactly as before. The price is mailboxes, of which a session has 50: a typical analysis uses about 4, one that never gets its answer up to 28, after which the addon offers a reload as before.
 - **The bell numbering stays in step.** An answer picked up by a timer, at login or by hand moves the addon past the bell its request asked for, as the app already was. Before, the addon went on waiting for a bell the app had used.
 - **The app's log says which bell it rang** and which one the request asked for, to compare with the addon's own diagnosis.
+- **Voice questions no longer stop in the middle.** The fix listed under 2.2.0 (addon 1.17.1) is part of this version too.
 
 ## 2.3.0 (addon 1.17.0)
 
@@ -41,7 +42,7 @@ The Armory: a second addon for your character's build, on top of the plugins of 
   - **Test mode answers too.** With no AI chosen, every kind of request gets a placeholder made from your own data through the same checks and the same simulator, so the connection can be tried for free.
   - Not yet: pets are not simulated. Hunters and warlocks are told so under each rotation's assumptions.
 
-## 2.2.0 (addon 1.17.0)
+## 2.2.0 (addon 1.17.1)
 
 ### Added
 
@@ -53,6 +54,10 @@ The Armory: a second addon for your character's build, on top of the plugins of 
 
 ### Fixed
 
+- **Voice questions no longer stop in the middle.** The app ended a question at the first pause of 1.5 seconds, even while you held the talk key, and quieter words (the end of a sentence, a softer voice) could count as that pause, so it beeped and sent only the first half. Now:
+  - holding the talk key, the question ends when you let go, pauses included (after 6 seconds of quiet it ends anyway, in case the release didn't reach the app);
+  - clicking **Talk**, a pause of 2 seconds ends it (or click Talk again);
+  - once you're talking, softer words still count as speech.
 - **Answers with certain field names no longer break the mailbox.** A table key that is a Lua keyword (`for`, `end`...) was written bare into the mailbox file, which the game could not load. No answer had such a key until now.
 
 ## 2.1.2 (addon 1.16.14)

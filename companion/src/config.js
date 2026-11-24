@@ -91,7 +91,7 @@ export const DEFAULTS = {
     apiKey: null,
     baseUrl: 'https://api.openai.com/v1',
     maxSeconds: 30,
-    silenceMs: 1500,
+    silenceMs: 2000, // a pause this long ends a question asked with the Talk button
   },
 
   // The Armory plugin (src/armory): character builds worked out with the

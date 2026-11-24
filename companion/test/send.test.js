@@ -1308,6 +1308,9 @@ test('/ia talk: hold the key, speak, release; the transcript becomes the questio
   assert.equal(after, 'Where do I go now?|done');
   assert.deepEqual(followUp.history.at(-1), { q: 'Where do I go now?', a: 'Head to Westfall.' }, 'follow-ups see the earlier turn');
   assert.equal(stop2.listenStop, followUp.id);
+  // Held key: the app waits for the release. Talk clicked: it ends at a pause.
+  assert.equal(listen.hold, true);
+  assert.equal(followUp.hold, undefined);
   assert.equal(count, '2');
 });
 

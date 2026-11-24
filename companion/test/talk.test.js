@@ -12,7 +12,7 @@ import { install } from '../src/install.js';
 import { createSilenceDetector, rms, wavFromPcm } from '../src/vad.js';
 import { createMic } from '../src/mic.js';
 import { transcribe, vocabularyPrompt } from '../src/stt.js';
-import { createTalk, talkKey, talkSettings } from '../src/talk.js';
+import { createTalk, talkKey, talkSettings, HOLD_PAUSE_MS } from '../src/talk.js';
 import { handleRequest } from '../src/watcher.js';
 import { runInLang } from '../src/i18n.js';
 import { sampleContext } from '../src/assets.js';
@@ -35,6 +35,15 @@ test('a question ends after a pause, and nothing or a blocked microphone is reco
   assert.equal(feed(d, [...times(15, () => chunk(4000)), ...times(14, () => chunk(60))]), null, 'a short pause is not the end');
   assert.equal(d.push(chunk(60)), 'silence');
   assert.ok(d.speechMs() >= 1500);
+
+  // Softer words after talking (under the starting threshold) are still speech, not the pause.
+  d = createSilenceDetector({ silenceMs: 1500 });
+  assert.equal(feed(d, [...times(15, () => chunk(4000)), ...times(20, () => chunk(1300)), ...times(14, () => chunk(60))]), null);
+  assert.equal(d.push(chunk(60)), 'silence');
+  assert.ok(d.speechMs() >= 3500, 'the soft part counted as speech');
+  // ...but not before they start: the same level alone isn't speech.
+  d = createSilenceDetector({ noSpeechMs: 2000, floorMin: 1200 });
+  assert.equal(feed(d, times(25, () => chunk(1300))), 'nospeech');
 
   // Quiet room first, then speech, then a pause.
   d = createSilenceDetector({ silenceMs: 1000 });
@@ -178,14 +187,26 @@ test('voice settings: off by default, and the ChatGPT key is reused', () => {
   assert.equal(talkKey({ ...base, keys: { chatgpt: 'sk-chat' }, talk: { apiKey: 'sk-own' } }), 'sk-own');
   assert.equal(talkSettings({ ...base, keys: { chatgpt: 'sk-chat' } }).keySource, 'chatgpt');
   assert.equal(talkSettings({ ...base, talk: { maxSeconds: 999 } }).maxMs, 60000, 'never longer than a minute');
+  assert.equal(talkSettings(base).silenceMs, 2000, 'a 2-second pause ends a question asked with the Talk button');
+});
+
+test('holding the talk key: the question ends when it is let go, not at a pause', () => {
+  const cfg = { talk: { enabled: true, apiKey: 'sk-own' } };
+  const { talk, seen } = fakeTalk({ cfg });
+  talk.begin({ id: 'h1', listen: true, hold: true });
+  talk.begin({ id: 'c1', listen: true });
+  assert.deepEqual(seen.options.map((o) => o.silenceMs), [HOLD_PAUSE_MS, 2000]);
+  assert.equal(HOLD_PAUSE_MS, 6000, 'only a long pause, in case the release never arrives');
+  talk.close();
 });
 
 // The talk module with a fake microphone and transcription.
 function fakeTalk({ cfg, recording = { reason: 'silence', speechMs: 1200, pcm: chunk(3000, 1500) }, heard = 'What should I do next?' } = {}) {
-  const seen = { records: 0, transcribed: [] };
+  const seen = { records: 0, transcribed: [], options: [] };
   const mic = {
-    record() {
+    record(options) {
       seen.records++;
+      seen.options.push(options);
       let stop;
       const done = new Promise((resolve) => { stop = () => resolve({ ...recording, reason: 'released' }); setTimeout(() => resolve(recording), 20); });
       return { done, stop: () => stop() };

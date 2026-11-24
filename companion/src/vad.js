@@ -3,7 +3,9 @@
 // Loudness is measured per chunk (RMS). The threshold for "speech" follows the
 // room's background noise (a low percentile of what was heard so far), within
 // fixed limits, so a player who starts talking right after the beep is still
-// heard and a noisy room doesn't count as talking.
+// heard and a noisy room doesn't count as talking. Once they are talking, a
+// lower level (keepRatio of the threshold) still counts as speech, so softer
+// words and the end of a sentence don't count toward the pause.
 export const SAMPLE_RATE = 16000;
 
 // RMS of 16-bit little-endian mono samples.
@@ -31,7 +33,7 @@ const allZero = (pcm) => {
 // speechMs(): how much of it sounded like speech.
 export function createSilenceDetector({
   sampleRate = SAMPLE_RATE, silenceMs = 1500, noSpeechMs = 6000, maxMs = 30000, minSpeechMs = 200, mutedMs = 1000,
-  floorMin = 250, floorMax = 1200,
+  floorMin = 250, floorMax = 1200, keepRatio = 0.6,
 } = {}) {
   const levels = [];
   let elapsed = 0;
@@ -55,7 +57,7 @@ export function createSilenceDetector({
       elapsed += ms;
       if (zerosOnly && !allZero(chunk)) zerosOnly = false;
       const level = rms(chunk);
-      const limit = threshold();
+      const limit = threshold() * (speaking ? keepRatio : 1);
       levels.push(level);
       if (levels.length > 300) levels.shift();
       if (level >= limit) {
