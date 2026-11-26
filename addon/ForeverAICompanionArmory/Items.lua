@@ -168,15 +168,59 @@ function Items.EquippedId(slot)
   return slotId and num(safe(GetInventoryItemID, "player", slotId)) or nil
 end
 
+-- The kind of item worn in a slot (its equipLoc), or nil when nothing is
+-- worn there or the kind cannot be read.
+local function wornKind(slot)
+  local link = Items.Equipped(slot)
+  if type(link) ~= "string" then return nil end
+  local kind = (Items.Stats(link) or {}).equipLoc
+  if type(kind) ~= "string" or kind == "" then
+    local ok, all = pcall(function() return { GetItemInfo(link) } end)
+    kind = ok and type(all) == "table" and all[9] or nil
+  end
+  return type(kind) == "string" and kind ~= "" and kind or nil
+end
+
+local OFF_HAND_KINDS = { INVTYPE_WEAPONOFFHAND = true, INVTYPE_SHIELD = true, INVTYPE_HOLDABLE = true }
+local OFF_HAND_WEAPONS = { INVTYPE_WEAPON = true, INVTYPE_WEAPONOFFHAND = true }
+
+-- A client without the function counts as "cannot": an empty off hand is
+-- then never taken as a place for a one-hand weapon.
+local function canDualWield()
+  return safe(CanDualWield) and true or false
+end
+
+-- The slots a one-hand weapon would really go in. With a two-hander worn it
+-- can only replace that two-hander. Otherwise the off hand is a place for it
+-- only when it already holds a weapon, or is empty and the character can dual
+-- wield: a shield or a held item stays where it is.
+local function oneHandSlots()
+  if wornKind("mainHand") == "INVTYPE_2HWEAPON" then return { "mainHand" } end
+  local slots = { "mainHand" }
+  local off = Items.Equipped("offHand")
+  if off then
+    if OFF_HAND_WEAPONS[wornKind("offHand") or ""] then slots[2] = "offHand" end
+  elseif canDualWield() then
+    slots[2] = "offHand"
+  end
+  return slots
+end
+
 -- A candidate against what is worn where it would go. Returns
 -- { score, delta, slot } (delta against the weakest of its slots; a two-hander
 -- against main hand and off hand together), or nil when it can't be scored.
+-- An off-hand item while a two-hander is worn cannot be worn with it, so it
+-- has no delta and says why: { score, slot, blocked = "twoHand" }.
 function Items.Compare(link, weights, equipLoc)
   local score = Items.Score(link, weights)
   if not score then return nil end
   equipLoc = equipLoc or (Items.Stats(link) or {}).equipLoc
   local slots = Items.SLOTS_FOR[equipLoc or ""]
   if not slots then return { score = score } end
+  if OFF_HAND_KINDS[equipLoc] and wornKind("mainHand") == "INVTYPE_2HWEAPON" then
+    return { score = score, slot = "offHand", blocked = "twoHand" }
+  end
+  if equipLoc == "INVTYPE_WEAPON" then slots = oneHandSlots() end
   local best
   for _, slot in ipairs(slots) do
     local worn = Items.Equipped(slot)

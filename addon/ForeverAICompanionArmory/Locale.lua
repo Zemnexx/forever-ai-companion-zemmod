@@ -175,6 +175,7 @@ local L = {
   SLOT_RANGED = "Ranged",
   TOOLTIP_SCORE = "Forever AI Armory score: %s",
   TOOLTIP_DELTA = "(%s vs equipped)",
+  TOOLTIP_TWO_HAND = "(not worn with a two-hander)",
   TOOLTIP_EFFECTS = "+ %d effects not counted",
   TOOLTIP_EFFECT = "+ 1 effect not counted",
 

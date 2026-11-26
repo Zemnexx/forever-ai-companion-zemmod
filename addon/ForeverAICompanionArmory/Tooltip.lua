@@ -26,7 +26,10 @@ function Tooltip.Line(link)
   local text = string.format(L.TOOLTIP_SCORE, Util.fmt(cmp.score, 1))
   local r, g, b = 0.6, 0.8, 1
   -- Against what is worn (nothing to add when it is the worn item itself).
-  if cmp.delta and math.abs(cmp.delta) >= 0.05 then
+  -- An off-hand item while a two-hander is worn: nothing to compare with.
+  if cmp.blocked == "twoHand" then
+    text = text .. "  " .. L.TOOLTIP_TWO_HAND
+  elseif cmp.delta and math.abs(cmp.delta) >= 0.05 then
     text = text .. "  " .. string.format(L.TOOLTIP_DELTA, (cmp.delta > 0 and "+" or "") .. Util.fmt(cmp.delta, 1))
     if cmp.delta > 0 then r, g, b = 0.45, 0.9, 0.55 else r, g, b = 1, 0.62, 0.3 end
   end
