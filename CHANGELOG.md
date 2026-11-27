@@ -16,6 +16,10 @@ The Armory's best rotation as a profile for Forever One Button (the Armory's add
   - **Checked against One Button's own code.** The Armory leaves out anything One Button's importer would refuse (a copy of its rules, from 1.1.4-zm9), and a test imports a profile with every condition type through One Button's real import code. The list of DoTs One Button tracks by itself comes from its data files (imported there from JustAC, GPL-3.0-or-later) and says so.
   - Not for healers: One Button suggests attacks. Nothing here has been run in the game.
 
+### Changed
+
+- **The built-in WoW Forever guide is up to date to November 27, 2026** (game version 1.60.1, build 71139). The update listed under 2.2.0 is part of this version too.
+
 ## 2.4.0 (addon 1.17.1)
 
 Tanking and calibration for the Armory (its addon 0.3.0).
@@ -68,6 +72,16 @@ The Armory: a second addon for your character's build, on top of the plugins of 
   - A request that is waiting for its answer survives `/reload` and closing the game: the answer is handed over the next time you log in. An answer that is only late is still picked up.
   - While a plugin's request is being worked on, a question you ask in the chat is still answered: plugin requests wait in a line of their own.
   - Mailboxes are opened less often while waiting for a plugin's answer, which can take minutes, so they last as long as before.
+
+### Changed
+
+- **The built-in WoW Forever guide is up to date to November 27, 2026** (game version 1.60.1, build 71139). It has Blizzard's hotfixes from November 14 to 25: the Balance Druid talent rework, the new dungeon XP rule (no kill XP for the party when someone is more than 12 levels above the enemy), 5 dungeon entries per hour, world buffs kept between zones, Upper Blackrock Spire back to its intended difficulty, the Alterac Valley changes, paladins and warlocks getting Journeyman Riding from their epic mount quests, and class tuning for priests, shamans, warriors, rogues, paladins and warlock pets. A fact-check against current sources also fixed:
+  - Journeyman Riding includes your first swift mount, so level 60 riding costs about 1,000 gold, not 1,200;
+  - only the Alliance Skyborne (High Order) have Read Leyline; the Horde branch (Windshapers) has Skysight instead;
+  - the paladin and warlock mount quests, with who gives them; the level 55 requirement for blue PvP honor gear;
+  - the dual-spec action bar bug is fixed, and Hardcore still has no date.
+
+  The app still uses only the guide built into it: downloading newer guides stays off.
 
 ### Fixed
 
