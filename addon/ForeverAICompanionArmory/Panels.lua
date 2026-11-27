@@ -606,6 +606,9 @@ function Panels.Rotation()
     if best.emptyAt then facts[#facts + 1] = string.format(L.EMPTY_AT, Util.fmt(best.emptyAt, 0)) end
     if #facts > 0 then add(blocks, { t = "p", text = table.concat(facts, " · "), color = "muted" }) end
   end
+  -- The lists kept for Forever One Button, as a profile to paste into it.
+  local built, profile = pcall(ns.OneButton.Build)
+  if built and profile then add(blocks, { t = "action", id = "onebutton", text = L.OB_BUTTON }) end
 
   -- What to have on before the fight, and whether it is on right now.
   if type(data.buffs) == "table" and #data.buffs > 0 then

@@ -2,7 +2,7 @@
 ## Title: Forever AI Armory
 ## Notes: Talent builds, gear plans and simulated rotations for your character, worked out by your own AI. Requires Forever AI Companion and its app.
 ## Author: Forever AI Companion
-## Version: 0.3.0
+## Version: 0.4.0
 ## Dependencies: ForeverAICompanion
 ## SavedVariables: ForeverAICompanionArmory_DB
 ## IconTexture: Interface\Icons\INV_Chest_Plate04
@@ -18,6 +18,7 @@ Calibrate.lua
 Dump.lua
 Items.lua
 Build.lua
+OneButton.lua
 Panels.lua
 Advisor.lua
 Auction.lua

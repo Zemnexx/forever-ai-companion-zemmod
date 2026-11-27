@@ -30,6 +30,8 @@ Scan.how = {}     -- part -> how it was read (Diagnose)
 
 local MAX_DESC = 420
 local MAX_SPELLS = 110
+-- A list of this many may be missing spells the character has (OneButton.lua).
+Scan.MAX_SPELLS = MAX_SPELLS
 local MAX_SEEN_SENT = 80
 
 -- Every result of a game function, at its own position (results can have

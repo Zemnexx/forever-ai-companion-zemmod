@@ -200,7 +200,7 @@ const handlers = {
     const verdict = await converse(ai, system('rotation'), data, (raw) => {
       const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
-      const result = shapeRotation(raw, run, { spells: ctx.armory_spells });
+      const result = shapeRotation(raw, run, { spells: ctx.armory_spells, context: profile.aoe ? 'aoe' : 'st' });
       // The model's scaling next to what was measured (only reported, not changed).
       const compared = scaling ? compareScaling(run.model, scaling) : null;
       if (compared) result.scaling = compared;

@@ -148,6 +148,7 @@ Turn on **Voice questions** in the app's dashboard. It needs invisible sending, 
 
 [Forever AI Companion: Armory](https://github.com/Zemnexx/forever-ai-companion-armory) is a separate addon for your character's build: the talent build for the specialization you choose, a gear plan with where to find each upgrade, rotations ranked by a simulator inside this app, and interactions between your talents, spells and items that the simulator can measure. It has no connection of its own: it asks through this addon, and the app answers with the AI you already chose.
 
+- **With Forever One Button:** the Armory can hand its best rotation to [Forever One Button](https://github.com/Zemnexx/forever-one-button-zemmod) as a rotation profile: a line of text to copy from the Armory's Rotation tab and paste into One Button's Import. The app translates the simulated rotation into One Button's conditions and says what could not be carried over.
 - **Install it from the app:** in the dashboard, under **The Armory**, click **Set up** and then **Install the Armory**. Restart WoW, and open it with `/armory`. The app keeps it up to date from then on, like the main addon.
 - **How its analyses are asked** is on the same screen: how thorough (Quick, Balanced or Thorough), and which model of your AI to use for them, which can be a stronger one than the chat's.
 - It needs invisible sending: talent trees and spell tooltips don't fit on the on-screen line.

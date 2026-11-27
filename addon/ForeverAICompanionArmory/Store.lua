@@ -1,6 +1,7 @@
 -- What the Armory remembers between sessions (ForeverAICompanionArmory_DB):
 --   chars[key]   per character: the build the player is going for (profile),
---                the last result of each analysis, and what is being asked now
+--                the last result of each analysis, what is being asked now, and
+--                the rotation's lists for Forever One Button (oneButton, OneButton.lua)
 --   seen         items the addon has seen in the game, for every character
 --   ui           the window's place and options
 local _, ns = ...
@@ -126,6 +127,10 @@ function Store:SaveResult(kind, result, weapon)
     data = result.data, text = result.text, model = result.model, tokens = result.tokens,
     at = time(), profile = { spec = p.spec, goal = p.goal, role = p.role }, weapon = weapon,
   }
+  -- The rotation's lists for Forever One Button are kept apart: one per kind
+  -- of fight, while only the last result is kept. Guarded: they came over
+  -- the wire, and the result itself is saved whatever happens to them.
+  if kind == "rotation" and ns.OneButton then pcall(ns.OneButton.Remember, c, result.data) end
 end
 
 -- The stat weights the item scores use: from the gear plan (keyed like the

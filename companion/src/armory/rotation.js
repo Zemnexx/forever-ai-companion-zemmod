@@ -5,6 +5,7 @@
 // ability's value per use, per second and per point of resource.
 import { num, round, str, text, texts, list } from './json.js';
 import { abilityTable, normalizeModel, simulate, statWeights, survival } from './sim/engine.js';
+import { oneButtonList } from './onebutton.js';
 
 const MAX_ROTATIONS = 4;
 const MAX_STEPS = 14;
@@ -187,7 +188,9 @@ export function shapeBuffs(raw, spells) {
 
 // The data the addon gets. raw: the AI's parsed answer ({ summary,
 // assumptions, notes, model }); run: runModel()'s result for raw.model.
-export function shapeRotation(raw, run, { spells = [] } = {}) {
+// context: "aoe" when the analysis was asked for several enemies, else "st"
+// (the list a One Button profile fills).
+export function shapeRotation(raw, run, { spells = [], context = 'st' } = {}) {
   const { model, sim } = run;
   const abilities = new Map(list(model.abilities).map((a) => [a.id, a]));
   const rawRotations = list(raw?.model?.rotations);
@@ -248,6 +251,14 @@ export function shapeRotation(raw, run, { spells = [] } = {}) {
       castTime: num(row.castTime) ? round(row.castTime, 2) : undefined,
     }));
   if (table.length) data.table = table;
+  // The best rotation as a Forever One Button priority list (onebutton.js),
+  // from the model the simulator ran. A healer's list is not offered: One
+  // Button suggests attacks.
+  if (data.metric !== 'hps') {
+    const best = model.rotations?.[sim.rotations[sim.best]?.index ?? sim.best];
+    const oneButton = oneButtonList(model, best, spells, context);
+    if (oneButton) data.oneButton = oneButton;
+  }
   return data;
 }
 

@@ -896,6 +896,7 @@ end
 local FONTS = { h = "GameFontNormal", p = "GameFontHighlight", note = "GameFontHighlight" }
 local ACTIONS = {
   auction = function() if ns.Auction then ns.Auction:Search() end end,
+  onebutton = function() UI:ShowOneButton() end,
 }
 
 -- Draws `blocks` in the scrolling body, top to bottom.
@@ -984,6 +985,128 @@ function UI:Render(blocks)
     end
   end
   body:SetHeight(math.max(y, 10))
+end
+
+-- The Forever One Button profile ----------------------------------------------------------
+-- A small window of its own, above the Armory's: the profile as text to copy,
+-- what it holds and how to add it to Forever One Button. Escape or Close
+-- shuts it.
+
+local DIALOG_WIDTH = 520
+
+-- The text box: focused and fully selected so Ctrl+C copies it all. It
+-- cannot be changed into something else: a change puts the text back.
+local function copyBox(parent, width)
+  local e = CreateFrame("EditBox", nil, parent, BACKDROP)
+  e:SetSize(width, 26)
+  e:SetAutoFocus(false)
+  if GameFontHighlightSmall then e:SetFontObject(GameFontHighlightSmall) end
+  e:SetMaxLetters(0)
+  e:SetTextInsets(7, 7, 2, 2)
+  fill(e, { 0.05, 0.056, 0.068, 1 }, COLORS.edge)
+  e:SetScript("OnTextChanged", function(self)
+    local want = self.fixed or ""
+    if self:GetText() ~= want then
+      self:SetText(want)
+      self:HighlightText()
+    end
+  end)
+  e:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+  -- A click into it would leave the cursor there and the text unselected.
+  e:SetScript("OnMouseUp", function(self) self:HighlightText() end)
+  e:SetScript("OnEnterPressed", function(self) self:HighlightText() end)
+  e:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+    parent:Hide()
+  end)
+  return e
+end
+
+function UI:BuildOneButton()
+  if self.oneButton then return self.oneButton end
+  local d = CreateFrame("Frame", "ForeverAICompanionArmoryOneButton", UIParent, BACKDROP)
+  self.oneButton = d
+  d:SetSize(DIALOG_WIDTH, 300)
+  d:SetPoint("CENTER")
+  -- Above the Armory's window, which is on HIGH.
+  d:SetFrameStrata("DIALOG")
+  d:SetClampedToScreen(true)
+  d:EnableMouse(true)
+  d:SetMovable(true)
+  d:RegisterForDrag("LeftButton")
+  d:SetScript("OnDragStart", d.StartMoving)
+  d:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+  fill(d, COLORS.window, COLORS.edge)
+  if UISpecialFrames then table.insert(UISpecialFrames, "ForeverAICompanionArmoryOneButton") end
+  d:Hide()
+  local title = text(d, "GameFontNormalLarge")
+  title:SetPoint("TOPLEFT", PAD, -PAD)
+  title:SetText(L.OB_TITLE)
+  d.title = title
+  d.box = copyBox(d, DIALOG_WIDTH - PAD * 2)
+  d.box:SetPoint("TOPLEFT", PAD, -42)
+  d.lines, d.used = {}, 0
+  d.close = button(d, L.CLOSE, 100, function() d:Hide() end)
+  d.close:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+  d:SetScript("OnHide", function(self) self.box:ClearFocus() end)
+  return d
+end
+
+-- Lays out the dialog's texts under the box. kind: "h" a heading, "p" a
+-- paragraph, "note" a numbered or bulleted line.
+local function fillOneButton(d, model)
+  for _, fs in ipairs(d.lines) do fs:Hide() end
+  d.used = 0
+  local y = 42 + 26 + 10
+  local width = DIALOG_WIDTH - PAD * 2
+  local function put(kind, body, tone)
+    d.used = d.used + 1
+    local fs = d.lines[d.used]
+    if not fs then
+      fs = text(d)
+      d.lines[d.used] = fs
+    end
+    fs:SetFontObject(_G[kind == "h" and "GameFontNormal" or "GameFontHighlightSmall"] or GameFontHighlight)
+    local indent = kind == "note" and 10 or 0
+    if kind == "h" then y = y + 6 end
+    fs:ClearAllPoints()
+    fs:SetPoint("TOPLEFT", d, "TOPLEFT", PAD + indent, -y)
+    fs:SetWidth(width - indent)
+    fs:SetText(body)
+    color(fs, kind == "h" and "gold" or tone or "text")
+    fs:Show()
+    y = y + (fs:GetStringHeight() or 14) + (kind == "h" and 4 or 5)
+  end
+  put("p", model.summary)
+  if model.copied then put("p", model.copied, "warn") end
+  put("h", L.OB_HOW)
+  for i, step in ipairs(model.steps) do put("note", i .. ". " .. step) end
+  if model.missing then put("p", model.missing, "muted") end
+  put("h", L.OB_LEFT)
+  for _, line in ipairs(model.left) do put("note", "- " .. line) end
+  put("p", model.standing, "muted")
+  d:SetHeight(y + 24 + PAD * 2)
+end
+
+-- Opens the dialog: true, or false and why there is nothing to show
+-- ("class" or "none", OneButton.Build).
+function UI:ShowOneButton()
+  local ok, model, why = pcall(ns.OneButton.Dialog)
+  if not ok then
+    UI.lastError = "one button: " .. tostring(model)
+    return false, "none"
+  end
+  if not model then return false, why end
+  local d = self:BuildOneButton()
+  d.box.fixed = model.text
+  d.box:SetText(model.text)
+  fillOneButton(d, model)
+  d.model = model
+  d:Show()
+  if d.Raise then d:Raise() end
+  d.box:SetFocus()
+  d.box:HighlightText()
+  return true
 end
 
 -- Showing, switching, refreshing --------------------------------------------------------

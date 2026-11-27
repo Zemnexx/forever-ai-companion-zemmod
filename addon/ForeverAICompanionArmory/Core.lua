@@ -179,8 +179,14 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     local api = ns.Advisor.API()
     local ok, lines = pcall(function() return api and api.Diagnose and api.Diagnose() or nil end)
     for _, line in ipairs(ok and type(lines) == "table" and lines or {}) do Util.chat(tostring(line)) end
+    local exported, line = pcall(ns.OneButton.Diagnose)
+    Util.chat(exported and line or ("one button: " .. tostring(line)))
     if Core.lastError then Util.chat("last error: " .. Core.lastError) end
     if ns.UI and ns.UI.lastError then Util.chat("window error: " .. ns.UI.lastError) end
+  elseif word == "onebutton" then
+    -- The rotation as a profile for Forever One Button, or why there is none.
+    local ok, why = ns.UI:ShowOneButton()
+    if not ok then Util.chat(why == "class" and L.OB_NO_CLASS or L.OB_NOTHING) end
   elseif word == "dump" then
     -- The game's own talent data, saved for the addon's author to read.
     local ok, nodes = pcall(ns.Dump.Run)

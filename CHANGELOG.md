@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.0 (addon 1.17.1)
+
+The Armory's best rotation as a profile for Forever One Button (the Armory's addon 0.4.0).
+
+### Added
+
+- **A rotation profile for Forever One Button.** [Forever One Button](https://github.com/Zemnexx/forever-one-button-zemmod) (the ZemMod build) suggests abilities from priority lists and imports a list as a rotation profile from one line of text. A rotation analysis now also carries the rotation the simulator ranked best as such a list (`oneButton` in the result, `companion/src/armory/onebutton.js`), and the Armory shows it as text to copy: the Rotation tab's **Forever One Button profile** button, or `/armory onebutton`. In One Button: `/fob rot`, **Import**, paste, then choose the profile and click **Use**.
+  - **Translated by code, not written by the AI.** The profile is the rotation that was simulated: the combat model's conditions become One Button's own (resources, buffs, cooldowns, target health, enemies, swing timer, stacks, combo points, either-or groups and their opposites). No extra request to the AI is made.
+  - **Your own spell ids.** Every ability is named by the id of the spell in your character's spell list, as the game gave it, never by an id from the AI's model. An ability that is not in your spell list is left out.
+  - **What One Button does itself is left to it:** it already holds an ability back while it is unknown, short of resources, on cooldown, out of range, or a DoT it knows is still ticking.
+  - **What cannot be carried over is said.** One Button cannot check how long a buff or the fight has left, and it counts effects on the target from your own casts. The Armory lists every condition that was left out or is only approximate. An ability with no cooldown that loses a condition it depended on is left out, since it would otherwise always be suggested first.
+  - **One entry per ability.** One Button reads each spell once per list, so an ability the rotation uses in more than one place keeps its lowest place, held back unless one of its conditions holds.
+  - **Single target and several enemies in one profile.** Each kind of analysis fills its own list; the Armory remembers both per character. With only an analysis for several enemies, that list is used for single target too.
+  - **Checked against One Button's own code.** The Armory leaves out anything One Button's importer would refuse (a copy of its rules, from 1.1.4-zm9), and a test imports a profile with every condition type through One Button's real import code. The list of DoTs One Button tracks by itself comes from its data files (imported there from JustAC, GPL-3.0-or-later) and says so.
+  - Not for healers: One Button suggests attacks. Nothing here has been run in the game.
+
 ## 2.4.0 (addon 1.17.1)
 
 Tanking and calibration for the Armory (its addon 0.3.0).
