@@ -720,3 +720,47 @@ test('survival leaves out what the game did not give, and says so', () => {
   near(wall.table.hit, 0, 1e-9);
   near(Object.values(wall.table).reduce((a, b) => a + b, 0), 100, 1e-9);
 });
+
+test('usedOnTarget: the ability was used less than 30 seconds ago in this fight', () => {
+  // Mark once at the start (its cooldown outlasts the fight); Hit only while Mark counts.
+  const abilities = [
+    { id: 'mark', name: 'Mark', type: 'spell', school: 'holy', canMiss: false, cooldown: 900, damage: { min: 1, max: 1 } },
+    { id: 'hit', name: 'Hit', type: 'spell', school: 'holy', canMiss: false, canCrit: false, damage: { min: 100, max: 100 } },
+  ];
+  const m = base({
+    autoAttack: 'none', weapons: null, fight: { duration: 60 }, abilities,
+    rotations: [
+      { name: 'never used', actions: [{ use: 'hit', if: { usedOnTarget: 'mark' } }] },
+      { name: 'used at the start', actions: ['mark', { use: 'hit', if: { usedOnTarget: 'mark' } }] },
+      { name: 'until used', actions: [{ use: 'hit', if: { not: { usedOnTarget: 'mark' }, timeAtLeast: 0 } }, 'mark'] },
+    ],
+  });
+  const [never, used, until] = run(m, { iterations: 5 }).rotations;
+  assert.equal(entry(never, 'hit'), undefined, 'never used: false');
+  // Hit from 1.5 s (after Mark's global cooldown) while Mark is under 30 seconds old
+  // (10 seconds after it: yes; 40 seconds after it: no): 1.5, 3, ... 28.5.
+  assert.equal(entry(used, 'hit').perMinute, 19);
+  assert.equal(entry(until, 'hit').perMinute, 40, 'Mark never used: its "not" holds all fight');
+  const { problems } = normalizeModel(base({ abilities, rotations: [{ name: 'r', actions: [{ use: 'hit', if: { usedOnTarget: 'nothing' } }] }] }));
+  assert.ok(problems.some((p) => /usedOnTarget references unknown ability "nothing": ignored/.test(p)), problems.join(' | '));
+});
+
+test('the One Button lists of a model are kept apart from its candidates and its problems', () => {
+  const abilities = [{ id: 'hit', name: 'Hit', type: 'spell', damage: { min: 100, max: 100 } }];
+  const out = normalizeModel(base({
+    autoAttack: 'none', weapons: null, abilities, rotations: [{ name: 'r', actions: ['hit'] }],
+  }));
+  assert.equal(out.model.oneButton, undefined);
+  const withLists = normalizeModel({
+    ...base({ autoAttack: 'none', weapons: null, abilities, rotations: [{ name: 'r', actions: ['hit'] }] }),
+    oneButton: { short: ['Hit', { use: 'missing' }], long: [{ use: 'hit', if: { usedOnTarget: 'hit', madeUp: 1 } }], other: ['hit'] },
+  });
+  assert.deepEqual(withLists.model.oneButton, { short: [{ use: 'hit' }], long: [{ use: 'hit', if: { usedOnTarget: 'hit' } }] });
+  assert.equal(withLists.model.rotations.length, 1, 'not a candidate');
+  assert.deepEqual(withLists.problems, [], 'nothing in them counts as a problem of the model');
+  assert.deepEqual(withLists.oneButtonProblems, [
+    'oneButton.short action 2 uses unknown ability "missing"',
+    'oneButton.long action 1 condition has unknown key "madeUp": ignored',
+  ]);
+  assert.equal(simulate(withLists.model, { iterations: 2 }).rotations.length, 1);
+});

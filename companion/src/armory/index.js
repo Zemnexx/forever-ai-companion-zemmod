@@ -25,7 +25,7 @@ import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.
 import { extractJson, list, num, str } from './json.js';
 import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
 import { equippable, leftOut, shapeGear } from './gear.js';
-import { keepFromRun, runModel, shapeRotation } from './rotation.js';
+import { fitRotation, keepFromRun, oneButtonLists, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
 import { fillIds } from './item-ids.js';
 import { compareScaling, shapeScaling } from './scaling.js';
@@ -121,8 +121,9 @@ function profileOf(req, kind) {
 
 // One request's conversation with the AI: asks, reads the JSON, and asks once
 // more with what was wrong when `check` says the answer can't be used.
-// check(raw) -> { result, score, retry: [problems] | null, fatal: message key }.
-// Returns the verdict of the answer that was kept.
+// check(raw) -> { result, score, retry: [problems] | null, also: [problems
+// worth fixing that would not send the answer back on their own], fatal:
+// message key }. Returns the verdict of the answer that was kept.
 async function converse(ai, system, data, check) {
   const messages = [{ role: 'user', content: buildArmoryMessage(data) }];
   let reply = await ai(system, messages);
@@ -130,7 +131,7 @@ async function converse(ai, system, data, check) {
   let verdict = raw ? check(raw) : { retry: [t('armoryNoJson')] };
   if (verdict.retry?.length) {
     reply = await ai(system, [...messages, { role: 'assistant', content: String(reply || '(empty)') },
-      { role: 'user', content: repairMessage(verdict.retry) }]);
+      { role: 'user', content: repairMessage(verdict.retry, verdict.also) }]);
     const second = extractJson(reply);
     if (second) {
       const again = check(second);
@@ -190,24 +191,29 @@ const handlers = {
     const scaling = shapeScaling(ctx.armory_scaling);
     const data = {
       request: profile,
-      ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'gear', 'buffs', 'pet']),
+      ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'armory_auras', 'gear', 'buffs', 'pet']),
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
       armory_scaling: scaling || undefined,
     };
+    const shape = { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile.aoe ? 'aoe' : 'st' };
     // A tank's rotations are ranked by threat, and survival is estimated with
     // the defensive numbers the game gave (never the AI's).
     const tank = profile.role === 'tank';
     const verdict = await converse(ai, system('rotation'), data, (raw) => {
-      const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null });
+      const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null, goal: profile.goal });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
-      const result = shapeRotation(raw, run, { spells: ctx.armory_spells, context: profile.aoe ? 'aoe' : 'st' });
+      const lists = oneButtonLists(run, shape);
+      const result = shapeRotation(raw, run, { ...shape, lists });
       // The model's scaling next to what was measured (only reported, not changed).
       const compared = scaling ? compareScaling(run.model, scaling) : null;
       if (compared) result.scaling = compared;
-      // Simulated, but with parts the simulator had to drop: worth one correction.
+      // Simulated, but with parts the simulator had to drop: worth one
+      // correction. The One Button lists are a by-product, too costly to ask
+      // again for: what was wrong with them only rides along.
       return {
         result, keep: keepFromRun(run), score: 1000 - run.problems.length,
         retry: run.problems.length >= 3 ? run.problems : null,
+        also: lists.problems,
       };
     });
     // Kept on this PC for the gear plan (measured weights) and for testing ideas.
@@ -311,6 +317,7 @@ export function createArmory({ store = null, askImpl = ask, fetchImpl = globalTh
       data.asked = { spec: profile.spec, goal: profile.goal, role: profile.role, level: num(ctx.character?.level) ?? undefined };
       if (kind === 'gear' && profile.without) data.asked.without = profile.without;
       if (kind === 'rotation' && profile.aoe) data.asked.aoe = true;
+      if (kind === 'rotation') fitRotation(data, MAX_DATA_BYTES);
       if (JSON.stringify(data).length > MAX_DATA_BYTES) throw err('armoryTooBig');
       return { text: summarize(kind, data), data, model, usage };
     },

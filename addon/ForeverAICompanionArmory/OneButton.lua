@@ -3,11 +3,15 @@
 -- function another addon can call, so the profile is a line of text the
 -- player copies here and pastes into its Rotations window (Import).
 --
--- The app translates the best rotation into One Button's own entries and
--- conditions (data.oneButton in a rotation result). This file keeps them per
--- character, one list per kind of fight, works out which of One Button's
--- talent trees they belong to the way One Button does, leaves out what One
--- Button would refuse, and writes the text in One Button's format.
+-- The app sends a list in One Button's own entries and conditions for each
+-- kind of fight it simulated (data.oneButton and data.otherFight.oneButton in
+-- a rotation result): one the AI wrote within One Button's limits, or the
+-- best rotation translated. This file keeps them per character, per kind of
+-- fight (short, long) and per context (one enemy, several), works out which
+-- of One Button's talent trees they belong to the way One Button does,
+-- leaves out what One Button would refuse, and writes the text in One
+-- Button's format: one profile, or one per kind of fight when their lists
+-- differ, since One Button cannot tell an ordinary enemy from a boss.
 local _, ns = ...
 local L = ns.L
 local Util = ns.Util
@@ -332,7 +336,18 @@ function OneButton.TreeName(key)
   return (tostring(key or ""):gsub("_", " "):gsub("(%a)(%a*)", function(a, b) return a:upper() .. b end))
 end
 
+
 -- Remembering -------------------------------------------------------------------------
+-- Every analysis simulates two kinds of fight: a short one against an ordinary
+-- enemy and a long one against an elite or boss. One Button has no condition
+-- for the kind of enemy, so each kind gets its own lists, and so its own
+-- profile when they differ. Kept per character as
+--   c.oneButton = { class, tree, primary, kinds = { short = { st = held, aoe = held }, long = ... } }
+-- where held = { list, at, rotation, left, dropped, value, source, metric }.
+
+OneButton.KINDS = { "short", "long" }
+local KIND = { short = true, long = true }
+local OTHER = { short = "long", long = "short" }
 
 local plain = OneButton.Plain
 
@@ -346,38 +361,90 @@ local function plainLines(list)
   return out
 end
 
--- A rotation result was saved (Store:SaveResult): its list for One Button is
--- kept for its kind of fight. Lists from another tree than the one kept are
--- dropped, as they would go into another profile. A placeholder from test
--- mode is not a rotation to play, so it is not kept.
+-- Results from before the app simulated both kinds name none: a fight of
+-- under 45 seconds is taken as short, anything else (the default then was a
+-- long fight) as long.
+function OneButton.FightKind(fight)
+  if type(fight) ~= "table" then return "long" end
+  if KIND[fight.kind] then return fight.kind end
+  local duration = Util.num(tonumber(fight.duration))
+  return duration and duration < 45 and "short" or "long"
+end
+
+-- A list as the app sends it, or nil when it is not one this version reads.
+local function readable(sent)
+  if type(sent) ~= "table" or sent.v ~= 1 then return nil end
+  if sent.context ~= "st" and sent.context ~= "aoe" then return nil end
+  return sent
+end
+
+-- A finite number, or nil.
+local function finite(v)
+  v = Util.num(v)
+  if not v or v ~= v or v == math.huge or v == -math.huge then return nil end
+  return v
+end
+
+-- The lists kept for this tree. Lists from another tree than the one kept are
+-- dropped, as they would go into another profile. Lists remembered by Armory
+-- 0.4.0 knew no kinds of fight: they are dropped without a word, and the next
+-- analysis fills them again.
+local function keptFor(c, tree, class)
+  local kept = c.oneButton
+  if type(kept) ~= "table" or kept.tree ~= tree or kept.class ~= class or type(kept.kinds) ~= "table" then
+    kept = { class = class, tree = tree, kinds = {} }
+    c.oneButton = kept
+  end
+  return kept
+end
+
+-- One kind's list for one context, replacing the last one, even when the
+-- newest analysis brought nothing for it.
+local function keep(kept, kind, context, sent, metric)
+  local lists = type(kept.kinds[kind]) == "table" and kept.kinds[kind] or {}
+  kept.kinds[kind] = lists
+  local report = { dropped = 0 }
+  local list = sent and OneButton.SanitizeList(sent.list, report, true) or {}
+  if #list == 0 then
+    lists[context] = nil
+    if next(lists) == nil then kept.kinds[kind] = nil end
+    return
+  end
+  lists[context] = {
+    list = list, at = time(), rotation = plain(sent.rotation, 120), left = plainLines(sent.left),
+    dropped = report.dropped > 0 and report.dropped or nil,
+    value = finite(sent.value), source = (sent.source == "ai" or sent.source == "best") and sent.source or nil,
+    metric = (metric == "dps" or metric == "hps" or metric == "tps") and metric or nil,
+  }
+end
+
+-- A rotation result was saved (Store:SaveResult): the list of each kind of
+-- fight it simulated is kept under that kind, for the context it was asked
+-- for. A result that brings no list at all, from before the app simulated
+-- both kinds, changes nothing. A placeholder from test mode is not a
+-- rotation to play, so it is not kept.
 function OneButton.Remember(c, data)
   if type(c) ~= "table" or type(data) ~= "table" or data.test then return false end
-  local sent = data.oneButton
-  if type(sent) ~= "table" or sent.v ~= 1 then return false end
-  local context = (sent.context == "st" or sent.context == "aoe") and sent.context or nil
+  local primary = OneButton.FightKind(data.fight)
+  local other = type(data.otherFight) == "table" and data.otherFight or nil
+  local otherKind = other and other.kind == OTHER[primary] and other.kind or nil
+  local first, second = readable(data.oneButton), otherKind and readable(other.oneButton) or nil
+  local context = (first and first.context) or (second and second.context)
+  -- Both kinds simulated and neither brought a list: both lose this context's.
+  if not context and otherKind then
+    context = type(data.asked) == "table" and data.asked.aoe == true and "aoe" or "st"
+  end
   if not context then return false end
   local tree, class = OneButton.TreeKey()
   if not tree then return false end
-  local kept = c.oneButton
-  if type(kept) ~= "table" or kept.tree ~= tree or kept.class ~= class or type(kept.lists) ~= "table" then
-    kept = { class = class, tree = tree, lists = {} }
-    c.oneButton = kept
-  end
-  local report = { dropped = 0 }
-  local list = OneButton.SanitizeList(sent.list, report, true)
-  -- The newest analysis of a kind replaces the last one, even when it brought nothing.
-  if #list == 0 then
-    kept.lists[context] = nil
-    return true
-  end
-  kept.lists[context] = {
-    list = list, at = time(), rotation = plain(sent.rotation, 120), left = plainLines(sent.left),
-    dropped = report.dropped > 0 and report.dropped or nil,
-  }
+  local kept = keptFor(c, tree, class)
+  kept.primary = primary
+  keep(kept, primary, context, first and first.context == context and first or nil, data.metric)
+  if otherKind then keep(kept, otherKind, context, second and second.context == context and second or nil, data.metric) end
   return true
 end
 
--- Building the profile ----------------------------------------------------------------
+-- Building the profiles ---------------------------------------------------------------
 
 local function ask(fn, id)
   if type(fn) ~= "function" then return nil end
@@ -416,26 +483,19 @@ local function level()
   return Util.num(Util.safe(UnitLevel, "player"))
 end
 
--- The profile to export, or nil and why ("class" for a class One Button has
--- no lists for, "none" for nothing to export). The second value says what is
--- in it: { tree, class, name, text, copied, unknown, dropped, lists = { st = {
--- count, unknown, at, rotation, left } } }.
-function OneButton.Build()
-  local tree, class = OneButton.TreeKey()
-  if not tree then return nil, "class" end
-  local c = ns.Store:Char()
-  local kept = c and c.oneButton
-  if type(kept) ~= "table" or kept.tree ~= tree or kept.class ~= class or type(kept.lists) ~= "table" then
-    return nil, "none"
-  end
-  local okSpells, spells = pcall(ns.Scan.Spells)
-  spells = okSpells and type(spells) == "table" and spells or nil
-  local lists, info = {}, { tree = tree, class = class, unknown = 0, dropped = 0, lists = {} }
+-- What one kind's held lists become: the lists to export, and what is in
+-- them; nil when nothing is left. With only a list for several enemies it is
+-- the single-target list too: without one, One Button suggests nothing
+-- against one enemy.
+local function buildKind(kind, held, spells)
+  if type(held) ~= "table" then return nil end
+  local lists = {}
+  local info = { kind = kind, kinds = { kind }, unknown = 0, dropped = 0, lists = {} }
   for _, context in ipairs(OneButton.CONTEXTS) do
-    local held = kept.lists[context]
-    if type(held) == "table" and type(held.list) == "table" then
+    local h = held[context]
+    if type(h) == "table" and type(h.list) == "table" then
       local out, unknown = {}, 0
-      for _, entry in ipairs(held.list) do
+      for _, entry in ipairs(h.list) do
         if OneButton.Known(entry, spells) then
           out[#out + 1] = { id = entry.id, gates = entry.gates }
         else
@@ -443,24 +503,95 @@ function OneButton.Build()
         end
       end
       info.unknown = info.unknown + unknown
-      info.dropped = info.dropped + (Util.num(held.dropped) or 0)
+      info.dropped = info.dropped + (Util.num(h.dropped) or 0)
       if #out > 0 then
         lists[context] = out
-        info.lists[context] = { count = #out, unknown = unknown, at = held.at, rotation = held.rotation, left = held.left }
+        -- A copy of the sentences: a profile for both kinds adds the other's to them.
+        local left = {}
+        for i, line in ipairs(type(h.left) == "table" and h.left or {}) do left[i] = line end
+        info.lists[context] = { count = #out, unknown = unknown, at = h.at, rotation = h.rotation, left = left,
+          worth = { { kind = kind, value = h.value, source = h.source, metric = h.metric } } }
       end
     end
   end
-  if not lists.st and not lists.aoe then return nil, "none" end
-  -- Without a single-target list One Button suggests nothing against one enemy.
+  if not lists.st and not lists.aoe then return nil end
   if not lists.st then
     lists.st = lists.aoe
     info.copied = true
   end
+  info.export = lists
+  return info
+end
+
+-- The other kind's facts added to a profile that serves both kinds.
+local function merge(info, other)
+  info.kind, info.kinds = nil, { "short", "long" }
+  for _, context in ipairs(OneButton.CONTEXTS) do
+    local mine, theirs = info.lists[context], other.lists[context]
+    if mine and theirs then
+      mine.worth[#mine.worth + 1] = theirs.worth[1]
+      table.sort(mine.worth, function(a, b) return a.kind == "short" and b.kind ~= "short" end)
+      local seen = {}
+      for _, line in ipairs(mine.left or {}) do seen[line] = true end
+      for _, line in ipairs(theirs.left or {}) do
+        if not seen[line] then mine.left[#mine.left + 1] = line end
+      end
+    end
+  end
+  info.unknown = math.max(info.unknown, other.unknown)
+  info.dropped = math.max(info.dropped, other.dropped)
+end
+
+-- The profiles to export, or nil and why ("class" for a class One Button has
+-- no lists for, "none" for nothing to export). A profile per kind of fight,
+-- short first, or one that serves both when their lists would export the
+-- same. Returns the profile of the kind the newest analysis was about first
+-- (its text and what is in it), then all of them. What is in one: { kind
+-- (nil when it serves both), kinds, tree, class, name, text, copied, unknown,
+-- dropped, primary, lists = { st = { count, unknown, at, rotation, left,
+-- worth = { { kind, value, source, metric } } } } }.
+function OneButton.Build()
+  local tree, class = OneButton.TreeKey()
+  if not tree then return nil, "class" end
+  local c = ns.Store:Char()
+  local kept = c and c.oneButton
+  if type(kept) ~= "table" or kept.tree ~= tree or kept.class ~= class or type(kept.kinds) ~= "table" then
+    return nil, "none"
+  end
+  local okSpells, spells = pcall(ns.Scan.Spells)
+  spells = okSpells and type(spells) == "table" and spells or nil
+  local built = {}
+  for _, kind in ipairs(OneButton.KINDS) do
+    local info = buildKind(kind, kept.kinds[kind], spells)
+    if info then built[#built + 1] = info end
+  end
+  if #built == 0 then return nil, "none" end
+  local primary = KIND[kept.primary] and kept.primary or built[1].kind
+  -- The same lists for both kinds: two profiles would only be one twice.
+  if #built == 2 then
+    local ok1, a = pcall(OneButton.Encode, built[1].export)
+    local ok2, b = pcall(OneButton.Encode, built[2].export)
+    if ok1 and ok2 and a == b then
+      local main = built[1].kind == primary and built[1] or built[2]
+      merge(main, main == built[1] and built[2] or built[1])
+      built = { main }
+    end
+  end
   local lvl = level()
-  info.name = OneButton.CleanName("Armory " .. OneButton.TreeName(tree) .. (lvl and (" " .. lvl) or ""))
-  info.text = OneButton.Text({ v = 1, class = class, tree = tree, name = info.name, lists = lists })
-  if not info.text then return nil, "none" end
-  return info.text, info
+  local base = "Armory " .. OneButton.TreeName(tree) .. (lvl and (" " .. lvl) or "")
+  local chosen
+  for i, info in ipairs(built) do
+    info.tree, info.class = tree, class
+    local suffix = #built > 1 and (info.kind == "short" and L.OB_NAME_SHORT or L.OB_NAME_LONG) or nil
+    info.name = OneButton.CleanName(base .. (suffix and (" " .. suffix) or ""))
+    info.text = OneButton.Text({ v = 1, class = class, tree = tree, name = info.name, lists = info.export })
+    info.export = nil
+    if not info.text then return nil, "none" end
+    if info.kind == primary or (not info.kind and not chosen) then chosen = i end
+    info.primary = info.kind == primary or not info.kind
+  end
+  chosen = chosen or 1
+  return built[chosen].text, built[chosen], built, chosen
 end
 
 -- Whether Forever One Button is loaded: true, false, or nil when the game cannot say.
@@ -482,9 +613,24 @@ local function abilities(n)
   return n == 1 and L.OB_ONE_ABILITY or string.format(L.OB_ABILITIES, n)
 end
 
+local function capital(s)
+  return (s:gsub("^%l", string.upper))
+end
+
+function OneButton.Unit(metric)
+  return metric == "hps" and L.HPS or (metric == "tps" and L.TPS or L.DPS)
+end
+
+-- Whether the AI wrote a list for One Button, or it was translated from the
+-- best rotation; nil when the app did not say.
+function OneButton.SourceText(source)
+  return source == "ai" and L.OB_SRC_AI or (source == "best" and L.OB_SRC_BEST or nil)
+end
+
 -- "For Arms: single target, 12 abilities, and several enemies, 9 abilities."
--- With when each was analyzed when that is not the same for both.
-local function summary(info)
+-- With when each was analyzed when that is not the same for both, and the
+-- kind of fight when there is a profile per kind.
+local function summary(info, perKind)
   local present = {}
   for _, context in ipairs(OneButton.CONTEXTS) do
     if info.lists[context] then present[#present + 1] = context end
@@ -498,7 +644,35 @@ local function summary(info)
     if differ then part = part .. " " .. string.format(L.OB_ANALYZED, ages[context]) end
     parts[#parts + 1] = part
   end
-  return string.format(L.OB_SUMMARY, OneButton.TreeName(info.tree), table.concat(parts, L.OB_AND))
+  local tree, lists = OneButton.TreeName(info.tree), table.concat(parts, L.OB_AND)
+  if perKind and info.kind then
+    return string.format(L.OB_SUMMARY_KIND, tree, info.kind == "short" and L.OB_FOR_SHORT or L.OB_FOR_LONG, lists)
+  end
+  return string.format(L.OB_SUMMARY, tree, lists)
+end
+
+-- What each list is worth in the simulator and who wrote it, one line per
+-- list (and per kind of fight, for a profile that serves both). Lists the
+-- app said nothing about have no line.
+local function worthLines(info)
+  local out = {}
+  for _, context in ipairs(OneButton.CONTEXTS) do
+    local list = info.lists[context]
+    for _, w in ipairs(list and list.worth or {}) do
+      local label = contextName(context)
+      if #info.kinds > 1 then label = string.format(L.OB_LIST, label, w.kind == "short" and L.FIGHTS_SHORT or L.FIGHTS_LONG) end
+      label = capital(label)
+      local value, source = Util.num(w.value), OneButton.SourceText(w.source)
+      if value and source then
+        out[#out + 1] = string.format(L.OB_WORTH_BOTH, label, Util.fmt(value, 1), OneButton.Unit(w.metric), source)
+      elseif value then
+        out[#out + 1] = string.format(L.OB_WORTH_VALUE, label, Util.fmt(value, 1), OneButton.Unit(w.metric))
+      elseif source then
+        out[#out + 1] = string.format(L.OB_WORTH_SOURCE, label, source)
+      end
+    end
+  end
+  return out
 end
 
 -- What could not be carried over: the app's sentences, the abilities left
@@ -521,33 +695,64 @@ local function leftLines(info)
   return out
 end
 
--- Everything the dialog shows, or nil and why there is nothing.
-function OneButton.Dialog()
-  local text, info = OneButton.Build()
-  if not text then return nil, info end
-  local d = {
-    text = text, name = info.name, summary = summary(info),
+-- How to add a profile. With two, both are imported and the player switches
+-- between them in One Button.
+local function steps(info, all)
+  local out = { L.OB_STEP_COPY, L.OB_STEP_IMPORT, L.OB_STEP_PASTE }
+  if #all < 2 then
+    out[#out + 1] = string.format(L.OB_STEP_USE, info.name)
+    return out
+  end
+  local other = all[1] == info and all[2] or all[1]
+  out[#out + 1] = string.format(L.OB_STEP_OTHER, other.kind == "short" and L.FIGHTS_SHORT or L.FIGHTS_LONG)
+  out[#out + 1] = string.format(L.OB_STEP_SWITCH, all[1].name, all[2].name)
+  return out
+end
+
+-- One profile as the dialog shows it.
+local function view(info, all)
+  return {
+    kind = info.kind, label = info.kind == "short" and L.OB_TAB_SHORT or (info.kind == "long" and L.OB_TAB_LONG or nil),
+    text = info.text, name = info.name, summary = summary(info, #all > 1),
     copied = info.copied and L.OB_COPIED or nil,
-    steps = { L.OB_STEP_COPY, L.OB_STEP_IMPORT, L.OB_STEP_PASTE, string.format(L.OB_STEP_USE, info.name) },
-    left = leftLines(info), standing = L.OB_STANDING,
+    both = #info.kinds > 1 and L.OB_SAME_BOTH or nil,
+    worth = worthLines(info), steps = steps(info, all), left = leftLines(info),
   }
+end
+
+-- Everything the dialog shows, or nil and why there is nothing: a view per
+-- profile (profiles, short first), which one is shown first (chosen: the
+-- kind the newest analysis was about), and that one's texts at the top level
+-- too.
+function OneButton.Dialog()
+  local text, info, all, chosen = OneButton.Build()
+  if not text then return nil, info end
+  local d = { profiles = {}, chosen = chosen, standing = L.OB_STANDING }
+  for i, p in ipairs(all) do d.profiles[i] = view(p, all) end
+  for key, value in pairs(d.profiles[chosen]) do d[key] = value end
   if OneButton.Loaded() == false then d.missing = L.OB_NOT_LOADED end
   return d
 end
 
--- One line for /armory debug.
+-- One line for /armory debug: per kind of fight and context, how many
+-- abilities are remembered.
 function OneButton.Diagnose()
   local tree, class = OneButton.TreeKey()
   local c = ns.Store:Char()
   local kept = c and type(c.oneButton) == "table" and c.oneButton or nil
-  local counts = {}
-  for _, context in ipairs(OneButton.CONTEXTS) do
-    local held = kept and type(kept.lists) == "table" and kept.lists[context]
-    local n = type(held) == "table" and type(held.list) == "table" and #held.list or 0
-    counts[#counts + 1] = string.format("%s %d", context, n)
+  local kinds = kept and type(kept.kinds) == "table" and kept.kinds or {}
+  local parts = {}
+  for _, kind in ipairs(OneButton.KINDS) do
+    local counts = {}
+    for _, context in ipairs(OneButton.CONTEXTS) do
+      local held = type(kinds[kind]) == "table" and kinds[kind][context]
+      local n = type(held) == "table" and type(held.list) == "table" and #held.list or 0
+      counts[#counts + 1] = string.format("%s %d", context, n)
+    end
+    parts[#parts + 1] = kind .. " " .. table.concat(counts, ", ")
   end
   local line = "one button: tree " .. (tree and (tree .. " (" .. class:lower() .. ")") or "none (class not in One Button)")
-  line = line .. "; remembered " .. table.concat(counts, ", ")
+  line = line .. "; remembered " .. table.concat(parts, "; ")
   if kept and kept.tree ~= tree then line = line .. " for " .. tostring(kept.tree) end
   local loaded = OneButton.Loaded()
   return line .. "; Forever One Button " .. (loaded == nil and "unknown" or (loaded and "loaded" or "not loaded"))

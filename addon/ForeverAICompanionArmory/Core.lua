@@ -114,13 +114,16 @@ on(STAT_EVENTS, function(event, unit)
 end)
 
 on({ "PLAYER_REGEN_ENABLED" }, function()
+  -- The procs of the fight just over are among the buffs still on.
+  pcall(ns.Auras.Learn)
   ns.Calibrate.CombatEnded()
 end)
 
 -- A buff went on or off: the rotation tab says which of its buffs are active.
--- A buff also changes the stats calibration reads.
+-- A buff also changes the stats calibration reads, and may be one to remember.
 on({ "UNIT_AURA" }, function(event, unit)
   if unit ~= "player" then return end
+  pcall(ns.Auras.Changed)
   if ns.UI and ns.UI.IsShown and ns.UI:IsShown() then touch() end
   ns.Calibrate.Poke(event)
 end)
@@ -172,6 +175,8 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     -- What this client let the addon read: the first thing to share when a tab stays empty.
     Util.chat("version: " .. tostring(ns.version) .. (ns.build and (", build " .. ns.build) or ", no build stamp (not installed by the companion app)"))
     for _, line in ipairs(ns.Scan.Diagnose()) do Util.chat(line) end
+    local read, auras = pcall(ns.Auras.Diagnose)
+    Util.chat(read and auras or ("buffs seen: " .. tostring(auras)))
     local calibrated, line = pcall(ns.Calibrate.Diagnose)
     Util.chat(calibrated and line or ("calibration: " .. tostring(line)))
     Util.chat("companion: " .. tostring(ns.Advisor:Blocked() or ("ready, app " .. tostring(ns.Advisor:AppState()))))

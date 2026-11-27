@@ -9,10 +9,10 @@ import path from 'node:path';
 import { extractJson, text, texts } from '../src/armory/json.js';
 import { talentIndex, validateOrder, shapeBuild, takenTalents, distribution } from '../src/armory/talents.js';
 import { shapeGear, slotName, cleanWeights, equippable, leftOut } from '../src/armory/gear.js';
-import { runModel, shapeRotation, shapeBuffs, describeCondition, keepFromRun } from '../src/armory/rotation.js';
+import { runModel, shapeRotation, shapeBuffs, describeCondition, keepFromRun, otherFight, fitRotation } from '../src/armory/rotation.js';
 import { applyIdea, measureIdea, shapeIdeas } from '../src/armory/discover.js';
-import { buildArmorySystem, buildArmoryMessage } from '../src/armory/prompts.js';
-import { MODEL_SPEC } from '../src/armory/model-spec.js';
+import { buildArmorySystem, buildArmoryMessage, repairMessage } from '../src/armory/prompts.js';
+import { MODEL_SPEC, ONE_BUTTON_SPEC } from '../src/armory/model-spec.js';
 import { armoryConfig, createArmory, KINDS } from '../src/armory/index.js';
 import { openArmoryStore } from '../src/armory/store.js';
 import { DEFAULTS, loadConfig, wowPaths } from '../src/config.js';
@@ -198,13 +198,104 @@ test('a combat model is simulated and shaped for the addon', () => {
   assert.equal(data.weights.normalized.attackPower, 1);
   assert.ok(data.weights.perPoint.strength > data.weights.perPoint.attackPower);
   assert.ok(data.table.some((row) => row.name === 'Bloodthirst' && row.perUse > 0));
-  assert.deepEqual(data.fight, { duration: 60, targets: 1, targetLevel: 60, targetArmor: 3000 });
+  // No goal given: the model's fight counts as a short one.
+  assert.deepEqual(data.fight, { kind: 'short', duration: 60, targets: 1, targetLevel: 60, targetArmor: 3000 });
   // What is kept for later: the best rotation only.
   const kept = keepFromRun(run);
   assert.equal(kept.model.rotations.length, 1);
   assert.equal(kept.model.rotations[0].name, data.rotations[0].name);
   assert.ok(kept.weights.perPoint.attackPower > 0);
-  assert.ok(JSON.stringify(data).length < 8000);
+  assert.ok(JSON.stringify(data).length < 12000);
+});
+
+test('the other fight is derived from the model\'s by the goal and the level', () => {
+  const fight = { duration: 25, targets: 1, targetLevel: 30, targetArmor: 1800, executePct: 20 };
+  for (const goal of ['leveling', 'solo', 'pvp']) {
+    assert.deepEqual(otherFight(fight, { level: 30, goal }), { kind: 'long', duration: 60, targets: 1, targetLevel: 32, targetArmor: 1920, executePct: 20 }, goal);
+  }
+  const dungeon = { duration: 60, targets: 3, targetLevel: 42, targetArmor: 2520, executePct: 25 };
+  assert.deepEqual(otherFight(dungeon, { level: 40, goal: 'dungeons' }), { kind: 'short', duration: 25, targets: 3, targetLevel: 40, targetArmor: 2400, executePct: 25 });
+  const raid = { duration: 180, targets: 1, targetLevel: 63, targetArmor: 3700, executePct: 20 };
+  assert.deepEqual(otherFight(raid, { level: 60, goal: 'raids' }), { kind: 'short', duration: 25, targets: 1, targetLevel: 60, targetArmor: 3524, executePct: 20 });
+  // A caster's 0 armor stays 0, and no target is above level 63.
+  assert.equal(otherFight({ ...fight, targetArmor: 0 }, { level: 30 }).targetArmor, 0);
+  assert.equal(otherFight({ ...fight, targetLevel: 60, targetArmor: 3600 }, { level: 62, goal: 'leveling' }).targetLevel, 63);
+});
+
+test('every candidate is simulated in both fights and ranked in each; weights only in the first', () => {
+  // Bloodthirst alone wins a long fight; a burst that spends itself early wins a short one.
+  const model = {
+    ...MELEE_MODEL,
+    abilities: [...MELEE_MODEL.abilities, { id: 'burst', name: 'Burst', type: 'melee', cost: 0, gcd: 1.5, damage: { min: 700, max: 700 } }],
+    rotations: [
+      { name: 'Steady', actions: [{ use: 'bt', note: 'on cooldown' }] },
+      // Three uses at the start of any fight, nothing after.
+      { name: 'Burst early', actions: [{ use: 'burst', if: { not: { timeAtLeast: 4.5 } } }] },
+    ],
+  };
+  const run = runModel(model, { iterations: 40, goal: 'raids' });
+  assert.equal(run.kind, 'long');
+  assert.equal(run.other.fight.kind, 'short');
+  assert.equal(run.sim.rotations[run.sim.best].name, 'Steady');
+  assert.equal(run.other.sim.rotations[run.other.sim.best].name, 'Burst early');
+  const data = shapeRotation({ model }, run, { spells: [{ name: 'Bloodthirst', id: 23881 }, { name: 'Burst', id: 777 }] });
+  assert.equal(data.fight.kind, 'long');
+  assert.equal(data.rotations[0].name, 'Steady');
+  assert.deepEqual(data.otherFight.rotations.map((r) => r.name), ['Burst early', 'Steady']);
+  assert.ok(data.otherFight.rotations[0].steps.length && data.otherFight.rotations[0].breakdown.length, 'the best in full');
+  assert.equal(data.otherFight.rotations[0].best, true);
+  assert.deepEqual(Object.keys(data.otherFight.rotations[1]), ['name', 'value', 'spread'], 'the others by their numbers');
+  assert.equal(data.otherFight.sameBest, undefined);
+  assert.equal(data.oneButton.rotation, 'Steady');
+  // Burst early waits for the clock, which One Button cannot do: no list for that fight.
+  assert.equal(data.otherFight.oneButton, undefined);
+  // Weights, the table and what is kept describe the model's own fight only.
+  assert.ok(data.weights && data.table);
+  assert.deepEqual(Object.keys(run.other), ['fight', 'sim']);
+  assert.equal(data.otherFight.weights, undefined);
+  assert.equal(data.otherFight.table, undefined);
+  assert.equal(keepFromRun(run).value, run.sim.rotations[run.sim.best].value);
+  // The same winner in both: said.
+  const plain = { ...model, rotations: [{ name: 'Nothing', actions: [] }, model.rotations[0]] };
+  const same = shapeRotation({ model: plain }, runModel(plain, { iterations: 30, goal: 'dungeons', weights: false }));
+  assert.deepEqual([same.rotations[0].name, same.otherFight.rotations[0].name, same.otherFight.sameBest], ['Steady', 'Steady', true]);
+});
+
+test('the result carries both fights and both lists in the contract the addon reads', () => {
+  const model = {
+    ...MELEE_MODEL,
+    oneButton: { short: [{ use: 'bt' }], long: [{ use: 'bt' }, { use: 'hs', if: { resourceAtLeast: 60 } }] },
+  };
+  const run = runModel(model, { iterations: 30, goal: 'dungeons' });
+  const data = shapeRotation({ model }, run, { spells: [{ name: 'Bloodthirst', id: 23881 }, { name: 'Heroic Strike', id: 11567 }] });
+  assert.deepEqual(data.fight, { kind: 'long', duration: 60, targets: 1, targetLevel: 60, targetArmor: 3000 });
+  assert.deepEqual(Object.keys(data.oneButton), ['v', 'context', 'source', 'list', 'value']);
+  assert.deepEqual(data.oneButton.list.map((e) => e.name), ['Bloodthirst', 'Heroic Strike']);
+  const other = data.otherFight;
+  assert.deepEqual(Object.keys(other).filter((k) => k !== 'sameBest'), ['kind', 'duration', 'targets', 'targetLevel', 'targetArmor', 'rotations', 'oneButton']);
+  assert.deepEqual([other.kind, other.duration, other.targets, other.targetLevel, other.targetArmor], ['short', 25, 1, 60, 3000]);
+  assert.deepEqual(other.oneButton.list.map((e) => e.name), ['Bloodthirst']);
+  assert.equal(other.oneButton.source, 'ai');
+  assert.ok(other.oneButton.value > 0 && data.oneButton.value > 0);
+  // Not kept for later requests: a by-product.
+  assert.equal(keepFromRun(run).model.oneButton, undefined);
+});
+
+test('a big result is fitted by trimming the other fight first', () => {
+  const run = runModel(MELEE_MODEL, { iterations: 20, goal: 'raids' });
+  const data = shapeRotation({ model: MELEE_MODEL }, run);
+  const full = JSON.stringify(data).length;
+  const best = data.otherFight.rotations[0];
+  best.breakdown = Array.from({ length: 8 }, (_, i) => ({ name: `Spell ${i}`, share: 10, perMinute: 1 }));
+  const before = JSON.stringify(data).length;
+  fitRotation(data, before - 10);
+  assert.equal(data.otherFight.rotations[0].breakdown.length, 3, 'the breakdown first');
+  assert.equal(data.otherFight.rotations.length, 2, 'then nothing more than needed');
+  fitRotation(data, full - 400);
+  assert.ok(data.otherFight.rotations.length < 2);
+  assert.deepEqual(data.rotations.length, 2, 'the model\'s own fight untouched');
+  const small = shapeRotation({ model: MELEE_MODEL }, run);
+  assert.deepEqual(fitRotation(structuredClone(small), 60000), small, 'nothing to do under the limit');
 });
 
 test('a spell the model holds twice is one line in the breakdown', () => {
@@ -503,6 +594,86 @@ test('a model the simulator cannot run is sent back, and fails clearly if it sta
   await assert.rejects(createArmory({ store: tmpStore(), askImpl: never.askImpl }).handle(request('rotation'), { cfg }), /combat model/);
 });
 
+test('the rotation request carries the buffs seen on the character, and the AI is told about both fights and One Button', async () => {
+  const auras = [{ name: 'Enrage', id: 12880 }];
+  const { askImpl, calls } = scripted({ summary: 's', model: { ...MELEE_MODEL, oneButton: { short: [{ use: 'bt' }] } } });
+  const out = await createArmory({ store: tmpStore(), askImpl }).handle(request('rotation', { armory_auras: auras }), { cfg });
+  const sent = JSON.parse(calls[0].messages[0].content.split('\n')[1]);
+  assert.deepEqual(sent.armory_auras, auras);
+  const system = calls[0].system;
+  assert.ok(system.includes(ONE_BUTTON_SPEC));
+  assert.match(system, /- armory_auras: buffs the addon has seen on the character/);
+  assert.match(system, /The program simulates every candidate twice/);
+  assert.match(system, /"rotations": 3 or 4 genuinely different candidates/);
+  // The goal "raids": the model's fight is the long one, the other the short one.
+  assert.equal(out.data.fight.kind, 'long');
+  assert.equal(out.data.otherFight.kind, 'short');
+  assert.equal(out.data.otherFight.oneButton.source, 'ai', 'the short list in the short fight');
+  assert.equal(out.data.oneButton.source, 'best', 'no long list: the best candidate');
+  // Other requests are not told about One Button.
+  assert.ok(!buildArmorySystem('discover', { hasModel: true }).includes('oneButton'));
+});
+
+test('what is wrong with the One Button lists goes back to the AI only when the model does', async () => {
+  const badLists = { short: [{ use: 'bt', if: { timeAtLeast: 5 } }, { use: 'nothing' }] };
+  // A good model with poor lists: one request, nothing sent back.
+  const fine = scripted({ summary: 's', model: { ...MELEE_MODEL, oneButton: badLists } });
+  await createArmory({ store: tmpStore(), askImpl: fine.askImpl }).handle(request('rotation'), { cfg });
+  assert.equal(fine.calls.length, 1);
+  // A model with three problems is sent back, and the lists' problems ride along.
+  const sloppy = { ...MELEE_MODEL, oneButton: badLists, procs: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] };
+  const again = scripted({ summary: 's', model: sloppy }, { summary: 's', model: MELEE_MODEL });
+  await createArmory({ store: tmpStore(), askImpl: again.askImpl }).handle(request('rotation'), { cfg });
+  assert.equal(again.calls.length, 2);
+  const repair = again.calls[1].messages[2].content;
+  assert.match(repair, /^The program could not use that reply:\n- proc "a" has unknown trigger/);
+  assert.match(repair, /\n\nAlso fix these in "oneButton":\n- oneButton\.short action 2 uses unknown ability "nothing"\n- oneButton\.short: Bloodthirst is suggested without checking for 5 seconds into the fight/);
+  assert.equal(repairMessage(['x']), 'The program could not use that reply:\n- x\n\nReply again with the complete, corrected JSON object and nothing else.');
+});
+
+// The biggest rotation answer the shaping allows: every list at its limit,
+// every text at its length, a tank's survival, lists of 14 abilities each.
+function worstCase() {
+  const long = (n) => `${'Word '.repeat(Math.ceil(n / 5))}`.slice(0, n);
+  const abilities = Array.from({ length: 14 }, (_, i) => ({
+    id: `a${i}`, name: `Ability Number ${i} With A Long Name`, spellId: 40000 + i, type: 'melee', cost: 5, gcd: 1.5, cooldown: 6 + i,
+    damage: { min: 100 + i, max: 120 + i }, applies: [`b${i}`],
+  }));
+  const buffs = abilities.map((a, i) => ({ id: `b${i}`, name: `Buff Number ${i} With A Long Name`, duration: 20, maxStacks: 3 }));
+  const cond = (i) => ({ buffDown: `b${i}`, resourceAtLeast: 40 + i, targetHealthAbove: 20, buffStacksAtLeast: { id: `b${(i + 1) % 14}`, n: 2 },
+    not: { usedOnTarget: `a${(i + 2) % 14}` }, any: [{ targetsAtLeast: 2 }, { swingTimerAbove: 1 }, { cooldownUp: `a${(i + 3) % 14}` }], timeAtLeast: 3 });
+  const actions = abilities.map((a, i) => ({ use: a.id, if: cond(i), note: long(160) }));
+  const model = {
+    ...MELEE_MODEL, abilities, buffs,
+    player: { ...MELEE_MODEL.player, resource: { type: 'rage', max: 100, start: 100, perSwing: { perDamage: 0.03 } } },
+    rotations: Array.from({ length: 6 }, (_, r) => ({ name: `${long(70)} ${r}`, actions: r ? actions.slice(r) : actions })),
+    oneButton: { short: actions, long: [...actions].reverse() },
+    enemy: { level: 16, meleeHit: 200, attackSpeed: 2 },
+  };
+  const spells = abilities.map((a) => ({ name: a.name, id: a.spellId }));
+  const auras = buffs.map((b, i) => ({ name: b.name, id: 50000 + i }));
+  return {
+    raw: {
+      summary: long(700), assumptions: Array.from({ length: 6 }, () => long(400)), notes: Array.from({ length: 5 }, () => long(400)),
+      buffs: spells.slice(0, 6).map((sp) => ({ name: sp.name, why: long(160), counted: true })), model,
+    },
+    spells, auras,
+  };
+}
+
+test('a worst case stays under what one answer may weigh, trimming the other fight first', async () => {
+  const { raw, spells, auras } = worstCase();
+  const req = request('rotation', { armory_spells: spells, armory_auras: auras, armory_combat: TANK_COMBAT });
+  req.ext.input.role = 'tank';
+  const { askImpl } = scripted(raw);
+  const out = await createArmory({ store: tmpStore(), askImpl }).handle(req, { cfg });
+  const size = JSON.stringify(out.data).length;
+  assert.ok(size <= 60000, `${size} bytes`);
+  assert.equal(out.data.rotations.length, 4);
+  assert.ok(out.data.otherFight.rotations.length >= 1);
+  assert.ok(out.data.oneButton.list.length === 14 && out.data.otherFight.oneButton.list.length === 14);
+});
+
 test('test mode answers every kind without an AI, through the same checks', async () => {
   const echo = { ...cfg, provider: 'echo' };
   const never = async () => { throw new Error('the AI must not be asked'); };
@@ -519,8 +690,14 @@ test('test mode answers every kind without an AI, through the same checks', asyn
   const rotation = await armory.handle(request('rotation'), { cfg: echo });
   assert.equal(rotation.data.rotations.length, 2);
   assert.ok(rotation.data.rotations[0].value > 0);
+  // The placeholder ability borrows a spell's name, so both One Button lists can be tried.
+  assert.equal(rotation.data.rotations[0].steps[0].spell, 'Bloodthirst');
+  assert.deepEqual([rotation.data.oneButton.source, rotation.data.otherFight.oneButton.source], ['ai', 'ai']);
+  assert.deepEqual(rotation.data.oneButton.list[0].gates, [{ t: 'stack', id: 23881, op: '<', n: 1, tgt: true }], 'raids: the long list');
+  assert.deepEqual(rotation.data.otherFight.oneButton.list[0].gates, []);
   const caster = await armory.handle(request('rotation', { armory_combat: { spellPower: 200 } }), { cfg: echo });
   assert.equal(caster.data.rotations[0].name, 'Bolt');
+  assert.equal(caster.data.oneButton.list[0].name, 'Bloodthirst');
   const ideas = await armory.handle(request('discover'), { cfg: echo });
   assert.equal(ideas.data.ideas.length, 1);
 });

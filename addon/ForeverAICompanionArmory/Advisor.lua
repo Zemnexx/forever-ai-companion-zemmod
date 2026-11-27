@@ -6,7 +6,8 @@
 -- analysis sends the parts of the character it needs:
 --   talents   the talent trees with descriptions
 --   gear      what is worn and owned, the talents taken, items seen in the game
---   rotation  the spellbook with tooltips, combat numbers, talents, gear effects
+--   rotation  the spellbook with tooltips, combat numbers, talents, gear effects,
+--             and the buffs seen on the character with their spell ids
 --   discover  all of the above
 -- Rotations and interactions also carry what calibration measured of how
 -- this character's abilities scale (Calibrate.lua), once there is something.
@@ -43,6 +44,13 @@ function Advisor.Scaling()
   return ok and section or nil
 end
 
+-- The buffs seen on the character (Auras.lua), for rotations only: an empty
+-- list when none could be read, and a failure there never stops a request.
+function Advisor.Auras()
+  local ok, section = pcall(ns.Auras.Section)
+  return ok and type(section) == "table" and section or {}
+end
+
 local REQUESTS = {
   talents = {
     only = with("gear"), timeout = WAIT,
@@ -56,7 +64,10 @@ local REQUESTS = {
   rotation = {
     only = with("gear", "buffs", "pet"), timeout = WAIT,
     sections = function()
-      return { talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), scaling = Advisor.Scaling() }
+      return {
+        talents = ns.Scan.Talents(), spells = ns.Scan.Spells(), combat = ns.Scan.Combat(), scaling = Advisor.Scaling(),
+        auras = Advisor.Auras(),
+      }
     end,
     needs = "spells",
   },

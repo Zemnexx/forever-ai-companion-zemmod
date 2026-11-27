@@ -572,6 +572,80 @@ local function calibration(blocks, data)
   if data then scalingUsed(blocks, data.scaling) end
 end
 
+-- The best rotation of one kind of fight: its name and number, its steps,
+-- and the facts about it.
+local function bestRotation(blocks, best, unit)
+  add(blocks, { t = "h", text = string.format("%s: %s %s", best.name, Util.fmt(best.value, 1), unit) })
+  for i, step in ipairs(best.steps or {}) do
+    local icon = step.spellId and ns.Panels.SpellIcon(step.spellId) or nil
+    add(blocks, { t = "row", icon = icon, spell = step.spellId, title = string.format("%d. %s", i, step.spell), sub = step.when })
+  end
+  if #(best.steps or {}) == 0 then add(blocks, { t = "p", text = L.AUTO_ONLY, color = "muted" }) end
+  local facts = {}
+  -- A tank's rotation is ranked by threat; its damage is a fact about it.
+  if best.damage then facts[#facts + 1] = string.format(L.TANK_DAMAGE, Util.fmt(best.damage, 1)) end
+  if best.idle and best.idle >= 1 then facts[#facts + 1] = string.format(L.IDLE, Util.fmt(best.idle, 0)) end
+  if best.starved and best.starved >= 1 then facts[#facts + 1] = string.format(L.STARVED, Util.fmt(best.starved, 0)) end
+  if best.emptyAt then facts[#facts + 1] = string.format(L.EMPTY_AT, Util.fmt(best.emptyAt, 0)) end
+  if #facts > 0 then add(blocks, { t = "p", text = table.concat(facts, " · "), color = "muted" }) end
+end
+
+-- What the list for Forever One Button is worth in the simulator in this
+-- kind of fight, and who wrote it. Lists from before the app measured them
+-- say nothing of the sort, and get no line.
+local function oneButtonWorth(blocks, sent, unit)
+  if type(sent) ~= "table" then return end
+  local value, source = Util.num(sent.value), ns.OneButton.SourceText(sent.source)
+  local line
+  if value and source then line = string.format(L.OB_PROFILE_BOTH, Util.fmt(value, 1), unit, source)
+  elseif value then line = string.format(L.OB_PROFILE_VALUE, Util.fmt(value, 1), unit)
+  elseif sent.source == "ai" then line = string.format(L.OB_PROFILE_SOURCE, source) end
+  if line then add(blocks, { t = "p", text = line, color = "muted" }) end
+end
+
+local FIGHT_HEADING = { short = "FIGHT_SHORT", long = "FIGHT_LONG" }
+local FIGHTS = { short = "FIGHTS_SHORT", long = "FIGHTS_LONG" }
+
+local function fightHeading(blocks, kind, fight)
+  add(blocks, { t = "h", text = string.format(L[FIGHT_HEADING[kind]], Util.fmt(tonumber(fight.duration), 0)) })
+end
+
+-- The kinds of fight of a result that simulated both: the primary one (the
+-- one the goal is about) and the other, or nil for a result with one fight.
+local function fightKinds(data)
+  local other = data.otherFight
+  if type(other) ~= "table" or not FIGHT_HEADING[other.kind] then return nil end
+  local primary = type(data.fight) == "table" and data.fight.kind
+  if primary == nil then primary = other.kind == "short" and "long" or "short" end
+  if not FIGHT_HEADING[primary] or primary == other.kind then return nil end
+  return primary, other.kind
+end
+
+local function breakdown(blocks, rotation, heading)
+  add(blocks, { t = "h", text = heading })
+  for _, b in ipairs(rotation.breakdown) do
+    add(blocks, { t = "bar", label = b.name, value = b.share, right = Util.fmt(b.share, 1) .. "%" })
+  end
+end
+
+local function hasBreakdown(rotation)
+  return type(rotation) == "table" and type(rotation.breakdown) == "table" and #rotation.breakdown > 0
+end
+
+-- "Simulated: 25 second fights against one level 36 target with 2000 armor."
+local function fightLine(blocks, f)
+  if type(f) ~= "table" then return end
+  local targets = tonumber(f.targets) or 1
+  local line = targets > 1
+    and string.format(L.FIGHT_MANY, tostring(f.duration or "?"), tostring(targets), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
+    or string.format(L.FIGHT, tostring(f.duration or "?"), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
+  add(blocks, { t = "p", text = line, color = "muted" })
+end
+
+-- A result from a newer app simulates two kinds of fight (data.otherFight):
+-- the primary one, which every number of the result is about, and the other,
+-- with its own best rotation, the candidates' numbers there and its own list
+-- for One Button. Older results have one fight and draw as they did.
 function Panels.Rotation()
   local blocks = {}
   local result = ns.Store:Result("rotation")
@@ -590,21 +664,25 @@ function Panels.Rotation()
   end
   local unit = data.metric == "hps" and L.HPS or (data.metric == "tps" and L.TPS or L.DPS)
   local best = data.rotations and data.rotations[1]
+  local primaryKind, otherKind = fightKinds(data)
+  local other = otherKind and data.otherFight or nil
+  local otherBest = other and type(other.rotations) == "table" and other.rotations[1] or nil
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
-  if best then
-    add(blocks, { t = "h", text = string.format("%s: %s %s", best.name, Util.fmt(best.value, 1), unit) })
-    for i, step in ipairs(best.steps or {}) do
-      local icon = step.spellId and ns.Panels.SpellIcon(step.spellId) or nil
-      add(blocks, { t = "row", icon = icon, spell = step.spellId, title = string.format("%d. %s", i, step.spell), sub = step.when })
+  if other then
+    fightHeading(blocks, primaryKind, data.fight or {})
+    add(blocks, { t = "p", text = L.FIGHT_PRIMARY, color = "muted" })
+  end
+  if best then bestRotation(blocks, best, unit) end
+  oneButtonWorth(blocks, data.oneButton, unit)
+  if other then
+    fightHeading(blocks, otherKind, other)
+    -- The same rotation as above: its steps are not repeated.
+    if otherBest and other.sameBest then
+      add(blocks, { t = "p", text = string.format(L.SAME_BEST, Util.fmt(otherBest.value, 1), unit) })
+    elseif otherBest then
+      bestRotation(blocks, otherBest, unit)
     end
-    if #(best.steps or {}) == 0 then add(blocks, { t = "p", text = L.AUTO_ONLY, color = "muted" }) end
-    local facts = {}
-    -- A tank's rotation is ranked by threat; its damage is a fact about it.
-    if best.damage then facts[#facts + 1] = string.format(L.TANK_DAMAGE, Util.fmt(best.damage, 1)) end
-    if best.idle and best.idle >= 1 then facts[#facts + 1] = string.format(L.IDLE, Util.fmt(best.idle, 0)) end
-    if best.starved and best.starved >= 1 then facts[#facts + 1] = string.format(L.STARVED, Util.fmt(best.starved, 0)) end
-    if best.emptyAt then facts[#facts + 1] = string.format(L.EMPTY_AT, Util.fmt(best.emptyAt, 0)) end
-    if #facts > 0 then add(blocks, { t = "p", text = table.concat(facts, " · "), color = "muted" }) end
+    oneButtonWorth(blocks, other.oneButton, unit)
   end
   -- The lists kept for Forever One Button, as a profile to paste into it.
   local built, profile = pcall(ns.OneButton.Build)
@@ -628,22 +706,38 @@ function Panels.Rotation()
 
   if data.rotations and #data.rotations > 1 then
     add(blocks, { t = "h", text = L.COMPARED })
+    -- Each candidate's number in the other fight too, found by its name.
+    local there = {}
+    for _, r in ipairs(other and type(other.rotations) == "table" and other.rotations or {}) do
+      if type(r) == "table" and r.name ~= nil and there[r.name] == nil then there[r.name] = Util.num(r.value) end
+    end
+    if other then
+      local first, second = L[FIGHTS[primaryKind]], L[FIGHTS[otherKind]]
+      add(blocks, { t = "p", text = string.format(L.COMPARED_BOTH, (unit:gsub("^%l", string.upper)), first, second, first), color = "muted" })
+    end
     local top = best.value > 0 and best.value or 1
     for _, r in ipairs(data.rotations) do
-      add(blocks, { t = "bar", label = r.name, value = r.value / top * 100, right = string.format("%s %s", Util.fmt(r.value, 1), unit) })
+      local right = Util.fmt(r.value, 1)
+      if there[r.name] then right = string.format(L.COMPARED_TWO, right, Util.fmt(there[r.name], 1)) end
+      add(blocks, { t = "bar", label = r.name, value = r.value / top * 100, right = other and right or string.format("%s %s", right, unit) })
     end
   end
 
-  if best and type(best.breakdown) == "table" and #best.breakdown > 0 then
-    local heading = data.metric == "hps" and L.BREAKDOWN_HEALING or (data.metric == "tps" and L.BREAKDOWN_THREAT or L.BREAKDOWN_DAMAGE)
-    add(blocks, { t = "h", text = heading })
-    for _, b in ipairs(best.breakdown) do
-      add(blocks, { t = "bar", label = b.name, value = b.share, right = Util.fmt(b.share, 1) .. "%" })
-    end
+  local heading = data.metric == "hps" and L.BREAKDOWN_HEALING or (data.metric == "tps" and L.BREAKDOWN_THREAT or L.BREAKDOWN_DAMAGE)
+  -- The other kind's best has a breakdown of its own when it is another rotation.
+  local second = other and not other.sameBest and hasBreakdown(otherBest) and otherBest or nil
+  if hasBreakdown(best) then
+    breakdown(blocks, best, second and string.format(L.BREAKDOWN_FOR, heading, L[FIGHTS[primaryKind]], best.name) or heading)
   end
+  if second then breakdown(blocks, second, string.format(L.BREAKDOWN_FOR, heading, L[FIGHTS[otherKind]], second.name)) end
 
   local w = data.weights
-  if type(w) == "table" and type(w.perPoint) == "table" and next(w.perPoint) then
+  local weighted = type(w) == "table" and type(w.perPoint) == "table" and next(w.perPoint) ~= nil
+  -- What follows was measured in the primary fight only.
+  if other and (weighted or type(data.survival) == "table" or (type(data.table) == "table" and #data.table > 0)) then
+    add(blocks, { t = "p", text = string.format(L.PRIMARY_ONLY, L[FIGHTS[primaryKind]]), color = "muted" })
+  end
+  if weighted then
     add(blocks, { t = "h", text = L.STAT_WEIGHTS })
     local stats = {}
     for stat in pairs(w.perPoint) do stats[#stats + 1] = stat end
@@ -679,14 +773,8 @@ function Panels.Rotation()
     end
   end
 
-  local f = data.fight
-  if type(f) == "table" then
-    local targets = tonumber(f.targets) or 1
-    local line = targets > 1
-      and string.format(L.FIGHT_MANY, tostring(f.duration or "?"), tostring(targets), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
-      or string.format(L.FIGHT, tostring(f.duration or "?"), tostring(f.targetLevel or "?"), tostring(f.targetArmor or 0))
-    add(blocks, { t = "p", text = line, color = "muted" })
-  end
+  fightLine(blocks, data.fight)
+  if other then fightLine(blocks, other) end
   if data.modelIssues then add(blocks, { t = "p", text = string.format(L.MODEL_ISSUES, data.modelIssues), color = "warn" }) end
   notes(blocks, data.assumptions, L.ASSUMPTIONS)
   notes(blocks, data.notes, L.NOTES)

@@ -1,8 +1,9 @@
-// The best rotation of an analysis as a priority list for Forever One Button,
-// the owner's other addon, which can import such a list as a "rotation
-// profile". The AI proposed the rotation and the simulator ranked it first;
-// this code only translates it, and says in plain sentences what it could not
-// carry over.
+// Priority lists for Forever One Button, the owner's other addon, which can
+// import such a list as a "rotation profile". The AI writes one list per kind
+// of fight ("oneButton" in the model); without one, the best candidate of that
+// fight stands in. Either way this code cleans the list into what One Button
+// can play, says in plain sentences what it could not carry over, and the
+// simulator measures exactly the cleaned list (oneButtonFor below).
 //
 // The target format is One Button's (ForeverOneButton/Core/Profiles.lua,
 // SCHEMA and the limits): entries { id, gates } where each gate is a condition
@@ -12,6 +13,11 @@
 // none of that needs a gate. A gate it cannot answer never holds an ability
 // back, so a condition lost on the way makes an ability come up more freely
 // than the model meant: that is what the rules below guard against.
+//
+// Every gate comes with the condition it stands for in the model's own
+// language ("conds"), so the cleaned list can be simulated as One Button
+// would play it: a condition left out is left out of both, and one carried
+// over only roughly is simulated the rough way.
 import { num, str, text } from './json.js';
 
 export const ONE_BUTTON_VERSION = 1;
@@ -87,9 +93,11 @@ function spellIndex(spells) {
 }
 
 // The translation's view of the model: which spell each ability and buff
-// stands for in the character's own spell list.
-function makeWorld(model, spells) {
+// stands for in the character's own spell list, or in the buffs the addon
+// saw on the character (auras: { name, id }, the buff's own spell id).
+function makeWorld(model, spells, auras) {
   const index = spellIndex(spells);
+  const seen = spellIndex(auras).byName;
   const abilities = new Map((model.abilities || []).map((a) => [a.id, a]));
   const buffs = new Map((model.buffs || []).map((b) => [b.id, b]));
   // An ability's spell: its exact name wins; the model's own spellId only
@@ -103,6 +111,11 @@ function makeWorld(model, spells) {
   };
   const appliers = (buffId) => (model.abilities || []).filter((a) => (a.applies || []).includes(buffId));
   const firstSpell = (abs) => abs.map(abilitySpell).find(Boolean) || null;
+  // The first ability of these that the character has, with its spell.
+  const firstApplier = (abs) => {
+    for (const ability of abs) { const spell = abilitySpell(ability); if (spell) return { ability, spell }; }
+    return null;
+  };
   // What a buff reference (buffUp and the like) names: a buff, or an
   // ability's dot by the ability's id, as the simulator looks them up.
   const effect = (ref) => {
@@ -110,10 +123,12 @@ function makeWorld(model, spells) {
     if (buff) {
       if (isCombo(buff)) return { kind: 'combo', name: buff.name || buff.id };
       if (buff.onTarget) return { kind: 'target', name: buff.name || buff.id, appliers: appliers(buff.id), buff };
-      // A player buff is named by the spell that gives it: one of the
-      // character's with the buff's name, or the ability that applies it.
-      const own = index.byName.get(String(buff.name || '').toLowerCase());
-      return { kind: 'player', name: buff.name || buff.id, spell: own || firstSpell(appliers(buff.id)), buff };
+      // A player buff is named by one of the character's spells with its
+      // name, by a buff of that name the addon saw on the character, or by
+      // the ability that applies it.
+      const key = String(buff.name || '').toLowerCase();
+      const spell = index.byName.get(key) || seen.get(key) || firstSpell(appliers(buff.id));
+      return { kind: 'player', name: buff.name || buff.id, spell, buff };
     }
     const ab = abilities.get(ref);
     if (ab && ab.dot) return { kind: 'target', name: ab.name || ab.id, appliers: [ab] };
@@ -121,7 +136,7 @@ function makeWorld(model, spells) {
     return { kind: 'unknown', name: String(ref) };
   };
   const nameOf = (ref) => buffs.get(ref)?.name || abilities.get(ref)?.name || String(ref);
-  return { abilities, abilitySpell, firstSpell, effect, nameOf, resource: model.player?.resource?.type || 'none' };
+  return { abilities, abilitySpell, firstSpell, firstApplier, effect, nameOf, resource: model.player?.resource?.type || 'none' };
 }
 
 // The opposite of a condition, in the model's own terms where it has one and
@@ -141,6 +156,7 @@ const OPPOSITE = {
   targetHealthAbove: (v) => ({ _healthAtMost: v }),
   targetsAtLeast: (v) => ({ _targetsBelow: v }),
   swingTimerAbove: (v) => ({ _swingAtMost: v }),
+  usedOnTarget: (v) => ({ _notUsed: v }),
   timeAtLeast: (v) => ({ timeAtLeast: v, _negated: true }),
   timeRemainingBelow: (v) => ({ timeRemainingBelow: v, _negated: true }),
   any: (v) => ({ _all: (v || []).map(negate) }),
@@ -178,6 +194,8 @@ function phrase(key, v, world, negated) {
     _targetsBelow: () => `fewer than ${v} enemies`,
     swingTimerAbove: () => `more than ${v} seconds before the next swing`,
     _swingAtMost: () => `${v} seconds or less before the next swing`,
+    usedOnTarget: () => `${name(v)} used on the target in the last ${COUNTED_SECONDS} seconds`,
+    _notUsed: () => `${name(v)} not used on the target in the last ${COUNTED_SECONDS} seconds`,
   }[key];
   if (negated && key === 'timeAtLeast') return `the first ${v} seconds of the fight`;
   if (negated && key === 'timeRemainingBelow') return `the fight before its last ${v} seconds`;
@@ -185,21 +203,38 @@ function phrase(key, v, world, negated) {
   return negated ? `not ${said}` : said;
 }
 
-// One condition translated: the gates, what could not be carried over
-// (lost), what was carried over only roughly (approx) and what was cut by
-// One Button's limits (cut).
-const result = () => ({ gates: [], lost: [], approx: [], cut: [] });
+// One condition translated: the gates, the model conditions they stand for
+// (conds, each of one key, all of which must hold), what could not be carried
+// over (lost), what was carried over only roughly (approx) and what was cut
+// by One Button's limits (cut).
+const result = () => ({ gates: [], conds: [], lost: [], approx: [], cut: [] });
 function merge(into, part) {
   into.gates.push(...part.gates);
+  into.conds.push(...part.conds);
   into.lost.push(...part.lost);
   into.approx.push(...part.approx);
   into.cut.push(...part.cut);
   return into;
 }
 const lost = (what) => ({ ...result(), lost: [what] });
-function gate(g, key, v, world) {
+// cond: what the gate means in the model's language.
+function gate(g, key, v, world, cond) {
   if (!inRange(g)) return lost(phrase(key, v, world));
-  return { ...result(), gates: [g] };
+  return { ...result(), gates: [g], conds: [cond] };
+}
+const not = (cond) => ({ not: cond });
+
+// Conditions of one key each as one condition object. Two of the same key
+// (two buffs that must be down) go into "all", which the simulator reads too.
+function andOf(conds) {
+  const out = {};
+  const more = [];
+  for (const c of conds) {
+    const [key] = Object.keys(c);
+    if (key in out) more.push(c); else out[key] = c[key];
+  }
+  if (more.length) out.all = [...(out.all || []), ...more];
+  return out;
 }
 
 // The keys of one condition, at a depth of One Button's nesting.
@@ -214,8 +249,8 @@ function translate(cond, depth, act) {
     merge(out, fn(v, depth, act, cond));
   }
   // The same gate twice (from "requires" and "if" alike) is one gate.
-  const seen = new Set();
-  out.gates = out.gates.filter((g) => { const k = JSON.stringify(g); if (seen.has(k)) return false; seen.add(k); return true; });
+  out.gates = unique(out.gates);
+  out.conds = unique(out.conds);
   return out;
 }
 
@@ -224,25 +259,26 @@ function power(op, n, key, act) {
   if (world.resource === 'none') return result();
   // At or below the ability's own cost, One Button's usability check says the same.
   if (op === '>=' && !(n > (ability.cost || 0))) return result();
-  return gate({ t: 'power', res: world.resource, op, n }, key, n, world);
+  return gate({ t: 'power', res: world.resource, op, n }, key, n, world, { [key]: n });
 }
 
 // buffUp / buffDown and their stack forms. up: the effect wanted present.
 function presence(ref, up, act, key) {
-  const { world, ability, spell } = act;
+  const { world, ability } = act;
   const e = world.effect(ref);
-  if (e.kind === 'combo') return gate({ t: 'resource', res: 'combo_points', op: up ? '>=' : '<', n: 1 }, key, ref, world);
+  const same = up ? { buffUp: ref } : { buffDown: ref };
+  if (e.kind === 'combo') return gate({ t: 'resource', res: 'combo_points', op: up ? '>=' : '<', n: 1 }, key, ref, world, same);
   if (e.kind === 'player') {
     if (!e.spell) return lost(phrase(key, ref, world));
     const g = { t: 'buff', id: e.spell.id };
     if (e.buff.duration > 0) g.dur = e.buff.duration;
     if (!up) g.neg = true;
-    return gate(g, key, ref, world);
+    return gate(g, key, ref, world, same);
   }
   if (e.kind === 'target') {
     // Kept up on the target by the very ability that puts it there.
     if (!up && e.appliers.some((a) => a.id === ability.id)) return keepUp(e, act, key, ref);
-    return onTarget(e, up ? '>=' : '<', 1, act, key, ref);
+    return onTarget(e, up ? '>=' : '<', 1, act, key, ref, same);
   }
   return lost(phrase(key, ref, world));
 }
@@ -252,21 +288,29 @@ function presence(ref, up, act, key) {
 // cooldown paces it. Anything else is counted from the player's casts.
 function keepUp(e, act, key, ref) {
   const { world, ability, spell } = act;
-  if (TRACKED_DOTS.has(spell.id) || hasCooldown(ability)) return gate({ t: 'dot', id: spell.id }, key, ref, world);
-  const part = gate({ t: 'stack', id: spell.id, op: '<', n: 1, tgt: true }, key, ref, world);
+  if (TRACKED_DOTS.has(spell.id)) return gate({ t: 'dot', id: spell.id }, key, ref, world, { buffDown: ref });
+  // Only informational to One Button: the cooldown alone paces it, so the
+  // simulated list has no condition there.
+  if (hasCooldown(ability)) return { ...result(), gates: [{ t: 'dot', id: spell.id }] };
+  const part = gate({ t: 'stack', id: spell.id, op: '<', n: 1, tgt: true }, key, ref, world, not({ usedOnTarget: ability.id }));
   if (!part.lost.length) part.approx.push(`keeps up ${e.name}, which One Button does not track: it waits about ${COUNTED_SECONDS} seconds between uses on the same target`);
   return part;
 }
 
 // Any other condition on an effect on the target. One Button cannot be asked
 // about a DoT it tracks itself (a stack gate would stop the tracking); any
-// other effect is counted from the player's own casts.
-function onTarget(e, op, n, act, key, v) {
+// other effect is counted from the player's own casts, which for one
+// application is the applier's use in the last 30 seconds. same: the model's
+// own condition, simulated as it is for more applications.
+function onTarget(e, op, n, act, key, v, same) {
   const { world } = act;
-  const applier = world.firstSpell(e.appliers);
-  if (!applier) return lost(phrase(key, v, world));
+  const found = world.firstApplier(e.appliers);
+  if (!found) return lost(phrase(key, v, world));
+  const applier = found.spell;
   if (TRACKED_DOTS.has(applier.id)) return lost(`${phrase(key, v, world)} (One Button keeps track of that effect itself and offers no condition on it)`);
-  const part = gate({ t: 'stack', id: applier.id, op, n, tgt: true }, key, v, world);
+  const used = { usedOnTarget: found.ability.id };
+  const cond = n === 1 ? (op === '>=' ? used : not(used)) : same;
+  const part = gate({ t: 'stack', id: applier.id, op, n, tgt: true }, key, v, world, cond);
   if (!part.lost.length) part.approx.push(`counts ${e.name} on the target from your own casts, about ${COUNTED_SECONDS} seconds each`);
   return part;
 }
@@ -276,11 +320,12 @@ function stacks(v, atLeast, act, key) {
   const e = world.effect(v?.id);
   const n = num(v?.n);
   if (n === null) return lost(phrase(key, v, world));
-  if (e.kind === 'combo') return gate({ t: 'resource', res: 'combo_points', op: atLeast ? '>=' : '<', n }, key, v, world);
-  if (e.kind === 'target') return onTarget(e, atLeast ? '>=' : '<', n, act, key, v);
+  const same = atLeast ? { buffStacksAtLeast: v } : not({ buffStacksAtLeast: v });
+  if (e.kind === 'combo') return gate({ t: 'resource', res: 'combo_points', op: atLeast ? '>=' : '<', n }, key, v, world, same);
+  if (e.kind === 'target') return onTarget(e, atLeast ? '>=' : '<', n, act, key, v, same);
   const id = e.kind === 'player' ? e.spell?.id ?? null : null;
   if (id === null) return lost(phrase(key, v, world));
-  return gate({ t: 'stack', id, op: atLeast ? '>=' : '<', n }, key, v, world);
+  return gate({ t: 'stack', id, op: atLeast ? '>=' : '<', n }, key, v, world, same);
 }
 
 function cooldown(ref, onCooldown, act, key) {
@@ -291,7 +336,19 @@ function cooldown(ref, onCooldown, act, key) {
   if (!spell) return lost(phrase(key, ref, world));
   const g = { t: 'cd', id: spell.id };
   if (onCooldown) g.neg = true;
-  return gate(g, key, ref, world);
+  return gate(g, key, ref, world, onCooldown ? not({ cooldownUp: ref }) : { cooldownUp: ref });
+}
+
+// An ability's use on the target in the last 30 seconds, as One Button counts
+// it: a target stack gate on its spell. Not for a DoT One Button tracks
+// itself, which a stack gate would stop it tracking.
+function used(ref, wanted, act, key) {
+  const { world } = act;
+  const spell = world.abilitySpell(world.abilities.get(ref));
+  if (!spell) return lost(phrase(key, ref, world));
+  if (TRACKED_DOTS.has(spell.id)) return lost(`${phrase(key, ref, world)} (One Button keeps track of that effect itself and offers no condition on it)`);
+  const cond = { usedOnTarget: ref };
+  return gate({ t: 'stack', id: spell.id, op: wanted ? '>=' : '<', n: 1, tgt: true }, key, ref, world, wanted ? cond : not(cond));
 }
 
 // An "or": every member must be carried over, or none of it is (dropping a
@@ -302,6 +359,7 @@ function anyOf(members, depth, act) {
   if (depth >= MAX_DEPTH) return lost('a condition nested too deeply');
   const out = result();
   const g = [];
+  const conds = [];
   for (const member of members) {
     let part = translate(member, depth + 1, act);
     // A member of several gates becomes a group of its own, one level down.
@@ -310,13 +368,16 @@ function anyOf(members, depth, act) {
     out.approx.push(...part.approx);
     out.cut.push(...part.cut);
     if (!part.gates.length) return result();
+    // A member that holds back nothing in One Button makes the "or" always true there.
+    conds.push(part.conds.length ? andOf(part.conds) : null);
     if (part.gates.length === 1) { g.push(part.gates[0]); continue; }
     if (depth + 1 >= MAX_DEPTH) return lost('a condition nested too deeply');
     if (part.gates.length > MAX_GATES) { out.cut.push('group'); part.gates.length = MAX_GATES; }
     g.push({ t: 'all', g: part.gates });
   }
-  if (g.length > MAX_GATES) { out.cut.push('group'); g.length = MAX_GATES; }
+  if (g.length > MAX_GATES) { out.cut.push('group'); g.length = MAX_GATES; conds.length = MAX_GATES; }
   out.gates.push({ t: 'any', g });
+  if (!conds.includes(null)) out.conds.push({ any: conds });
   return out;
 }
 
@@ -347,13 +408,15 @@ const TRANSLATE = {
     if (!part.lost.length) part.approx.push(`waits for ${act.world.nameOf(v?.id)} to be on cooldown, not for how long it has left`);
     return part;
   },
-  targetHealthBelow: (v, d, act) => gate({ t: 'execute', op: '<', pct: v }, 'targetHealthBelow', v, act.world),
-  targetHealthAbove: (v, d, act) => gate({ t: 'execute', op: '>=', pct: v }, 'targetHealthAbove', v, act.world),
-  _healthAtMost: (v, d, act) => gate({ t: 'execute', op: '<=', pct: v }, '_healthAtMost', v, act.world),
-  targetsAtLeast: (v, d, act) => gate({ t: 'targets', op: '>=', n: v }, 'targetsAtLeast', v, act.world),
-  _targetsBelow: (v, d, act) => gate({ t: 'targets', op: '<', n: v }, '_targetsBelow', v, act.world),
-  swingTimerAbove: (v, d, act) => gate({ t: 'swing', op: '>', n: v }, 'swingTimerAbove', v, act.world),
-  _swingAtMost: (v, d, act) => gate({ t: 'swing', op: '<=', n: v }, '_swingAtMost', v, act.world),
+  targetHealthBelow: (v, d, act) => gate({ t: 'execute', op: '<', pct: v }, 'targetHealthBelow', v, act.world, { targetHealthBelow: v }),
+  targetHealthAbove: (v, d, act) => gate({ t: 'execute', op: '>=', pct: v }, 'targetHealthAbove', v, act.world, { targetHealthAbove: v }),
+  _healthAtMost: (v, d, act) => gate({ t: 'execute', op: '<=', pct: v }, '_healthAtMost', v, act.world, not({ targetHealthAbove: v })),
+  targetsAtLeast: (v, d, act) => gate({ t: 'targets', op: '>=', n: v }, 'targetsAtLeast', v, act.world, { targetsAtLeast: v }),
+  _targetsBelow: (v, d, act) => gate({ t: 'targets', op: '<', n: v }, '_targetsBelow', v, act.world, not({ targetsAtLeast: v })),
+  swingTimerAbove: (v, d, act) => gate({ t: 'swing', op: '>', n: v }, 'swingTimerAbove', v, act.world, { swingTimerAbove: v }),
+  _swingAtMost: (v, d, act) => gate({ t: 'swing', op: '<=', n: v }, '_swingAtMost', v, act.world, not({ swingTimerAbove: v })),
+  usedOnTarget: (v, d, act) => used(v, true, act, 'usedOnTarget'),
+  _notUsed: (v, d, act) => used(v, false, act, '_notUsed'),
   // One Button knows nothing of the fight's clock.
   timeAtLeast: (v, d, act, cond) => lost(phrase('timeAtLeast', v, act.world, cond._negated)),
   timeRemainingBelow: (v, d, act, cond) => lost(phrase('timeRemainingBelow', v, act.world, cond._negated)),
@@ -382,8 +445,11 @@ function leftLines(notes) {
 }
 const joined = (parts) => [...new Set(parts)].slice(0, 2).join(' and ');
 
-// One action of the rotation translated on its own: its spell, its gates
-// and the lines about it, or null when it was left out (with a line).
+
+// One action of the list translated on its own: its spell, its gates, the
+// model conditions of its "if" as One Button would check them (requires
+// stays the ability's own in the model, the game holds it back too) and the
+// lines about it, or null when it was left out (with a line).
 function occurrence(action, place, world, dropped) {
   const ability = world.abilities.get(action.use);
   if (!ability) return null;
@@ -391,7 +457,13 @@ function occurrence(action, place, world, dropped) {
   const name = ability.name || ability.id;
   if (!spell) { dropped.push({ level: 0, line: `${name} was left out: the character's spell list has no such spell.` }); return null; }
   const act = { world, ability, spell };
-  const both = merge(translate(ability.requires, 1, act), translate(action.if, 1, act));
+  const req = translate(ability.requires, 1, act);
+  const when = translate(action.if, 1, act);
+  const reqConds = [...req.conds];
+  const ifConds = [...when.conds];
+  // One Button holds back a DoT it tracks while it runs, asked or not.
+  if (TRACKED_DOTS.has(spell.id) && ability.dot) ifConds.push({ buffDown: ability.id });
+  const both = merge(req, when);
   both.gates = unique(both.gates);
   if (both.lost.length && !hasCooldown(ability)) {
     dropped.push({ level: 0, spellId: spell.id, name: spell.name, why: `One Button cannot check for ${joined(both.lost)}, and without it the spell would always come first.` });
@@ -402,37 +474,40 @@ function occurrence(action, place, world, dropped) {
   if (both.gates.length > MAX_GATES) { both.cut.push('entry'); both.gates.length = MAX_GATES; }
   if (both.cut.length) notes.push({ level: 1, line: `${spell.name} keeps only the first ${MAX_GATES} of its conditions.` });
   for (const a of both.approx) notes.push({ level: 2, line: `${spell.name} ${a}.` });
-  return { place, spell, gates: both.gates, notes };
+  return { place, ability, spell, gates: both.gates, reqConds, ifConds: unique(ifConds), notes };
 }
 
-const unique = (gates) => {
+const unique = (items) => {
   const seen = new Set();
-  return gates.filter((g) => { const k = JSON.stringify(g); if (seen.has(k)) return false; seen.add(k); return true; });
+  return items.filter((g) => { const k = JSON.stringify(g); if (seen.has(k)) return false; seen.add(k); return true; });
 };
 const isGroup = (g) => g.t === 'any' || g.t === 'all';
+// The model action an occurrence stands for, with these conditions.
+const actionOf = (occ, conds) => (conds.length ? { use: occ.ability.id, if: andOf(conds) } : { use: occ.ability.id });
 
-// One spell's places in the rotation as the one entry One Button reads (its
+// One spell's places in the list as the one entry One Button reads (its
 // queue takes each spell once, Engine/Queue.lua). A first place without
 // conditions makes the later ones redundant. Otherwise the places up to the
 // first one without conditions become one entry at the last of them, held
 // back unless the conditions of one of them hold: never suggested where the
 // model would not use it, never above what the model ranks higher; only the
-// earlier places are lost.
+// earlier places are lost. Each entry carries its model action (action).
 function oneEntry(occs) {
   const [first] = occs;
-  if (!first.gates.length || occs.length === 1) return { ...first, notes: [...first.notes] };
+  if (!first.gates.length || occs.length === 1) return { ...first, notes: [...first.notes], action: actionOf(first, first.ifConds) };
   const plain = occs.findIndex((o) => !o.gates.length);
   const taken = plain >= 0 ? occs.slice(0, plain + 1) : occs;
   const last = taken[taken.length - 1];
   const name = last.spell.name;
   const notes = taken.flatMap((o) => o.notes);
-  const line = (rest) => ({ level: 2, line: `${name} is listed more than once: One Button reads each ability once, so it keeps its lowest place${rest}.` });
+  const line = (rest) => ({ level: 2, twice: true, line: `${name} is listed more than once: One Button reads each ability once, so it keeps its lowest place${rest}.` });
+  const own = actionOf(last, last.ifConds);
   // A plain place took the others in: what was said about their conditions
   // no longer describes the entry.
-  if (!last.gates.length) return { ...last, notes: [...last.notes, line('')] };
+  if (!last.gates.length) return { ...last, notes: [...last.notes, line('')], action: own };
   // Several gates of which one is a group would need a group at depth 3.
   if (taken.some((o) => o.gates.length > 1 && o.gates.some(isGroup))) {
-    return { ...last, notes: [...last.notes, line(', with only the conditions it has there')] };
+    return { ...last, notes: [...last.notes, line(', with only the conditions it has there')], action: own };
   }
   let members = unique(taken.flatMap((o) => {
     if (o.gates.length > 1) return [{ t: 'all', g: o.gates }];
@@ -442,19 +517,25 @@ function oneEntry(occs) {
     members = members.slice(0, MAX_GATES);
     notes.push({ level: 1, line: `${name} keeps only the first ${MAX_GATES} of its conditions.` });
   }
-  return { ...last, gates: [{ t: 'any', g: members }], notes: [...notes, line(', for the conditions of any of its places')] };
+  // In the model: any of the places' own conditions; a place with none of
+  // its own makes it always true.
+  const places = taken.map((o) => [...o.reqConds, ...o.ifConds]);
+  const action = places.some((c) => !c.length) ? { use: last.ability.id } : { use: last.ability.id, if: { any: places.map(andOf) } };
+  return { ...last, gates: [{ t: 'any', g: members }], notes: [...notes, line(', for the conditions of any of its places')], action };
 }
 
 /**
- * The best rotation of an analysis as a One Button priority list.
- * model: the validated model the simulator ran (run.model); rotation: its
- * best rotation ({ name, actions }); spells: the character's spells as the
- * game listed them; context: "st" or "aoe". Returns null when nothing could
- * be translated.
+ * A priority list cleaned into what One Button can play. model: the
+ * validated model; rotation: { actions } in the model's language; spells:
+ * the character's spells as the game listed them; auras: buffs the addon saw
+ * on the character ({ name, id }). Returns null when nothing could be carried
+ * over, else { list: [{ id, name, gates }], actions (the same list in the
+ * model's language, to simulate), left (lines for the player), problems (the
+ * lines that say what broke One Button's rules) }.
  */
-export function oneButtonList(model, rotation, spells, context = 'st') {
+export function cleanRotation(model, rotation, spells, { auras = [] } = {}) {
   if (!model || !rotation) return null;
-  const world = makeWorld(model, spells);
+  const world = makeWorld(model, spells, auras);
   const dropped = [];
   const bySpell = new Map();
   (rotation.actions || []).forEach((action, place) => {
@@ -469,12 +550,6 @@ export function oneButtonList(model, rotation, spells, context = 'st') {
     dropped.push({ level: 0, line: `Only the first ${MAX_ENTRIES} abilities of the rotation were carried over.` });
   }
   if (!entries.length) return null;
-  const out = {
-    v: ONE_BUTTON_VERSION,
-    context: context === 'aoe' ? 'aoe' : 'st',
-    rotation: str(rotation.name, NAME_LEN) || 'Rotation',
-    list: entries.map((e) => ({ id: e.spell.id, name: e.spell.name, gates: e.gates })),
-  };
   // A place left out of a spell that still has an entry is one use of it
   // left out, not the spell: said with the conditions left out.
   const listed = new Set(entries.map((e) => e.spell.id));
@@ -483,7 +558,62 @@ export function oneButtonList(model, rotation, spells, context = 'st') {
     if (listed.has(d.spellId)) return { level: 1, line: `One use of ${d.name} was left out: ${d.why}` };
     return { level: 0, line: `${d.name} was left out: ${d.why}` };
   });
-  const left = leftLines([...said, ...entries.flatMap((e) => e.notes)]);
-  if (left.length) out.left = left;
+  const notes = [...said, ...entries.flatMap((e) => e.notes)];
+  return {
+    list: entries.map((e) => ({ id: e.spell.id, name: e.spell.name, gates: e.gates })),
+    actions: entries.map((e) => e.action),
+    left: leftLines(notes),
+    // Approximations are One Button's limits, not mistakes in the list.
+    problems: leftLines(notes.filter((n) => n.level < 2 || n.twice)),
+  };
+}
+
+/**
+ * A rotation as a One Button priority list, without measuring it: { v,
+ * context ("st" or "aoe"), rotation (its name), list, left? }, or null when
+ * nothing could be translated.
+ */
+export function oneButtonList(model, rotation, spells, context = 'st', { auras = [] } = {}) {
+  const cleaned = cleanRotation(model, rotation, spells, { auras });
+  if (!cleaned) return null;
+  const out = {
+    v: ONE_BUTTON_VERSION,
+    context: context === 'aoe' ? 'aoe' : 'st',
+    rotation: str(rotation.name, NAME_LEN) || 'Rotation',
+    list: cleaned.list,
+  };
+  if (cleaned.left.length) out.left = cleaned.left;
   return out;
+}
+
+/**
+ * The One Button list for one kind of fight ("short" or "long"): the AI's
+ * own list for it (model.oneButton[kind]) when it has one that can be carried
+ * over, else the best candidate of that fight (best: { name, actions }).
+ * measure(actions) simulates the cleaned list in that fight and returns its
+ * value, so what is exported is what was measured. Returns { list: { v,
+ * context, source, rotation?, list, left?, value } or null, problems: what
+ * was wrong with the AI's list }.
+ */
+export function oneButtonFor(model, { kind, best, spells, auras = [], context = 'st', measure }) {
+  const problems = [];
+  const own = model?.oneButton?.[kind];
+  let cleaned = null;
+  let source = 'ai';
+  if (Array.isArray(own) && own.length) {
+    cleaned = cleanRotation(model, { actions: own }, spells, { auras });
+    if (cleaned) problems.push(...cleaned.problems);
+    else problems.push('None of its abilities could be carried over to One Button: the best candidate was used instead.');
+  }
+  if (!cleaned) {
+    cleaned = cleanRotation(model, best, spells, { auras });
+    source = 'best';
+  }
+  if (!cleaned) return { list: null, problems };
+  const out = { v: ONE_BUTTON_VERSION, context: context === 'aoe' ? 'aoe' : 'st', source };
+  if (source === 'best') out.rotation = str(best.name, NAME_LEN) || 'Rotation';
+  out.list = cleaned.list;
+  if (cleaned.left.length) out.left = cleaned.left;
+  out.value = measure(cleaned.actions);
+  return { list: out, problems };
 }

@@ -50,6 +50,9 @@ export const RULES = Object.freeze({
   // Event loop: while idle and blocked only by a condition (target health,
   // time), decisions are re-checked this often.
   IDLE_POLL: 0.1,
+  // "usedOnTarget": how long a use counts, as Forever One Button counts the
+  // player's own casts on a target (Engine/Dots.lua DEFAULT_STACKING).
+  USED_ON_TARGET_SEC: 30,
   MAX_ACTIONS_PER_DECISION: 32,
   MAX_EVENTS_PER_FIGHT: 500000,
   EPS: 1e-9,
@@ -101,6 +104,7 @@ const TRIGGERS = ['meleeHit', 'meleeCrit', 'swing', 'rangedHit', 'spellHit', 'sp
   'anyHit', 'anyCrit', 'dotTick', 'abilityUse'];
 const CHARGE_ON = ['swing', 'ability', 'spell'];
 const WEAPON_SLOTS = ['mainHand', 'offHand', 'ranged'];
+const FIGHT_KINDS = ['short', 'long'];
 const NUM_CONDS = ['resourceAtLeast', 'resourceBelow', 'targetHealthBelow', 'targetHealthAbove',
   'timeAtLeast', 'timeRemainingBelow', 'targetsAtLeast', 'swingTimerAbove'];
 // Extra statConversions targets besides player.stats (see statWeights).
@@ -320,8 +324,14 @@ function normCond(c, where, refs, R, problems) {
       if (!id) { problems.push(`${where} ${key} references unknown ability ${quote(o.id)}: ignored`); continue; }
       if (key === 'cooldownUp') out[key] = id;
       else out[key] = { id, sec: R.num(o.sec, 0, 0, 1e6, `${where} ${key}.sec`) };
-    } else if (key === 'any') {
-      out.any = asList(v).map((x, i) => normCond(x, `${where} any ${i + 1}`, refs, R, problems)).filter(Boolean);
+    } else if (key === 'usedOnTarget') {
+      const id = refs.ability(v);
+      if (!id) { problems.push(`${where} ${key} references unknown ability ${quote(v)}: ignored`); continue; }
+      out[key] = id;
+    } else if (key === 'any' || key === 'all') {
+      // "all" is not in the spec: the One Button translation (onebutton.js)
+      // uses it when two conditions of one action share a key.
+      out[key] = asList(v).map((x, i) => normCond(x, `${where} ${key} ${i + 1}`, refs, R, problems)).filter(Boolean);
     } else if (key === 'not') {
       const inner = normCond(v, `${where} not`, refs, R, problems);
       if (inner) out.not = inner;
@@ -535,21 +545,38 @@ function normalizeInner(raw, problems) {
     if (Object.keys(c).length) statConversions[stat] = c;
   }
 
+  const actionsOf = (list, label, into) => {
+    const actions = [];
+    asList(list).forEach((act, ai) => {
+      const a = typeof act === 'string' ? { use: act } : asObj(act);
+      const id = findAb(a.use);
+      if (!id) { into.push(`${label} action ${ai + 1} uses unknown ability ${quote(a.use)}`); return; }
+      const cond = normCond(a.if, `${label} action ${ai + 1} condition`, refs, R, into);
+      actions.push(cond ? { use: id, if: cond } : { use: id });
+    });
+    return actions;
+  };
   const rotations = [];
   asList(src.rotations).forEach((r, ri) => {
     if (!isObj(r)) { problems.push(`rotation ${ri + 1} is not an object: dropped`); return; }
     const name = r.name != null ? String(r.name) : `Rotation ${ri + 1}`;
-    const actions = [];
-    asList(r.actions).forEach((act, ai) => {
-      const a = typeof act === 'string' ? { use: act } : asObj(act);
-      const id = findAb(a.use);
-      if (!id) { problems.push(`rotation "${name}" action ${ai + 1} uses unknown ability ${quote(a.use)}`); return; }
-      const cond = normCond(a.if, `rotation "${name}" action ${ai + 1} condition`, refs, R, problems);
-      actions.push(cond ? { use: id, if: cond } : { use: id });
-    });
+    const actions = actionsOf(r.actions, `rotation "${name}"`, problems);
     if (!actions.length && autoAttack === 'none') problems.push(`rotation "${name}" has no usable actions and there are no auto attacks: it does nothing`);
     rotations.push({ name, actions });
   });
+
+  // The AI's lists for Forever One Button, one per kind of fight: not
+  // candidates. What is wrong with them is kept apart, so that it never sends
+  // a model back by itself (see index.js).
+  const oneButtonProblems = [];
+  const oneButton = {};
+  if (src.oneButton != null && !isObj(src.oneButton)) oneButtonProblems.push('oneButton is not an object: ignored');
+  for (const kind of FIGHT_KINDS) {
+    const raw = asObj(src.oneButton)[kind];
+    if (raw == null) continue;
+    const actions = actionsOf(raw, `oneButton.${kind}`, oneButtonProblems);
+    if (actions.length) oneButton[kind] = actions;
+  }
 
   let fatal = false;
   if (!rotations.length) { problems.push('no rotations'); fatal = true; }
@@ -561,7 +588,8 @@ function normalizeInner(raw, problems) {
     abilities, buffs, procs, statConversions, rotations,
   };
   if (enemy) model.enemy = enemy;
-  return { model, problems, fatal };
+  if (Object.keys(oneButton).length) model.oneButton = oneButton;
+  return { model, problems, fatal, oneButtonProblems };
 }
 
 // --------------------------------------------------------------- compile
@@ -681,7 +709,9 @@ function compileCond(c, C) {
       case 'buffRemainsBelow': { const L = look(v.id); tests.push((S) => remains(L, S) < v.sec); break; }
       case 'cooldownUp': { const i = C.abIdx.get(v); tests.push((S) => S.cd[i] <= S.t + RULES.EPS); break; }
       case 'cooldownRemainsAbove': { const i = C.abIdx.get(v.id); tests.push((S) => S.cd[i] - S.t > v.sec); break; }
+      case 'usedOnTarget': { const i = C.abIdx.get(v); tests.push((S) => S.t - S.lastUse[i] < RULES.USED_ON_TARGET_SEC); break; }
       case 'any': { const fs = v.map((x) => compileCond(x, C)).filter(Boolean); tests.push((S) => fs.some((f) => f(S))); break; }
+      case 'all': { const fs = v.map((x) => compileCond(x, C)).filter(Boolean); tests.push((S) => fs.every((f) => f(S))); break; }
       case 'not': { const f = compileCond(v, C); if (f) tests.push((S) => !f(S)); break; }
       default: break;
     }
@@ -700,7 +730,7 @@ function newState(C, seed, iter) {
     res: C.resOn ? C.res.start : 0, gcdReady: 0, cast: null, queued: -1,
     mhNext: C.melee ? 0 : Infinity, ohNext: C.dualWield ? 0 : Infinity, rgNext: C.rangedAuto ? 0 : Infinity,
     tickNext: C.resOn && C.res.tick ? C.res.tick.interval : Infinity, wake: Infinity,
-    cd: new Float64Array(nAb), used: new Int32Array(nAb), stamp: 0,
+    cd: new Float64Array(nAb), used: new Int32Array(nAb), stamp: 0, lastUse: new Float64Array(nAb).fill(-Infinity),
     bStacks: new Int32Array(nB), bExp: new Float64Array(nB), bCharges: new Int32Array(nB),
     bSince: new Float64Array(nB), bUp: new Float64Array(nB),
     dLeft: new Int32Array(nAb), dNext: new Float64Array(nAb), dExp: new Float64Array(nAb), dVal: new Float64Array(nAb),
@@ -944,6 +974,7 @@ function dotTick(S, a) {
 // Everything that follows a use once its hit roll is known: charges,
 // consumed buffs, applied buffs and dots, resource gain, use procs.
 function afterUse(S, a, landed) {
+  S.lastUse[a.idx] = S.t;
   useCharges(S, a.chargeKind);
   for (const b of a.consumeIdx) removeBuff(S, b);
   for (const b of a.selfBuffs) applyBuff(S, b);

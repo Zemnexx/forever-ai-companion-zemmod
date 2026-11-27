@@ -59,12 +59,22 @@ function sampleGear({ ctx }) {
   });
 }
 
-// A model with the character's auto attack (or a plain bolt for a caster).
+// A spell of the character for the placeholder ability to be named after, so
+// that its One Button lists name a real spell: the first one that is not
+// passive, or none.
+function borrowed(ctx) {
+  const spell = list(ctx.armory_spells).find((s) => s && !s.passive && str(s.name, 80) && num(s.id));
+  return spell ? { name: str(spell.name, 80), spellId: num(spell.id) } : null;
+}
+
+// A model with the character's auto attack (or a plain bolt for a caster),
+// with a One Button list for each kind of fight.
 function sampleModel(ctx) {
   const combat = ctx.armory_combat || {};
   const level = num(ctx.character?.level) || 60;
   const weapon = combat.mainHand && num(combat.mainHand.max) ? combat.mainHand : null;
   const fight = { duration: 60, targets: 1, targetLevel: level, targetArmor: weapon ? level * 60 : 0 };
+  const named = borrowed(ctx);
   if (weapon) {
     // The sheet's damage includes attack power; the simulator adds it itself.
     const attackPower = num(combat.attackPower) || 0;
@@ -78,11 +88,13 @@ function sampleModel(ctx) {
         weapons: { mainHand: { min: own(weapon.min), max: Math.max(own(weapon.max), own(weapon.min) + 1), speed } },
         resource: { type: 'none', max: 0, start: 0 },
       },
-      abilities: [{ id: 'strike', name: 'Test strike', type: 'melee', school: 'physical', cost: 0, gcd: 1.5, cooldown: 6, damage: { weaponPct: 100 } }],
+      abilities: [{ id: 'strike', name: 'Test strike', ...named, type: 'melee', school: 'physical', cost: 0, gcd: 1.5, cooldown: 6, damage: { weaponPct: 100 } }],
       rotations: [
         { name: 'Auto attack only', actions: [] },
         { name: 'Auto attack and a strike', actions: [{ use: 'strike', note: 'on cooldown' }] },
       ],
+      // Two different lists, the long one with a condition only One Button lists have.
+      oneButton: { short: [{ use: 'strike' }], long: [{ use: 'strike', if: { not: { usedOnTarget: 'strike' } } }] },
     };
   }
   return {
@@ -92,8 +104,9 @@ function sampleModel(ctx) {
       stats: { spellPower: num(combat.spellPower) || 0, spellCritPct: num(combat.spellCritPct) || 5 },
       resource: { type: 'mana', max: num(combat.resourceMax) || 2000, start: num(combat.resourceMax) || 2000, regenPerSec: 5 },
     },
-    abilities: [{ id: 'bolt', name: 'Test bolt', type: 'spell', school: 'fire', cost: 60, castTime: 2.5, gcd: 1.5, damage: { min: 180, max: 220, spCoef: 0.71 } }],
+    abilities: [{ id: 'bolt', name: 'Test bolt', ...named, type: 'spell', school: 'fire', cost: 60, castTime: 2.5, gcd: 1.5, damage: { min: 180, max: 220, spCoef: 0.71 } }],
     rotations: [{ name: 'Bolt', actions: [{ use: 'bolt', note: 'always' }] }],
+    oneButton: { short: [{ use: 'bolt' }], long: [{ use: 'bolt' }] },
   };
 }
 
@@ -110,15 +123,17 @@ function sampleRotation({ ctx, profile, iterations }) {
   const tank = profile?.role === 'tank';
   const plain = sampleModel(ctx);
   const model = tank ? tankModel(plain, plain.player.level) : plain;
-  const run = runModel(model, { iterations, tank, defense: tank ? ctx.armory_combat : null });
+  const run = runModel(model, { iterations, tank, defense: tank ? ctx.armory_combat : null, goal: profile?.goal });
   if (run.fatal) throw new Error(run.problems.join('; ') || 'the test model could not be simulated');
   const assumptions = ['The abilities are placeholders, not your spells.'];
+  const name = model.abilities[0].name;
+  if (!/^Test /.test(name)) assumptions.push(`The placeholder ability borrows the name of your ${name}, so that its One Button lists can be tried.`);
   if (tank) assumptions.push('The threat numbers and the enemy are placeholders too: the enemy hits for 8 damage per level every 2 seconds.');
   return shapeRotation({
     summary: 'Test mode: a made-up model simulated for real, without an AI. The numbers only show that the simulator runs.',
     assumptions,
     model,
-  }, run);
+  }, run, { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile?.aoe ? 'aoe' : 'st' });
 }
 
 function sampleIdeas() {

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6.0 (addon 1.17.1)
+
+Short and long fights, and One Button lists written by the AI and measured (the Armory's addon 0.5.0). Both come from the owner's first test of 2.5.0 in the game.
+
+### Added
+
+- **Every rotation analysis simulates two kinds of fight.** Whatever your goal, you meet ordinary enemies (a short fight, about 25 seconds) and elites or bosses (a long one: about a minute two levels above you, or three minutes against a raid boss with a raid goal), and the best rotation differs. The fight of your goal stays the main one: stat worth, the ability table, a tank's survival and the gear plan's weights are measured there. The app derives the other fight from it and simulates every candidate in both. The Armory's Rotation tab shows the best rotation of each kind and each candidate's number in both (`fight.kind` and `otherFight` in the result). The AI is asked for candidates made for each kind.
+- **Buffs seen on your character.** The Armory remembers the name and spell id of the buffs it sees on your character and sends them with a rotation analysis (`armory_auras`). A buff that no spell of yours gives, such as a talent's or an item's proc, can then be checked in a One Button list.
+- **`usedOnTarget` in the combat model:** an ability was used in the last 30 seconds. It is how Forever One Button knows that an opener was done or a debuff applied, and the simulator now has the same condition.
+
+### Changed
+
+- **The AI writes the lists for Forever One Button, and the simulator measures them.** In 2.5.0 the app translated the best rotation by code. In the game that gave a profile without two of a rotation's six abilities: "on the pull" and "at 3 stacks of a proc buff" have no direct equivalent in One Button, and code cannot re-express what was meant. Now the combat model carries a list for One Button per kind of fight (`oneButton.short`, `oneButton.long`), written by the AI under One Button's limits: each ability once, only conditions One Button can check, no conditions on time. The app still checks: spell ids come from your own spell list or the buffs seen, anything One Button cannot do is cleaned out by the rules of 2.5.0 and said, and exactly the cleaned list is simulated in its fight. The Armory shows what each list is worth next to the best rotation, and whether the AI wrote it or it was translated from the best rotation (when the AI gave none).
+- **A One Button profile per kind of fight.** One Button cannot tell an ordinary enemy from a boss, so the lists for short and long fights are two profiles to switch between ("... short" and "... long"); the Armory's export box has a button for each. When both lists are the same there is one profile.
+- What was wrong with a One Button list is only said to the AI when its model is sent back anyway: a list alone never causes a second request.
+
 ## 2.5.0 (addon 1.17.1)
 
 The Armory's best rotation as a profile for Forever One Button (the Armory's addon 0.4.0).

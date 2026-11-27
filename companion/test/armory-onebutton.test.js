@@ -3,9 +3,9 @@
 // Button's gates, or named in "left" when it could not be carried over.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { oneButtonList } from '../src/armory/onebutton.js';
-import { normalizeModel } from '../src/armory/sim/engine.js';
-import { runModel, shapeRotation } from '../src/armory/rotation.js';
+import { cleanRotation, oneButtonList } from '../src/armory/onebutton.js';
+import { normalizeModel, simulate } from '../src/armory/sim/engine.js';
+import { oneButtonLists, runModel, shapeRotation } from '../src/armory/rotation.js';
 
 // One Button's gate types and their fields, copied from SCHEMA in
 // ForeverOneButton/Core/Profiles.lua (Forever One Button 1.1.4-zm7). Kept
@@ -58,7 +58,13 @@ function assertSchema(gates, depth = 1) {
 function assertOneButton(ob) {
   assert.equal(ob.v, 1);
   assert.ok(['st', 'aoe'].includes(ob.context));
-  assert.ok(typeof ob.rotation === 'string' && ob.rotation.length <= 80);
+  if ('source' in ob) {
+    // A list of an analysis: who wrote it, and its simulated value.
+    assert.ok(['ai', 'best'].includes(ob.source));
+    assert.equal('rotation' in ob, ob.source === 'best', 'the candidate\'s name only for "best"');
+    assert.ok(typeof ob.value === 'number' && ob.value >= 0);
+  }
+  if ('rotation' in ob) assert.ok(typeof ob.rotation === 'string' && ob.rotation.length <= 80);
   assert.ok(ob.list.length > 0 && ob.list.length <= 60);
   for (const e of ob.list) {
     assert.deepEqual(Object.keys(e).sort(), ['gates', 'id', 'name']);
@@ -82,6 +88,8 @@ const SPELLS = [
   { name: 'Holy Light', id: 19943 },
   { name: 'Shadow Word: Pain', id: 589 },
   { name: 'Hex Mark', id: 5001 },
+  { name: 'Seal of Righteousness', id: 20293 },
+  { name: 'Holy Strike', id: 1310001 },
 ];
 
 // A small model with one ability and buff of each kind; the rotation is given per test.
@@ -443,8 +451,10 @@ test('shapeRotation carries the list of the best rotation only, and none for a h
   assert.equal(data.rotations[0].name, 'Both');
   assertOneButton(data.oneButton);
   assert.deepEqual(data.oneButton, {
-    v: 1, context: 'aoe', rotation: 'Both',
+    v: 1, context: 'aoe', source: 'best', rotation: 'Both',
     list: [{ id: 10314, name: 'Exorcism', gates: [] }, { id: 35395, name: 'Crusader Strike', gates: [{ t: 'targets', op: '>=', n: 1 }] }],
+    // Nothing had to be cleaned: the list plays exactly as the candidate did.
+    value: data.rotations[0].value,
   });
   assert.equal(shapeRotation({ model: src }, run).oneButton, undefined, 'no spells: nothing to name');
   const heal = {
@@ -456,4 +466,187 @@ test('shapeRotation carries the list of the best rotation only, and none for a h
   const healed = shapeRotation({ model: heal }, healRun, { spells: SPELLS });
   assert.equal(healed.metric, 'hps');
   assert.equal(healed.oneButton, undefined);
+  assert.ok(healed.otherFight.rotations.length, 'a healer gets the other fight too');
+  assert.equal(healed.otherFight.oneButton, undefined, 'but no list in it either');
+});
+
+// ------------------------------------------------ the lists of an analysis
+
+// The model of the owner's case: a seal on the pull, Judgement, Seal of
+// Command kept up, Seal of Righteousness at 3 stacks of a proc buff just
+// after a swing, Holy Strike. The proc buff is no spell of the character.
+// Seal of Command's buff is listed under another id than the spell: the
+// character's spell of that name still names it.
+const PALADIN_AURAS = [{ name: 'Zealous Fervor', id: 1300042 }, { name: 'seal of command', id: 99920 }];
+function paladin(oneButton, extra = {}) {
+  return {
+    version: 1, kind: 'damage', fight: { duration: 60, targets: 1, targetLevel: 60, targetArmor: 3000 },
+    player: { level: 60, autoAttack: 'melee', stats: { attackPower: 1000, critPct: 10 }, weapons: { mainHand: { min: 200, max: 300, speed: 3.5 } },
+      resource: { type: 'mana', max: 5000, start: 5000, regenPerSec: 10 } },
+    abilities: [
+      { id: 'sotc', name: 'Seal of the Crusader', type: 'spell', school: 'holy', cost: 40, gcd: 1.5, applies: ['sotc_buff'], consumes: ['soc_buff', 'sor_buff'] },
+      { id: 'judge', name: 'Judgement', type: 'spell', school: 'holy', cost: 50, gcd: 0, cooldown: 8, damage: { min: 300, max: 300 }, applies: ['jotc'] },
+      { id: 'soc', name: 'Seal of Command', type: 'spell', school: 'holy', cost: 65, gcd: 1.5, applies: ['soc_buff'], consumes: ['sotc_buff', 'sor_buff'] },
+      { id: 'sor', name: 'Seal of Righteousness', type: 'spell', school: 'holy', cost: 60, gcd: 1.5, applies: ['sor_buff'], consumes: ['soc_buff', 'sotc_buff', 'zeal'] },
+      { id: 'hs', name: 'Holy Strike', type: 'melee', cost: 30, gcd: 1.5, cooldown: 6, damage: { weaponPct: 100 } },
+      { id: 'exo', name: 'Exorcism', type: 'spell', school: 'holy', cost: 200, gcd: 1.5, cooldown: 0, damage: { min: 400, max: 400 } },
+      { id: 'swp', name: 'Shadow Word: Pain', type: 'spell', school: 'shadow', cost: 100, gcd: 1.5, dot: { tickDamage: 40, interval: 3, duration: 18 } },
+    ],
+    buffs: [
+      { id: 'sotc_buff', name: 'Seal of the Crusader', duration: 30, modifiers: [{ stat: 'attackPower', value: 100 }] },
+      { id: 'soc_buff', name: 'Seal of Command', duration: 30, modifiers: [{ stat: 'damagePct', value: 10 }] },
+      { id: 'sor_buff', name: 'Seal of Righteousness', duration: 30, modifiers: [{ stat: 'damagePct', value: 12 }] },
+      { id: 'jotc', name: 'Judgement of the Crusader', onTarget: true, duration: 10 },
+      { id: 'zeal', name: 'Zealous Fervor', duration: 20, maxStacks: 3 },
+    ],
+    procs: [{ id: 'zealproc', name: 'Zeal', trigger: 'meleeHit', chance: 0.5, effect: { buff: 'zeal' } }],
+    rotations: [
+      { name: 'Command', actions: [{ use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }, { use: 'hs' }] },
+      { name: 'Strike first', actions: [{ use: 'hs' }, { use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }] },
+    ],
+    ...(oneButton ? { oneButton } : {}),
+    ...extra,
+  };
+}
+const OWNER_LIST = [
+  { use: 'sotc', if: { buffDown: 'sotc_buff', not: { usedOnTarget: 'judge' } } },
+  { use: 'judge' },
+  { use: 'sor', if: { buffStacksAtLeast: { id: 'zeal', n: 3 }, swingTimerAbove: 1.5, buffDown: 'sor_buff' } },
+  { use: 'soc', if: { buffDown: 'soc_buff' } },
+  { use: 'hs' },
+];
+// An analysis of one of these models: the run and its One Button lists.
+function analyse(raw, { goal = 'leveling', auras = PALADIN_AURAS } = {}) {
+  const run = runModel(raw, { iterations: 40, weights: false, goal });
+  return { run, lists: oneButtonLists(run, { spells: SPELLS, auras }) };
+}
+// What a list of model actions is worth in a fight of the run, simulated as the candidates were.
+const worth = (run, actions, fight = run.model.fight) => {
+  const sim = simulate({ ...run.model, fight, rotations: [{ name: 'x', actions }] }, run.opts);
+  return Math.round(sim.rotations[0].value * 10) / 10;
+};
+
+test('the AI\'s own list is used and said to be: the owner\'s case, carried over exactly', () => {
+  const { run, lists } = analyse(paladin({ short: OWNER_LIST, long: OWNER_LIST }));
+  const ob = lists.primary;
+  assertOneButton(ob);
+  assert.equal(ob.source, 'ai');
+  assert.equal(ob.rotation, undefined);
+  assert.deepEqual(ob.list, [
+    // The opener: "this target has not been judged yet".
+    { id: 20305, name: 'Seal of the Crusader', gates: [{ t: 'buff', id: 20305, dur: 30, neg: true }, { t: 'stack', id: 20271, op: '<', n: 1, tgt: true }] },
+    { id: 20271, name: 'Judgement', gates: [] },
+    // The proc buff is named through armory_auras, by its own id.
+    { id: 20293, name: 'Seal of Righteousness', gates: [
+      { t: 'stack', id: 1300042, op: '>=', n: 3 }, { t: 'swing', op: '>', n: 1.5 }, { t: 'buff', id: 20293, dur: 30, neg: true },
+    ] },
+    { id: 20920, name: 'Seal of Command', gates: [{ t: 'buff', id: 20920, dur: 30, neg: true }] },
+    { id: 1310001, name: 'Holy Strike', gates: [] },
+  ]);
+  assert.equal(ob.left, undefined, 'nothing left out');
+  assert.deepEqual(lists.problems, []);
+  // Nothing cleaned away: the value is the AI's list as it was written.
+  assert.equal(ob.value, worth(run, run.model.oneButton.short));
+  // Without the aura the proc buff cannot be named: that place goes.
+  const blind = analyse(paladin({ short: OWNER_LIST }), { auras: [] }).lists.primary;
+  assert.deepEqual(blind.list.map((e) => e.name), ['Seal of the Crusader', 'Judgement', 'Seal of Command', 'Holy Strike']);
+  assert.match(blind.left[0], /^Seal of Righteousness was left out: One Button cannot check for 3 or more stacks of Zealous Fervor/);
+  // Names are compared without case.
+  const lower = analyse(paladin({ short: OWNER_LIST }), { auras: [{ name: 'zealous FERVOR', id: 7 }] }).lists.primary;
+  assert.deepEqual(lower.list[2].gates[0], { t: 'stack', id: 7, op: '>=', n: 3 });
+});
+
+test('without a list of its own the best candidate of that fight is translated', () => {
+  const { run, lists } = analyse(paladin(null));
+  assertOneButton(lists.primary);
+  assert.equal(lists.primary.source, 'best');
+  const best = run.sim.rotations[run.sim.best];
+  assert.equal(lists.primary.rotation, best.name);
+  assert.equal(lists.primary.value, Math.round(best.value * 10) / 10, 'nothing cleaned: the candidate\'s own number');
+  assert.equal(lists.other.source, 'best');
+  assert.equal(lists.other.rotation, run.other.sim.rotations[run.other.sim.best].name);
+  // An empty list of its own counts as none.
+  assert.equal(analyse(paladin({ short: [] })).lists.primary.source, 'best');
+  // So does one of which nothing can be carried over, which is said.
+  const none = analyse(paladin({ short: [{ use: 'exo', if: { timeAtLeast: 10 } }] }));
+  assert.equal(none.lists.primary.source, 'best');
+  assert.ok(none.lists.problems.some((p) => /^oneButton\.short: None of its abilities could be carried over/.test(p)), none.lists.problems.join(' | '));
+});
+
+test('usedOnTarget on a DoT One Button tracks itself is not carried over', () => {
+  const ob = cleanRotation(normalizeModel(paladin()).model, { actions: [
+    { use: 'exo', if: { usedOnTarget: 'swp' } }, { use: 'hs', if: { not: { usedOnTarget: 'swp' } } }, { use: 'judge', if: { usedOnTarget: 'hs' } },
+  ] }, SPELLS);
+  assert.deepEqual(ob.list, [
+    { id: 1310001, name: 'Holy Strike', gates: [] },
+    { id: 20271, name: 'Judgement', gates: [{ t: 'stack', id: 1310001, op: '>=', n: 1, tgt: true }] },
+  ]);
+  assert.match(ob.left[0], /^Exorcism was left out: One Button cannot check for Shadow Word: Pain used on the target in the last 30 seconds \(One Button keeps track/);
+  assert.match(ob.left[1], /^Holy Strike is suggested without checking for Shadow Word: Pain not used on the target/);
+  // In the model's language, what was left out is left out of what is simulated.
+  assert.deepEqual(ob.actions, [{ use: 'hs' }, { use: 'judge', if: { usedOnTarget: 'hs' } }]);
+});
+
+test('an AI list that breaks the rules is cleaned by the same rules, and says so', () => {
+  const broken = [
+    { use: 'hs', if: { timeAtLeast: 20 } },      // a time condition on an ability with a cooldown: kept without it
+    { use: 'exo', if: { timeRemainingBelow: 10 } }, // without a cooldown: left out
+    { use: 'judge' },
+    { use: 'hs' },                               // twice
+  ];
+  const { lists } = analyse(paladin({ short: broken }));
+  const ob = lists.primary;
+  assertOneButton(ob);
+  assert.equal(ob.source, 'ai');
+  assert.deepEqual(ob.list, [{ id: 1310001, name: 'Holy Strike', gates: [] }, { id: 20271, name: 'Judgement', gates: [] }]);
+  assert.deepEqual(lists.problems, [
+    'oneButton.short: Exorcism was left out: One Button cannot check for the last 10 seconds of the fight, and without it the spell would always come first.',
+    'oneButton.short: Holy Strike is suggested without checking for 20 seconds into the fight, which One Button cannot do.',
+  ]);
+  // The ability listed twice after a plain place: nothing to say, the first place stands.
+  const twice = analyse(paladin({ short: [{ use: 'hs', if: { targetsAtLeast: 2 } }, { use: 'judge' }, { use: 'hs' }] })).lists;
+  assert.deepEqual(twice.primary.list.map((e) => e.name), ['Judgement', 'Holy Strike']);
+  assert.deepEqual(twice.problems, ['oneButton.short: Holy Strike is listed more than once: One Button reads each ability once, so it keeps its lowest place.']);
+  // What the model's normalization found wrong in a list comes along.
+  const unknown = analyse(paladin({ short: [{ use: 'nothing' }, { use: 'hs' }] })).lists;
+  assert.deepEqual(unknown.problems, ['oneButton.short action 1 uses unknown ability "nothing"']);
+});
+
+test('the value reported is that of the cleaned list', () => {
+  // Holy Strike only after 30 seconds, Seal of Command kept up: One Button
+  // cannot wait for the clock, so it plays Holy Strike from the start.
+  const written = [{ use: 'judge' }, { use: 'hs', if: { timeAtLeast: 30 } }, { use: 'soc', if: { buffDown: 'soc_buff' } }];
+  const { run, lists } = analyse(paladin({ short: written }));
+  const cleaned = [{ use: 'judge' }, { use: 'hs' }, { use: 'soc', if: { buffDown: 'soc_buff' } }];
+  assert.equal(lists.primary.value, worth(run, cleaned));
+  assert.notEqual(lists.primary.value, worth(run, run.model.oneButton.short), 'not the number of the list as written');
+  // A condition only carried over roughly is simulated the rough way: a
+  // debuff One Button does not track is counted from casts, 30 seconds each.
+  const rough = cleanRotation(run.model, { actions: [{ use: 'judge', if: { buffUp: 'jotc' } }, { use: 'soc', if: { buffRemainsBelow: { id: 'soc_buff', sec: 3 } } }] }, SPELLS);
+  assert.deepEqual(rough.actions, [{ use: 'judge', if: { usedOnTarget: 'judge' } }, { use: 'soc', if: { buffDown: 'soc_buff' } }]);
+  // A DoT One Button tracks waits for itself to run out, asked or not.
+  const dot = cleanRotation(run.model, { actions: [{ use: 'swp' }] }, SPELLS);
+  assert.deepEqual(dot.actions, [{ use: 'swp', if: { buffDown: 'swp' } }]);
+  assert.deepEqual(dot.list[0].gates, []);
+});
+
+test('each kind of fight has its own list and its own number', () => {
+  const short = [{ use: 'judge' }, { use: 'hs' }];
+  const long = [{ use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }, { use: 'hs' }];
+  // Leveling: the model's fight is the short one, the other is long.
+  const lev = analyse(paladin({ short, long }));
+  assert.equal(lev.run.kind, 'short');
+  assert.deepEqual(lev.lists.primary.list.map((e) => e.name), ['Judgement', 'Holy Strike']);
+  assert.deepEqual(lev.lists.other.list.map((e) => e.name), ['Judgement', 'Seal of Command', 'Holy Strike']);
+  assert.equal(lev.lists.other.value, worth(lev.run, lev.run.model.oneButton.long, { ...lev.run.other.fight, kind: undefined }));
+  assert.notEqual(lev.lists.primary.value, lev.lists.other.value);
+  // Dungeons: the other way round.
+  const dun = analyse(paladin({ short, long }), { goal: 'dungeons' });
+  assert.equal(dun.run.kind, 'long');
+  assert.deepEqual(dun.lists.primary.list.map((e) => e.name), ['Judgement', 'Seal of Command', 'Holy Strike']);
+  assert.deepEqual(dun.lists.other.list.map((e) => e.name), ['Judgement', 'Holy Strike']);
+  // Only one list written: the other kind falls back to its best candidate.
+  const one = analyse(paladin({ long }));
+  assert.equal(one.lists.primary.source, 'best');
+  assert.equal(one.lists.other.source, 'ai');
 });

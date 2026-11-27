@@ -1043,6 +1043,14 @@ function UI:BuildOneButton()
   title:SetPoint("TOPLEFT", PAD, -PAD)
   title:SetText(L.OB_TITLE)
   d.title = title
+  -- With a profile per kind of fight, these choose which one is shown.
+  d.choices = {}
+  for i, label in ipairs({ L.OB_TAB_SHORT, L.OB_TAB_LONG }) do
+    local c = chip(d, label, function() UI:ChooseOneButton(i) end)
+    c:SetPoint("TOPLEFT", i == 1 and PAD or (PAD + d.choices[1]:GetWidth() + 6), -42)
+    c:Hide()
+    d.choices[i] = c
+  end
   d.box = copyBox(d, DIALOG_WIDTH - PAD * 2)
   d.box:SetPoint("TOPLEFT", PAD, -42)
   d.lines, d.used = {}, 0
@@ -1052,12 +1060,25 @@ function UI:BuildOneButton()
   return d
 end
 
--- Lays out the dialog's texts under the box. kind: "h" a heading, "p" a
--- paragraph, "note" a numbered or bulleted line.
+-- Lays out the dialog for the profile chosen: the buttons that choose it
+-- when there are two, its text in the box, and its texts under the box.
+-- kind: "h" a heading, "p" a paragraph, "note" a numbered or bulleted line.
 local function fillOneButton(d, model)
+  local profiles = model.profiles or { model }
+  local shown = profiles[d.chosen] or profiles[1]
+  local two = #profiles > 1
+  for i, c in ipairs(d.choices) do
+    c:SetShown(two)
+    c:SetOn(two and i == d.chosen)
+  end
+  local top = two and 42 + 24 + 8 or 42
+  d.box:ClearAllPoints()
+  d.box:SetPoint("TOPLEFT", PAD, -top)
+  d.box.fixed = shown.text
+  d.box:SetText(shown.text)
   for _, fs in ipairs(d.lines) do fs:Hide() end
   d.used = 0
-  local y = 42 + 26 + 10
+  local y = top + 26 + 10
   local width = DIALOG_WIDTH - PAD * 2
   local function put(kind, body, tone)
     d.used = d.used + 1
@@ -1077,19 +1098,28 @@ local function fillOneButton(d, model)
     fs:Show()
     y = y + (fs:GetStringHeight() or 14) + (kind == "h" and 4 or 5)
   end
-  put("p", model.summary)
-  if model.copied then put("p", model.copied, "warn") end
+  put("p", shown.summary)
+  if shown.both then put("p", shown.both, "muted") end
+  for _, line in ipairs(shown.worth or {}) do put("p", line, "muted") end
+  if shown.copied then put("p", shown.copied, "warn") end
   put("h", L.OB_HOW)
-  for i, step in ipairs(model.steps) do put("note", i .. ". " .. step) end
+  for i, step in ipairs(shown.steps) do put("note", i .. ". " .. step) end
   if model.missing then put("p", model.missing, "muted") end
   put("h", L.OB_LEFT)
-  for _, line in ipairs(model.left) do put("note", "- " .. line) end
+  for _, line in ipairs(shown.left) do put("note", "- " .. line) end
   put("p", model.standing, "muted")
   d:SetHeight(y + 24 + PAD * 2)
 end
 
+-- Selected again so Ctrl+C copies the profile now shown.
+local function selectText(d)
+  d.box:SetFocus()
+  d.box:HighlightText()
+end
+
 -- Opens the dialog: true, or false and why there is nothing to show
--- ("class" or "none", OneButton.Build).
+-- ("class" or "none", OneButton.Build). It opens on the profile for the kind
+-- of fight the newest analysis was about.
 function UI:ShowOneButton()
   local ok, model, why = pcall(ns.OneButton.Dialog)
   if not ok then
@@ -1098,15 +1128,21 @@ function UI:ShowOneButton()
   end
   if not model then return false, why end
   local d = self:BuildOneButton()
-  d.box.fixed = model.text
-  d.box:SetText(model.text)
+  d.model, d.chosen = model, model.chosen or 1
   fillOneButton(d, model)
-  d.model = model
   d:Show()
   if d.Raise then d:Raise() end
-  d.box:SetFocus()
-  d.box:HighlightText()
+  selectText(d)
   return true
+end
+
+-- One of the two profiles chosen at the top of the dialog.
+function UI:ChooseOneButton(index)
+  local d = self.oneButton
+  if not d or not d.model or not (d.model.profiles or {})[index] then return end
+  d.chosen = index
+  fillOneButton(d, d.model)
+  selectText(d)
 end
 
 -- Showing, switching, refreshing --------------------------------------------------------
