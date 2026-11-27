@@ -1,11 +1,11 @@
 ---
-date: 2026-11-15
+date: 2026-11-27
 gameVersion: 1.60.1
-build: 70938
+build: 71139
 ---
 # World of Warcraft: Forever detailed topics
 
-Detailed facts about World of Warcraft: Forever, gathered on 2026-11-15 from Blizzard posts, Wowhead's WoW Forever database and guides, and other Forever guides. The app sends the AI only the sections that match each question (by the "keywords" line under each "###" title), so keep every section about one thing and list in "keywords" the English and Spanish names a player might type.
+Detailed facts about World of Warcraft: Forever, gathered on 2026-11-15 and updated on 2026-11-27 (Blizzard hotfixes up to Nov 25 and a fact-check) from Blizzard posts, Wowhead's WoW Forever database and guides, and other Forever guides. The app sends the AI only the sections that match each question (by the "keywords" line under each "###" title), so keep every section about one thing and list in "keywords" the English and Spanish names a player might type.
 Conventions: "Blizz" = official Blizzard post; "WH" = Wowhead's Forever database or guides; "per guides" = one source or sources that disagree. Coordinates are x, y on the named zone's map. "(es: ...)" names are from the Spain client (esES); the Latin American client (esMX) sometimes uses other names (e.g. The Drowned City is "La Ciudad Sumergida" in esES and "La Ciudad Anegada" in esMX).
 
 ## Dungeons and raids
@@ -61,6 +61,7 @@ keywords: City of Dalaran, CoD, Ciudad de Dalaran, Dalaran, Alterac Mountains, M
 - Almost every mob is immune to Arcane damage (no Arcane Explosion/Arcane Shot/Counterspell reliance) (WH).
 - Loot (fextralife; WH confirms Ponderous Orb = blue off-hand ilvl 35): Atrexis: Bonebinder's Signet, Gravespike Repeater (crossbow), Graveweave Bindings. Anomaly: Ephemeral Grips, Mana-Warped Chain Shirt, Runemender's Seal. Fel Ancient: Blightleaf Rope, Felbough Arm, Garb of Fallen Felbark. Mana Devourer: Manascale Treads, Slitherwrap Girdle, Spine of the Devourer. Enigma: Drape of Shifting Energy, Violet Sorcerer's Robes, Wand of Mana Concentration. Sentinel: Refractory Scaleguards, Unstable Crystalline Shoulderpads, Blueprint: Spinning Wheel. Lyn: Bonepile Gaze, Cartilage Shapers, Tendonscraper Dagger. Shade: Archmagister's Faceted Pendant, Ponderous Orb, Violet Sorcerer's Mantle, Blueprint: Arcane Salvager.
 - Quests: Alliance - Power Overwhelming (High Sorcerer Andromath, Stormwind Mage Quarter ~49,88), A Green Sample (Shylamiir, Stormwind ~31,63), Starving Arcane + Heart of Disruption (Image of Archmage Modera, after An Alarming Request). Horde - Source of Power (Doctor Martin Felben, Undercity Apothecarium ~46,74), The Grave Knight (Melisara, Tarren Mill ~62,21), Opportunistic Education (Rexxie Copperclutch, inside entrance), Heart of Disruption (Image of Archmage Modera).
+- Nov 19 hotfix: Shade of the Archmage no longer despawns when combat starts (Blizz).
 
 ### The Drowned City (es: La Ciudad Sumergida)
 keywords: The Drowned City, Drowned City, DC, La Ciudad Sumergida, Ciudad Anegada, Ciudad Hundida, I'lalai, Stranglethorn Vale, Vega de Tuercespina, Grom'gol, Booty Bay, Bahía del Botín, Saltseer Pirates, Brinescale naga, Zul'Alai, Var'Taka, Captain Dreadrise, Capitán Alzapavor, Deathless Marrow, Min'loth the Serpent, Primeval Elemental, Gill, Branquia, Umbra
@@ -72,6 +73,7 @@ keywords: The Drowned City, Drowned City, DC, La Ciudad Sumergida, Ciudad Anegad
 - Loot (fextralife; WH confirms Maw of Min'loth = blue shield ilvl 42, Harpoon of Command = blue polearm ilvl 40): Zul'Alai: Berserker Shackles, Bloodslash Axe, Oathbound Bracers. Var'Taka: Brinebelly Leggings, Harpoon of Command. Dreadrise: Briny Sash, Dreadfrost Saber, Frosty Blunderbuss (gun). Primeval Elemental: Heart of the Primeval, Waterlogged Burial Shroud (+ trinket, mail boots per WH). Min'loth: Maw of Min'loth (shield), Serpentbane Crown (+ leather gloves per WH). Gill: Tidebound Dagger, Gill's Gills. Deathless Marrow: staff, ring, mail shoulders (WH; names not verified).
 - Quests: Alliance - Magics of the Drowned City + Take Two With Water (Loremaster Dibbs, Southshore 50.6,57.0; prereq The Second Rebellion chain from Sergeant Yohwa, STV); Ancient Gurubashi Secrets (Archmage Timear, Dalaran, Alterac 15.6,73.6). Horde - The Drowned City (Kin'weelay, Grom'gol 32.2,27.8; prereq The Vile Reef), The Only Good Brinescale... (Commander Aggro'gosh, Grom'gol 32.2,28.8), Ancient Gurubashi Idol (Mazu'kon, Mulgore ~32.6,20.6). Both - Shady Saltseers, The Saltseer Captain (Krazek, Booty Bay 27.0,77.2).
 - Hotfix Nov 9 2026 (Blizz): fixed creatures doing ~30% more damage than intended; Deathless Marrow encounter creature health -25%, Deathless Sorcerer Fireball -25%, Deathless Watcher Charge -50%, Deathless Guardian Shield Slam ~50% less often. Hotfix Nov 6: instance portal now teleports correctly. Hotfix Nov 13: non-boss enemies respawn after 2 hours instead of 1.
+- Nov 16 hotfix: Captain Dreadrise can be stunned (Blizz).
 
 ### Krol'dok Stronghold (es: Bastión Krol'dok)
 keywords: Krol'dok Stronghold, Krol'Dok, KDS, Bastión Krol'dok, Riverglades, Clarofluvial, ogres, Twilight's Hammer, Martillo Crepuscular, Shadowhide gnolls, Slavecrusher Grox, Twilight Commander Zarmok, War Handler Ashka, Nar'gurk, Bossman Toof, Jefazo Toof, Overlord Mugg, Señor supremo Mugg
@@ -100,6 +102,7 @@ keywords: Blackmaw Hold, BMH, Bastión Faucenegra, Blackmaw furbolgs, Faucenegra
 - Live at launch (Nov 6 hotfix mentions Blackmaw Hold creatures).
 - Bosses: NOT fully published; one guide says 7 main encounters (per guides). Varrox Bleakhoof is a Blackmaw boss (WH NPC 247234; quest "Blackmaw Reclamation" lvl 60: bring Head of Varrox Bleakhoof to Gatekeeper Rageroar at Ursolan).
 - Quests (WH quest API): Blackmaw Magic (lvl 59, two faction versions: recover a Blackmaw Ritual Totem from Blackmaw Hold); Blackmaw Pouches (lvl 60: recover 5 Blackmaw Pouches for Ekkal at the Ruins of Eldarath, Azshara). Givers of Blackmaw Magic not verified.
+- Nov 16: a group of non-elite enemies dropped elite loot; fixed, and the accounts that farmed it were punished (Blizz).
 
 ### Shaper's Terrace (es: El Bancal del Creador)
 keywords: Shaper's Terrace, The Shaper's Terrace, Terrace, El Bancal del Creador, Un'Goro Crater, Cráter de Un'Goro, power crystals, cristales de poder, Archival Panel, Panel de archivo, Nanaya, Cinder, Snowtalon, Vitrix, Bolt, Titanosaur, Pillar of Assimilation, Marshal's Refuge
@@ -111,6 +114,7 @@ keywords: Shaper's Terrace, The Shaper's Terrace, Terrace, El Bancal del Creador
 - Loot: Nanaya's Control Spire (blue staff ilvl 63, req 58, from Nanaya - WH). Other loot not verified.
 - A gated raid portal is hidden behind a closed gate near the northern waterfall area (WT; future content, per guides).
 - Quests: Horde - Crystalline Elements (Mayena Earthseeker, Thunder Bluff ~34.8,22.1), Essence of Seeping Slimes (Chemist Fuely, Undercity Apothecarium), The Dark Crystal (Master Apothecary Faranell, Undercity; Achromatic Crystal in tar pits). Alliance - Mapping the Way Forward + Panic at the Digsite (Curator Thorius, Hall of Explorers, Ironforge ~72.6,14.8; kill Venomridge), Digestible Research (Partially Digested Journal inside near entrance).
+- Nov 19 hotfix: Vitrix's Poison Shock does less damage (Blizz).
 
 ### Original dungeons: what Forever changed
 keywords: classic dungeons, mazmorras clásicas, Deadmines, Minas de la Muerte, Stratholme, Blackrock Depths, Profundidades de Roca Negra, Upper Blackrock Spire, Cumbre de Roca Negra Superior, Maraudon, Gnomeregan, changes, cambios, Pix Xizzix, weekly dungeon quests, Master Spelunker, Legacy
@@ -118,18 +122,19 @@ keywords: classic dungeons, mazmorras clásicas, Deadmines, Minas de la Muerte, 
 - Deadmines: boss order unchanged (Rhahk'zor, Miner Johnson rare, Sneed's Shredder, Gilnid, Mr. Smite, Captain Greenskin, Edwin VanCleef, Cookie optional). New Forever quest chain in Westfall: "Destruction in Deadmines" (Alba Fairmoon, Sentinel Hill; place Extra-Destructive Explosives at the goblin forge) (WT). Hotfix: Sneed now ejects if Shredder is stunned at 0%.
 - Upper Blackrock Spire is 10-player and can drop multiple items per boss kill (fextralife).
 - Weekly dungeon quests: Pix Xizzix, Undermine Trader (lvl 60 NPC, Booty Bay ~28.4,75.8 STV - WH) gives weekly dungeon quests, removed from quest log at weekly reset (Blizz hotfix Nov 13). Contents not verified.
-- XP rules (Blizz hotfixes): dungeon enemy-kill XP +50% (Nov 9); enemies give ZERO XP to the whole party if trivial (grey) to any member (Nov 13; anti-boost).
+- XP rules (Blizz hotfixes): dungeon enemy-kill XP +50% (Nov 9). Since Nov 14, no one in the party gets XP from an enemy when a party member is more than 12 levels above it (anti-boost). The Nov 13 rule (no XP if the enemy was trivial to anyone) was replaced the next day.
 - Other hotfixes: no mounting inside Stratholme (Nov 9); Zaetar's Spirit spawns in Maraudon after Princess Theradras (Nov 6); BRD throne doors open after Thaurissan wipe; Heart of the Mountain lootable more than once (Nov 9); Gnomeregan Techbot respawn reduced (Nov 13); Waylaid Crates and Craftsman's Writs can drop in dungeons (Nov 9).
 - Legacy Challenges (account-wide achievements granting Legacy Points), e.g. "Master Spelunker" (es: Espeleólogo maestro): complete RFD, Uldaman, ZF, Maraudon, Alcaz Prison, Sunken Temple, BRD, Blackmaw Hold, LBRS, UBRS, Scholomance, Strat Live, Strat Dead, DM East/North/West, Shaper's Terrace (WH).
 - Group Finder suggested levels from beta datamine (kami-labs, Oct 2026, per guides): RFC 13, HoT 13, RoL 15, Deadmines 16, WC 17, SFK 18, BFD 22, Stockade 23, RFK 24, Gnomeregan 25, ESW 26, CoD 28, SM 30, RFD 34, Uldaman 35, Maraudon 42, ZF 42, ST 45, BRD 48, Blackrock Spire 53, Dire Maul 54, Stratholme 55, Scholomance 57.
 - Spanish names (WH locale 6): Zahúrda Rajacieno (RFD), El Templo de Atal'Hakkar, Profundidades de Roca Negra, Cumbre de Roca Negra Inferior/Superior, La Masacre: este/norte/oeste (Dire Maul), Stratholme: vivo / Stratholme: muerto.
+- Hotfixes (Blizz): Upper Blackrock Spire enemies back to their intended (harder) health and damage (Nov 17); "Agamaggan's Blood" no longer a dungeon quest (Nov 17); Uldaman's Obsidian Sentinel "drops loot as intended" (Nov 23); Temple of Atal'Hakkar Avatar spawn and Blackfathom Deeps altar fixed (Nov 25).
 
 ### Group finder, summons and lockouts
 keywords: LFG, Looking For Group, dungeon finder, buscador de mazmorras, buscador de grupos, meeting stone, piedra de encuentro, summon, invocar, Ritual of Summoning, lockout, reset, reinicio, instance limit, límite de instancias
 - No retail-style Dungeon Finder: no automatic matchmaking, no teleport to the dungeon (WT, BlizzCon demo + launch guide).
 - Has the Classic-style Looking For Group window: list yourself with playstyle (Learning, Relaxed, Competitive, Carry Offered), roles, "new players welcome", note; Group Browser shows groups and individual players, filter by dungeon; message then invite (WT).
 - Meeting Stones do NOT summon. Only Warlock Ritual of Summoning (needs 2 other party members present at the stone/entrance) (WT).
-- Dungeon reset: everyone leaves, leader right-clicks own portrait -> Reset; limit 5 instances per hour (WT).
+- Dungeon reset: everyone leaves, leader right-clicks own portrait -> Reset. Each dungeon can be reset and entered at most 5 times per hour (Blizz hotfix Nov 20; it was 10).
 - Innkeepers answer "Tell me about the dungeons I can explore" with level-appropriate suggestions (Blizz hotfix Nov 10).
 - Raid lockouts: "All raids currently planned to reset each week" (Blizz, Oct 20 2026). Exact reset day/time not published in sources found.
 
@@ -140,6 +145,7 @@ keywords: raids, bandas, raid release, apertura de bandas, December 9, 9 de dici
 - Before Dec 9 there is no raid content; Blizz hotfix notes (Nov 10) say some items (e.g., Swiftstrike Shot) "are not available until raids unlock".
 - Roadmap (Method, Oct 28 2026, per guides): Spring 2027 update = 2 new raids (one 10-player, one 20-player), 2 new dungeons, a new playable area, legendary questline; Summer 2027 = another new raid + revamp of one Classic raid (unnamed). WT: Scarlet Enclave (from Season of Discovery) confirmed as planned future raid (single source).
 - Datamined (not live): "Excavation Site - Bael Modan" dungeon zone exists in WH data (WH zone 16619) - possible future dungeon, unconfirmed.
+- As of Nov 27, still Dec 9, with no time of day, reset day or loot rules announced (Maxroll, Nov 24). World buffs are removed when entering a raid (Blizz hotfix Nov 23).
 
 ### The Barrow Deeps (es: Cavernas del Túmulo)
 keywords: Barrow Deeps, The Barrow Deeps, Cavernas del Túmulo, Túmulo, Barrow Dens, Mount Hyjal, Monte Hyjal, Winterspring, Cuna del Invierno, Blackmaw Hold, Illidan prison, Watchers, Celadores, Sonya Darkhallow, Sonya Sombrasanto, Druids of the Claw
@@ -317,7 +323,7 @@ keywords: experiencia, XP, rested, descansado, saco de dormir, Cozy Sleeping Bag
 - Well Fed from cooking gives +5% kill XP for about 15 minutes.
 - Group kill XP: each of 5 members gets the solo XP divided by 5, times 1.4. Quest turn-in XP is not reduced by grouping. Raid groups do not get quest credit.
 - Since the Oct 8 beta build, the level penalty uses each recipient's own level (Classic Era method).
-- Nov 13 hotfix: killing dungeon enemies gives 0 XP to all party members if the enemy is trivial (gray) to one or more party members. This blocks boosting.
+- Dungeon kill XP: since Nov 14 (Blizz "Player-Level Dungeon XP Adjustment"), no one in the party gets XP from an enemy when a party member is more than 12 levels above it. This blocks boosting. The Nov 13 rule (no XP if the enemy was gray to anyone) "missed the mark" and was replaced.
 - Dungeon quests give more XP than in Classic. They were halved from the beta value on Oct 1 and still pay more than double Classic (per guides, Method).
 - Quests 5+ levels below you lose 10-20% XP per extra level. Exploration gives a little XP.
 - At 60 there is no XP-to-gold conversion. Since Nov 10, most quests of level 48+ also reward gold.
@@ -363,6 +369,7 @@ keywords: montura, equitación, riding, mount, nivel 40, epic mount, montura ép
   - Tauren: Kar Stormsinger, Bloodhoof 46.8,61.9.
   - Undead: Velma Warnam, Brill 60.2,52.4.
 - There are no flying mounts.
+- Since Nov 25, paladins and warlocks also get Journeyman Riding from their level 60 epic mount quests (Blizz). Nov 19: Skyborne get their Honored riding discount again (Blizz).
 
 ### Reputations new or changed in Forever
 keywords: reputación, facción, rep, exaltado, intendente, quartermaster, Brotherhood of the Horse, Bolder'ok, High Order, Windshapers, Nightclaw, Gelkis, Magram, Darkspear Raiders, Theramore Expeditionary Force, Azeroth Commerce Authority, Guardians of Hyjal
@@ -415,6 +422,7 @@ keywords: PvP, JcJ, honor, honor points, rango, rank points, Gran Mariscal, Señ
 - Rank vendors are in Stormwind and Orgrimmar.
 - Honor cap 25,000 (raised from 15,000 on Oct 1, beta). Marks of Honor stack to 30 (Oct 16, beta). Both per guides.
 - World PvP flagging, PvP ruleset: automatic flag in contested and enemy territory. Normal, RP and Hardcore rulesets: flagged only in enemy territory. The flag drops after 5 minutes in friendly territory.
+- Rank Points come from Season's Journey quests (Wizzik Dustfizz, Gadgetzan), the weekly battleground and world PvP events such as Gurubashi Arena (Blizzard video, Nov 18, per guides).
 
 ### Battlegrounds and Darkspear Islands
 keywords: battleground, campo de batalla, BG, Darkspear Islands, Islas Lanza Negra, Warsong Gulch, Garganta Grito de Guerra, Arathi Basin, Cuenca de Arathi, Alterac Valley, Valle de Alterac, battlemaster, maestro de batalla
@@ -440,6 +448,7 @@ keywords: battleground, campo de batalla, BG, Darkspear Islands, Islas Lanza Neg
   - They sell level-28, 38, 48 and 58 trinkets, cloaks, rings, necks and weapons (Friendly to Revered). Exalted unlocks level 50 and 60 hands, level 60 shoulders, and a tabard.
   - There is a "Darkspear Islands Mark of Honor" item.
 - Hotfixes: Nov 5, Tauren Plainsrunning no longer stacks in preparation and is cancelled while carrying a flag. Nov 9, an invisible wall on the roof of the Alliance base in Warsong Gulch was removed.
+- Alterac Valley (Blizz hotfixes): its quests need level 58 (Nov 17). Nov 25: much less reputation and honor for killing the General, more for objectives and Lieutenants; the long-match bonus starts at 20 minutes (was 60); stronger NPCs, and the Generals get a buff that loses a stack for each objective taken.
 
 ### Rulesets (realms)
 keywords: ruleset, reino, servidor, Normal, PvP, Roleplay, RP-PvP, Hardcore, Extremo, cambiar de reino
@@ -473,7 +482,7 @@ keywords: parche, hotfix, corrección, notas del parche, patch notes, cambios, 1
   - An outage that evening caused lost trainer purchases. Refunds were announced in a Nov 13 blue post.
 - Nov 10:
   - Most quests of level 48+ also reward gold.
-  - Auction House minimum deposit is 1 copper.
+  - Auction House minimum deposit is 1 copper (pulled again on Nov 12; per guides live after the Nov 17 maintenance, not confirmed by Blizzard, and some players still can't list under 1 silver).
   - Racial vendor mounts are Bind on Pickup.
   - Shatterspear Trolls give no XP.
   - Hunter pet health set to 115%.
@@ -482,19 +491,55 @@ keywords: parche, hotfix, corrección, notas del parche, patch notes, cambios, 1
 - Nov 11:
   - Mounting allowed in Shen'dralas named areas.
   - Riverglades Twilight enemies deal less damage.
-  - Item Restoration temporarily disabled.
+  - Item Restoration temporarily disabled (not seen back on as of Nov 27).
   - Tailoring bags enlarged.
   - Judgement is now a ranged attack.
   - Auction House changes delayed to Nov 17 (per guides, kami-labs).
 - Nov 13:
-  - Dungeon kills give 0 XP to all party members if the enemy is trivial to any member.
+  - Dungeon kills give 0 XP to all party members if the enemy is trivial to any member (replaced on Nov 14, see below).
   - Drowned City trash respawn raised to 2 hours.
   - Weekly dungeon quests from Pix Xizzix are removed at weekly reset.
   - More Stranglethorn beast and Badlands elemental spawns.
   - Fewer Mulgore start-area quilboar.
   - Various Riverglades quest fixes.
-- Blue-post titles seen without verified content: "Player-Level Dungeon XP Adjustment" (US Nov 14, EU Nov 15) and "Lost Training Purchase Refunds" (Nov 13). Contents not verified.
-- Known open bug: buying dual spec (50g) may empty action bars since Nov 8. Blizzard is investigating (per guides, kami-labs).
+- Nov 13 blue post "Lost Training Purchase Refunds" (Blizz): gold refunded by in-game mail for training bought on Nov 9 between 22:17 and 23:17 CET and lost in the outage.
+- Nov 14 blue post "Player-Level Dungeon XP Adjustment" (Blizz, Kaivax): the Nov 13 rule "missed the mark"; kill XP is now cancelled only when a party member is more than 12 levels above the enemy.
+- Nov 16 (Blizz):
+  - The Fishing Rack gives lures to everyone.
+  - Vampiric Embrace heals for 10% of the priest's Shadow damage (was 20%), and the priest gets 100% more of that healing.
+  - Windfury Totem attacks no longer ignore armor and have an internal cooldown.
+  - The Drowned City: Captain Dreadrise can be stunned.
+  - Formula: Enchant Boots - Speed is Bind on Pickup. The Water Pouch Bounty gives no XP.
+- Nov 16-17, Blackmaw Hold exploit (Blizz): a group of non-elite enemies dropped elite loot. Fixed on Nov 16; accounts that farmed it were locked, the gold removed and about two hundred players suspended.
+- Nov 17 (Blizz):
+  - Upper Blackrock Spire enemies are back to their intended (harder) health and damage.
+  - The Cozy Sleeping Bag gives a Resting aura and can't be used while mounted.
+  - Soulforge Armor has Spell Power instead of Strength.
+  - Alterac Valley quests need level 58. No mounting in the Warsong Gulch starting rooms.
+  - "Agamaggan's Blood" is no longer a dungeon quest. Ignore lists persist after logout. Shen'dralas quest fixes.
+- Nov 19 (Blizz):
+  - The Seed Hybridizer is back on, with lower values and a chance to fail; Scarce Herb Seeds can't go in it.
+  - Shaper's Terrace: Vitrix's Poison Shock does less damage. City of Dalaran: Shade of the Archmage no longer despawns when combat starts.
+  - Motes of Unstable Magic are Soulbound. Skyborne get their Honored riding discount again. Tauren Cultivation fixes.
+- Nov 20 (Blizz, build 71037):
+  - Each dungeon can be reset and entered at most 5 times per hour (was 10).
+  - Stormshroud Armor 3-piece bonus: 3% chance (was 4%), restores 18 energy (was 30).
+  - The group finder shows every group it should. The Summit of Eternity forge works.
+- Nov 23 (Blizz):
+  - World buffs no longer fall off when changing zones; they are still removed when entering a raid.
+  - Fengus' Ferocity and Darkmoon Faire buffs gave double power; fixed. Fewer abilities trigger extra weapon procs.
+  - Clam foods give the right Well Fed buff. Warriors can't use Mortal Strike without the talent.
+  - Uldaman: the Obsidian Sentinel "drops loot as intended" (its loot was likely made less valuable, per guides).
+- Nov 25 (Blizz):
+  - Balance Druid talent rework (see Druid). Druids with 3 or more points in Improved Starfire got a full talent reset.
+  - Paladin: a change to how attacks refresh Judgements (under 20 sec left), Exorcism can crit, Oath of Light lasts 60 minutes.
+  - Rogue: all poisons and Blinding Powder are temporarily Bind on Pickup.
+  - Hunter and warlock pet melee crit fixed; Succubus and Incubus crit about 5% lower.
+  - Alterac Valley: much less reputation and honor for killing the General, more for objectives and Lieutenants; the long-match bonus starts at 20 minutes (was 60); stronger NPCs, and the Generals get a buff that loses a stack for each objective taken.
+  - Paladins and warlocks get Journeyman Riding from their epic mount quests ("Justice and Retribution", "Judgment and Redemption", "Dreadsteed of Xoroth"); those who already did them can get it free from NPCs.
+  - Temple of Atal'Hakkar Avatar spawn fix and Blackfathom Deeps altar fix.
+- Builds (all patch 1.60.1, no 1.60.2 yet): 70938 Nov 13, 70959 Nov 17, 71037 Nov 20, 71091 Nov 24 (per guides); 71139 live on Nov 27 (Blizzard version server).
+- Dual spec bug (action bars reset on logout for players with a second spec): fixed in the Nov 13 hotfix; Blizzard said on Nov 16 it should be fixed.
 
 ### Upcoming content and roadmap
 keywords: próximo parche, fase, roadmap, hoja de ruta, Onyxia, Barrow Deeps, Hyjal Summit, Cumbre Hyjal, Hardcore, raids, banda, 9 de diciembre
@@ -503,10 +548,12 @@ keywords: próximo parche, fase, roadmap, hoja de ruta, Onyxia, Barrow Deeps, Hy
   - Hyjal Summit: 20-player, 13 bosses.
   - Onyxia's Lair: 40-player, level 60, Dustwallow. It needs the Drakefire Amulet in your bags. The Alliance chain starts with Helendis Riverhorn in Burning Steppes. The Horde chain starts with Warlord Goretooth in Badlands.
   - There are no other raids before Dec 9. Molten Core and Blackwing Lair are not announced.
-- Hardcore mode: "Winter 2026" on the Wowhead roadmap. Blizzard says only "later".
+- Hardcore mode: still no date as of Nov 27; Blizzard says "sometime after launch". The Wowhead roadmap said "Winter 2026".
 - Spring 2027: 2 raids, 2 dungeons, new quests and playable area, legendary questline, PvP season refresh.
 - Summer 2027: revamped iconic raid, a new raid, expanded world content, PvP season refresh, professions and Legacy updates.
 - A developer podcast said Scarlet Enclave will return, with no date (per guides).
+- Nov 19 podcast (per guides): the itemization designer wants to move away from a single best item per slot (items strong against certain creature types or in certain areas, maybe different gear per boss), and bigger bags with better sorting. The next episode, about raids, is due less than a week before Dec 9.
+- Nov 25: WoW Celebration Pass, 365 days of game time for Forever, Classic and modern WoW, sold until Dec 7, 2026 (Blizz; no price on the page).
 
 ## Classes, races and talents
 
@@ -517,7 +564,7 @@ keywords: talents, talentos, talent points, puntos de talento, milestones, dual 
 - Each tree's 31-point capstone (WH live data): see class sections. Some trees have two row-7 talents (Feral: Primal Bite + Shifting Power).
 - Dual Specialization unlocks at level 40 (Blizzard class deep dives). Cost 50 gold at a class trainer in a major city (per guides: Method, timesaver.gg; not in patch notes). Only 2 specs, no plans for more. Switch spell "Activate Primary Spec" (es: Activar especialización principal), 5 sec cast.
 - Respec (talent reset) at class trainer: per guides 1g first, then 5g, then 10g, rising toward 50g; Blizzard says prices drop once per week (exact decay unknown). In beta it cost 1 silver. Do NOT quote Classic's 1g/5g/10g/15g...50g ladder as confirmed.
-- Nov 13 hotfix fixed a bug resetting action bars on logout for players with a second spec (per guides).
+- Nov 13 hotfix fixed a bug resetting action bars on logout for players with a second spec (Blizz; confirmed fixed Nov 16).
 - Total cost to train all class abilities 1-60: ~206-207g for every class (Nov 3 notes; Warlock reduced to offset pet Grimoires). Newly learned spells no longer auto-placed on action bars.
 - Low-rank spells no longer have reduced talent proc chance, except Blizzard, Arcane Concentration, Frostbite, Fingers of Frost (spells learned >12 levels below you).
 - Legacy system (account-wide, separate from class talents): first Legacy point at character level 25 (or 150 in a non-gathering tradeskill); 65 Legacy Challenges (1 point each) at launch; max 16 points spent per character; 3 trees: Professions (e.g. Bartering 2 ranks, -5% vendor prices), Adventure (e.g. Talented 5 ranks: talent points earlier, from level 9), Resourcefulness (e.g. Diplomat +2% rep/rank; The Quick and the Dead: faster while dead, free helpful spells 1 min after res). Legacy talents are changed at the class trainer. Reward milestones 15/25/40/55 points (toy/pet/tabard/mount) from Innkeeper Wiley in Ratchet (per guides).
@@ -596,6 +643,7 @@ keywords: warrior, guerrero, arms, armas, fury, furia, protection, protección, 
 - Leveling (per guides): Arms 2H (Mortal Strike) for most; Protection 1H+shield is safe/no downtime for solo grinding (Method); Fury weak until ~36 (Maxroll). Endgame: Fury = main PvE DPS, Arms leans PvP, Protection = main tank (per guides).
 - Class quests: lvl 10 Defensive Stance (also Sunder Armor, Taunt): Alliance "A Warrior's Training" (Goldshire/Dolanaar/Kharanos), Horde "Veteran Uzzek" (Razor Hill/Bloodhoof/Brill). Lvl 30 Berserker Stance: "The Islander" from any capital warrior trainer except Darnassus -> Klannoc Macleod on Fray Island, The Barrens; also Intercept; Whirlwind Axe chain (Alterac Mountains, Cyclonian) (per guides; quest names WH).
 - Proficiencies: cloth, leather, mail, shield from 1; Plate at 40 from class trainer; all weapons except wands; polearms at 20.
+- Nov 23 hotfix (Blizz): Mortal Strike can't be used without the talent.
 
 ### Paladin
 keywords: paladin, paladín, holy, sagrado, retribution, reprensión, protection, protección, Holy Strike, Golpe Sagrado, Seal of Fury, Sello de furia, Consecration, Righteous Fury, Unsealed Wrath, Cólera desellada, Light's Vigil, Vigilia de la Luz, Shieldsworn, Juramento de escudo, Templar's Bulwark, Baluarte de templario, Swift Judgement, Juicio presto, Oath of Light, Juramento de luz, Sacred Arbiter, Seal of Command, undead paladin, Bandarion Keep, Danitha Morr, Summon Warhorse, Invocar corcel de guerra, Summon Charger, Forsaken Charger, Invocar destrero de los Renegados, Tome of Nobility
@@ -609,6 +657,7 @@ keywords: paladin, paladín, holy, sagrado, retribution, reprensión, protection
 - Class quests ALLIANCE: lvl 12 Redemption "Tome of Divinity" (Duthorian Rall, Cathedral, Stormwind); lvl 40 FREE mount "The Tome of Nobility" (Duthorian Rall; Ironforge trainers send you) -> Summon Warhorse (es: Invocar corcel de guerra); lvl 60 epic Summon Charger (es: Invocar a cargador) chain starting "Lord Grayson Shadowbreaker" (Stormwind), ends in Scholomance (~350g materials per guides).
 - Class quests UNDEAD (Forever-exclusive, hub Bandarion Keep, Whispering Wood, NW Tirisfal ~21.5, 48): lvl ~11 "A Second Home" from Shari Stilwell (paladin trainer, Brill) -> Breton Samuels; Redemption via "A Lesson in Divinity" chain from Danitha Morr (wiki; Maxroll says "A Second Home"); lvl 40 FREE mount quest "A Paladin's Steed" (WH quest 94971, from Danitha Morr, rewards Summon Warhorse); lvl 60 Summon Forsaken Charger (es: Invocar destrero de los Renegados) chain beginning "A Worthy Endeavor" (Danitha Morr) incl. Ott of Tarren Mill, Nathanos Blightcaller, Dire Maul (WH quests; order per research). Names "A Trusty Steed"/"Justice and Retribution" are beta datamines, NOT found on WH.
 - Proficiencies: cloth, leather, mail, shield from 1; Plate at 40 (trainer); 1H/2H maces start; 1H/2H axes and swords trainable; polearms at 20; Librams.
+- Nov 25 hotfix (Blizz): a change to how attacks refresh Judgements (under 20 sec left), Exorcism can crit, Oath of Light lasts 60 minutes; Journeyman Riding comes with the epic mount quest.
 
 ### Hunter
 keywords: hunter, cazador, beast mastery, bestias, marksmanship, puntería, survival, supervivencia, Aimed Shot, Disparo apuntado, traps, trampas, Summon Hawk, Invocar halcón, Lone Wolf, Lobo solitario, Sniper Shot, Disparo de francotirador, Careful Aim, Afinar la puntería, Lacerating Strikes, Golpes lacerantes, Strider Kick, Patada de zancudo, Expose Prey, Exponer presa, Bestial Wrath, Ira de bestias, Taming the Beast, human hunter, dead zone
@@ -627,6 +676,7 @@ keywords: hunter pets, mascotas de cazador, pet families, familias de mascotas, 
 - Each family has ONE unique special ability (deep dive/WT): Bat Sonic Blast; Bear Swipe (multi-target); Bird of Prey (ex-Owl) Mine! (disarm); Boar Charge; Carrion Bird Demoralizing Screech; Cat Prowl; Core Hound Lava Breath; Crab Pinch; Crocolisk Dismember (-50% healing); Fox Trickster's Dance; Gorilla Thunderstomp; Hyena Tendon Rip; Raptor Savage Rend (bleed); Scorpid Scorpid Poison; Spider Web; Tallstrider Dust Cloud (armor reduction); Turtle Shell Shield; Wind Serpent Lightning Breath; Wolf Furious Howl (party AP; no stack with Battle Shout).
 - Fox = NEW family (offensive), Trickster's Dance (es: Baile de timador: +dodge and attack speed 12 sec), diet fruit and meat.
 - First tame at 10. Pet training points/Beast Training still used (per guides).
+- Nov 25 hotfix (Blizz): pet melee crit fixed.
 
 ### Rogue
 keywords: rogue, pícaro, assassination, asesinato, combat, combate, subtlety, sutileza, Shank, Apuñalar, Poised, Disposición, Mutilate, Mutilar, Adrenaline Rush, Subidón de adrenalina, Death Mark, Marca de muerte, Venom, Veneno, Blade Flurry, Hack and Slash, Cortar y rebanar, Flawless Execution, Ejecución impecable, Sap, Zapar, axes, hachas, poisons, venenos
@@ -638,6 +688,7 @@ keywords: rogue, pícaro, assassination, asesinato, combat, combate, subtlety, s
 - Leveling: Combat (solo); Subtlety for groups/daggers (Method Nov 14). Assassination not recommended to start (WT). Endgame: all melee DPS; Combat = cleave (per guides).
 - Class quests: lvl 20 poisons chain per guides: Alliance Master Mathias Shaw, Stormwind ("Mathias and the Defias" -> Westfall -> "Klaven's Tower"); Horde Shenthul, Cleft of Shadow, Orgrimmar ("The Shattered Salute" -> "Deep Cover"). Lockpicking at 16 from trainer.
 - Proficiencies: cloth, leather; daggers, fist, 1H axes (NEW), 1H maces, 1H swords, bows, crossbows, guns, thrown.
+- Hotfixes (Blizz): Stormshroud Armor 3-piece bonus 3% chance, 18 energy (was 4%, 30) (Nov 20); all poisons and Blinding Powder temporarily Bind on Pickup (Nov 25).
 
 ### Priest
 keywords: priest, sacerdote, discipline, disciplina, holy, sagrado, shadow, sombras, Penance, Penitencia, Power Infusion, Infusión de poder, Prayer of Mending, Rezo de alivio, Shadowform, Forma de las Sombras, Shadow Word: Death, Palabra de las Sombras: muerte, Divine Spirit, Espíritu divino, Holy Binding, Devouring Contagion, Contagio devorador, Divine Aegis, gnome priest
@@ -649,6 +700,7 @@ keywords: priest, sacerdote, discipline, disciplina, holy, sagrado, shadow, somb
 - Leveling: healing/Disc-leaning build to ~39 then Shadow at 40 (Method); Maxroll: Shadow solo, Disc for dungeons. Endgame (per guides): Holy raid healer, Disc tank healer (Power Infusion), Shadow DPS.
 - Class quests: race spells at 10 and 20 (see Priest racial spells).
 - Proficiencies: cloth; daggers, 1H maces, staves, wands.
+- Nov 16 hotfix (Blizz): Vampiric Embrace heals for 10% of the priest's Shadow damage (was 20%), and the priest gets 100% more of that healing.
 
 ### Shaman
 keywords: shaman, chamán, elemental, enhancement, mejora, restoration, restauración, totems, tótems, Call of the Elements, Llamada de los elementos, Totemic Call, Llamada totémica, Totemic Recall, Regreso totémico, Lightning Mastery, Maestría de Relámpago, Call of Thunder, Llamada del trueno, Rage of the Farseer, Ira del clarividente, Maelstrom Weapon, Arma vorágine, Stormstrike, Golpe de tormenta, Riptide, Mareas vivas, Water Shield, Escudo de agua, Lava Burst, dwarf shaman, totem quests, Call of Earth
@@ -660,6 +712,7 @@ keywords: shaman, chamán, elemental, enhancement, mejora, restoration, restaura
 - Leveling: Enhancement (Method, Maxroll; Stormstrike at 25, Rage of the Farseer at 40). Endgame (per guides): Elemental ranged, Enhancement melee (tanking possible but not realized), Restoration healer.
 - Totem quests: Earth lvl 4 "Call of Earth" (Orc/Troll Valley of Trials; Tauren Seer Ravenfeather; DWARF Teo Hammerstorm, Anvilmar, Dun Morogh 28.8, 66.2: Iceclaw Bear Pendants, Earth Sapta, Rough Quartz -> Earth Totem; WINDSHAPER Windshaper Boro, Thendal Village, Zephras Isle 42.7, 23.5). Fire lvl 10 "Call of Fire" (Horde Searn Firewarder, Orgrimmar; Alliance Ingrid Dunwald, Kharanos, or Eldrun Stormbreaker, Ironforge -> Bruegs Kindleborn, Dun Morogh -> Braldir Ashmantle, Loch Modan). Water lvl 20 "Call of Water" (Horde Searn Firewarder; Alliance Eldrun Stormbreaker -> Norric Lochthane, Loch Modan -> Hervdana Saegrund, Wetlands). Air lvl 30 "Call of Air" (Horde -> Prate Cloudseer, Thousand Needles; Alliance -> Veyric Thundervein, Arathi Highlands).
 - Proficiencies: cloth, leather, shield; Mail at 40 from class trainer; maces, staves start; axes, 2H axes/maces, fist, daggers from weapon trainer; totems in relic slot.
+- Nov 16 hotfix (Blizz): Windfury Totem attacks no longer ignore armor and have an internal cooldown.
 
 ### Mage
 keywords: mage, mago, arcane, arcano, fire, fuego, frost, escarcha, Frostfire Bolt, Descarga de Pirofrío, Comprehend Scroll, Entender pergamino, Comprehension, comprensión, Arcane Blast, Explosión Arcana, Arcane Wrath, Cólera Arcana, Missile Barrage, Tromba de misiles, Ice Lance, Lanza de hielo, Fingers of Frost, Dedos de Escarcha, Heating Up, Calentamiento, Accelerant, Acelerante, Ice Barrier, Barrera de hielo, Combustion, Arcane Power, Teleport Dalaran, orc mage
@@ -683,12 +736,14 @@ keywords: warlock, brujo, affliction, aflicción, demonology, demonología, dest
 - Demon quests (WH quest names; levels per guides): Voidwalker 10 ("Gakin's Summons" Stormwind / "Halgar's Summons" Brill-Undercity / "Gan'rul's Summons" Orgrimmar); Succubus 20 ("Devourer of Souls"); Incubus 20 ("What Is Love?" Stormwind, "Love Hurts" Orgrimmar, "Hearts of the Lovers" Undercity); Felhunter 30 ("Seeking Strahad", Strahad Farsan, Ratchet/The Barrens); Infernal 50 (Inferno; "What Niby Commands", Niby the Almighty, Felwood); Doomguard 60 (Ritual of Doom / Bane of Doom).
 - Mounts: lvl 40 Felsteed via quest "Summon Felsteed" from Strahad Farsan in Ratchet (es: Invocar a corcel nefasto) - free class mount per guides; lvl 60 Dreadsteed via "Dreadsteed of Xoroth" (es: Invocar a corcel de la muerte).
 - Proficiencies: cloth; daggers, wands; staves, 1H swords from weapon trainer.
+- Nov 25 hotfix (Blizz): pet melee crit fixed, Succubus and Incubus crit about 5% lower; Journeyman Riding comes with "Dreadsteed of Xoroth".
 
 ### Druid
 keywords: druid, druida, balance, equilibrio, feral, restoration, restauración, Moonkin Form, Forma de lechúcico lunar, Wild Growth, Crecimiento salvaje, Bloom, Primal Bite, Mordisco primigenio, Shifting Power, Poder cambiante, Lacerate, Lacerar, Revive, Revivir, Poised, Disposición, Eclipse, Genesis, Tiger's Fury, forms, formas, consumables in form, polearms, skyborne druid
 - Races: Night Elf, High Order Skyborne / Tauren, Windshaper Skyborne.
 - Changes: shapeshifted druids can use most potions/consumables, weapon procs, racials and interact with objects without leaving form (healing spells still need caster form). Revive at 12 (es: Revivir: out-of-combat resurrection). Poised at 32 (es: Disposición). Omen of Clarity baseline at 20; Faerie Fire baseline. Lacerate is a FERAL TALENT (not baseline; Nov 3). Tiger's Fury removed per beta sources (still in WH trainer list = likely stale). Berserk and Gift of the Earthmother removed. Swiftmend no longer consumes the HoT (must be your own HoT). HoTs from different druids stack. Bear threat 115%. Polearms usable from 20. No Tree of Life or Flight Form.
-- Balance (WH): row1 Improved Wrath, Genesis; 11 Nature's Splendor; 16 Insect Swarm; 21 Eclipse (Wrath -> faster Starfire), Nature's Grace; 26 Moonfury; 31 Moonkin Form (es: Forma de lechúcico lunar: party crit aura, more Omen procs).
+- Balance (WH, before Nov 25): row1 Improved Wrath, Genesis; 11 Nature's Splendor; 16 Insect Swarm; 21 Eclipse (Wrath -> faster Starfire), Nature's Grace; 26 Moonfury; 31 Moonkin Form (es: Forma de lechúcico lunar: party crit aura, more Omen procs).
+- Balance rework, Nov 25 hotfix (Blizz): Improved Wrath became Starlight Wrath (Starfire casts 0.1-0.5 sec faster); Improved Moonfire became Moon and Stars (Starfire loses no cast time when you are hit); Improved Starfire is 2 points (8%/15%), and druids with 3 or more points in it got a full talent reset; Eclipse also gives 7/13/20% Wrath crit; Moonfury is replaced by Dreamstate; Moonkin Form gives +10% Arcane and Nature damage.
 - Feral (WH): row1 Furor (moved from Resto); row2 Feral Swiftness (+30% Cat speed); 11 Feral Charge (bear charge + cat leap); 16 Lacerate (es: Lacerar), Predatory Discipline, Predatory Strikes; 21 Leader of the Pack; 26 Rend and Tear; 31 (two talents) Primal Bite (es: Mordisco primigenio, bear) and Shifting Power (es: Poder cambiante, cat: mana -> 40 Energy, 8 sec CD).
 - Restoration (WH): row1 Heart of the Wild (moved from Feral); 11 Bloom (NEW: heal when Rejuvenation/Regrowth expires); 16 Swiftmend; 21 Nature's Swiftness (also instant Wild Growth), Living Spirit; 26 Improved Regrowth; 31 Wild Growth (es: Crecimiento salvaje: party HoT, 3 sec cast).
 - Leveling: Feral (WT "smoothest"); Maxroll lists all three. Endgame (per guides): Balance support DPS (Moonkin aura), Feral hybrid cat/bear, Resto with Wild Growth.
@@ -699,8 +754,8 @@ keywords: druid, druida, balance, equilibrio, feral, restoration, restauración,
 keywords: weapon master, maestro de armas, weapon trainer, instructor de armas, weapon skills, polearms, riding, equitación, mount, montura, riding trainer, class mount, montura de clase, epic mount, montura épica, paladin mount, warlock mount
 - Weapon masters (per WT): Woo Ping, Stormwind 63.8, 69.0 (swords, polearms, staves, daggers, crossbows); Bixi Wobblebonk and Buliwyf Stonehand, Ironforge (axes, maces, fist, guns, crossbows, thrown); Ilyenia Moonfire, Darnassus 57.6, 46.7 (bows, daggers, fist, staves, thrown); Hanashi/Sayoc, Orgrimmar 81.5, 19.6 (axes, bows, staves, thrown, daggers, fist); Ansekhwa, Thunder Bluff 40.9, 62.7 (maces, guns, staves); Archibald, Undercity 57.3, 32.8 (swords, polearms, daggers, crossbows). Most skills 10s at level 1; Polearms need level 20 and cost 1g. Wands, Defense, Unarmed are default.
 - Plate (warrior, paladin) and Mail (hunter, shaman) are learned at 40 from the class trainer.
-- Riding: Apprentice at 40 = 100g training (includes first mount per guides), extra mounts 20g, 60% speed; Journeyman at 60 = 1000g, epic mounts 200g, 100% speed. No flying. Honored with home faction = 10% discount. Riding is learned from your race's own riding trainer (other races need Exalted) (per guides).
-- Free class mounts at 40: Paladin Summon Warhorse (Alliance "The Tome of Nobility", Duthorian Rall, Stormwind; Undead "A Paladin's Steed", Danitha Morr, Tirisfal Glades) and Warlock "Summon Felsteed" (Strahad Farsan, above Ratchet). They skip the 100g Apprentice training too (Icy Veins; for warlocks Blizzard's hotfix says the quest grants the riding skill). Whether they pay for Journeyman Riding is not confirmed.
+- Riding: Apprentice at 40 = 100g training (includes the first mount), extra mounts 20g, 60% speed; Journeyman at 60 = 1,000g training (includes the first swift mount), extra swift mounts 200g, 100% speed. No flying. Honored with home faction = 10% discount. Riding is learned from your race's own riding trainer (other races need Exalted) (per guides).
+- Free class mounts at 40: Paladin Summon Warhorse (Alliance "The Tome of Nobility", Duthorian Rall, Stormwind; Undead "A Paladin's Steed", Danitha Morr, Tirisfal Glades) and Warlock "Summon Felsteed" (Strahad Farsan, above Ratchet). They skip the 100g Apprentice training too (Icy Veins; for warlocks Blizzard's hotfix says the quest grants the riding skill). Since Nov 25 their level 60 epic mount quests ("Justice and Retribution", "Judgment and Redemption", "Dreadsteed of Xoroth") also grant Journeyman Riding, and those who already did them can get it free from NPCs (Blizz).
 - Epic class mounts at 60: Paladin Summon Charger (Alliance) / Summon Forsaken Charger (Undead); Warlock Summon Dreadsteed (quest "Dreadsteed of Xoroth": read Mor'zul's Instructions, summon and defeat a Xorothian Dreadsteed, bind its spirit).
 
 ## Systems, professions and economy
@@ -733,7 +788,7 @@ keywords: riding trainer location, dónde aprender a montar, aprender a montar, 
 
 ### Epic riding and swift mounts (level 60)
 keywords: epic mount, montura épica, Journeyman Riding, Oficial jinete, swift mount, montura presta, level 60 mount, 100% speed
-- Journeyman Riding (es: Oficial jinete), WH spell 33391: ride swift mounts (riding skill 150), +100% speed. Level 60. Cost 1,000g (WH guide, Method, Warcraft Tavern, MeinMMO).
+- Journeyman Riding (es: Oficial jinete), WH spell 33391: ride swift mounts (riding skill 150), +100% speed. Level 60. Cost 1,000g (WH guide, Method, Warcraft Tavern, MeinMMO). Paladins and warlocks get it free from their epic mount quests since Nov 25 (Blizz).
 - The training includes your race's first swift mount: the quest "Swift as the Wind" says the mount vendor gives you a free mount after your final training (WH). Extra swift/epic racial mounts: 200g each. Plan on about 1,000g, not 1,200g.
 - Honored home-faction discount: -10% (WH). Whether it also lowers Journeyman training to 900g: only games.gg says so.
 - Paladin and Warlock epic mounts are level 60 questlines with expensive reagents ("hundreds of gold", Method).
@@ -831,10 +886,10 @@ keywords: camping, acampada, campfire, hoguera, campsite, campamento, camp featu
 keywords: rested XP, experiencia por descanso, descansado, Well Fed, bien alimentado, food XP, comida experiencia, Cozy Sleeping Bag, Saco de dormir acogedor, Well-Rested, XP bonus
 - Well Fed (WH food tooltips; es: "bien alimentado"): eat at least 10 s for a 15-minute stat buff plus +5% XP from KILLS. It does not boost quest XP and is lost on death (Warcraft Tavern). Most cooked food gives it (Blizzard deep dive, Sep 13). Example: Brilliant Smallfish (es: Pececito luminoso) gives +2 attack power, Spiced Wolf Meat gives +1 Agility, Fillet of Frenzy gives +5 Fishing. Many recipes were retuned around one primary stat.
 - Rested XP: 5% of a level per 8 hours in an inn or capital, capped at 150% of a level. It doubles kill XP and does not affect quest XP (Warcraft Tavern). Legacy Well Rested gives +4% per rank to both rate and cap.
-- Cozy Sleeping Bag (es: Saco de dormir acogedor), WH 211527: unique BoP, 1-hour cooldown. Each minute inside gives one Well-Rested stack (+1% XP), up to 3 (+3%). The bag counts as a rested area. It can't be used in cities or inns, any party member can use it, and it disappears if you go about 100 yards away. It stacks with Well Fed and camp buffs. You get it from a no-combat chain of clickable objects starting at level 14: Westfall Nailed Plank 37,50, then Barrens Burned-Out Remains 46,74 (Horde starts here), Stonetalon, Loch Modan Carved Figurine 49,12, and finally Hillsbrad Thoradin Wall ("This Must Be the Place") (Warcraft Tavern).
+- Cozy Sleeping Bag (es: Saco de dormir acogedor), WH 211527: unique BoP, 1-hour cooldown. Each minute inside gives one Well-Rested stack (+1% XP), up to 3 (+3%). The bag counts as a rested area. It can't be used in cities or inns, any party member can use it, and it disappears if you go about 100 yards away. It stacks with Well Fed and camp buffs. You get it from a no-combat chain of clickable objects starting at level 14: Westfall Nailed Plank 37,50, then Barrens Burned-Out Remains 46,74 (Horde starts here), Stonetalon, Loch Modan Carved Figurine 49,12, and finally Hillsbrad Thoradin Wall ("This Must Be the Place") (Warcraft Tavern). Since Nov 17 it gives a Resting aura and can't be used while mounted (Blizz).
 - Student Fodder gives no XP bonus in Forever (Warcraft Tavern).
 - XP curve unchanged per Blizzard: 4,084,700 total XP to reach 60 (Warcraft Tavern).
-- Dungeon quests give 50% less bonus XP (beta). Nov 9 hotfix: dungeon kill XP +50%. Nov 13 hotfix: dungeon kills give 0 XP to the whole party if the mob is trivial to anyone (anti-boosting).
+- Dungeon quests give 50% less bonus XP (beta). Nov 9 hotfix: dungeon kill XP +50%. Since Nov 14: no kill XP for the party when a member is more than 12 levels above the enemy (anti-boosting).
 - At level 60, quest XP no longer converts to gold. To compensate, most quests of level 48+ now give gold (Nov 10 hotfix).
 
 ### Hearthstone, travel and flight paths
@@ -897,7 +952,7 @@ keywords: realm, reino, servidor, ruleset, reglas, PvP, Roleplay, rol, RP-PvP, N
 - No free transfers between rulesets.
 - Character names have two parts (name + surname), unique per region.
 - You can set a preferred language (Options > System > Languages and Social, changeable every 24 h).
-- HARDCORE IS NOT AVAILABLE YET (as of Nov 15, 2026). Blizzard says "sometime after launch" or "shortly after". The esports.gg roadmap says Winter 2026 (per guides). Hardcore will be a separate environment: its progress and Legacy points carry out to other rulesets, but nothing carries in.
+- HARDCORE IS NOT AVAILABLE YET (as of Nov 27, 2026, no date announced). Blizzard says "sometime after launch" or "shortly after". The esports.gg roadmap says Winter 2026 (per guides). Hardcore will be a separate environment: its progress and Legacy points carry out to other rulesets, but nothing carries in.
 - Experience presets: Classic vs Enhanced (presentation only, not gameplay).
 
 ### Professions: overview and Forever changes
@@ -960,7 +1015,7 @@ keywords: herbalism, herboristería, mining, minería, skinning, desollar, scarc
 - Herbalism:
   - Seeds drop from herb nodes.
   - The Greenhouse (T2, skill 140; blueprint drops from Shadetooth, Excavation Site: Wetlands, about 8%) grows herbs from seeds. It costs 2 Simple Wood, Arthas' Tears and Purple Lotus, and lasts 15 minutes.
-  - The Seed Hybridizer (T3, skill 300) multiplies seeds or upgrades them to a rarer tier. Its blueprint source is unknown (Method, Oct 28).
+  - The Seed Hybridizer (T3, skill 300) multiplies seeds or upgrades them to a rarer tier. Its blueprint source is unknown (Method, Oct 28). Turned back on Nov 19 with lower values and a chance to fail; Scarce Herb Seeds can't go in it (Blizz).
 - Mining: Rock Garden (T2) spawns a common ore node. Molten Foundry (T3) is needed for high-end smelting. Rockslicer (Deadmines, from Rhahk'Zor) mines low-level veins without the profession (30 uses).
 - Skinning: a Skinning Knife in your bags is enough. Pristine Leather, Hide and Scale are Scarce drops used by many new recipes. A creature can be skinned only once.
 
@@ -999,6 +1054,7 @@ keywords: Merchant's Favor, Favor de mercader, Azeroth Commerce Authority, Autor
   - Craftsman's Writs drop from mobs and start a timed delivery quest (about 9 h) for reputation and silver.
 - Costs: recipes 30-360 Merchant's Favor depending on profession and reputation tier (Friendly or Honored gated). Profession Certification (title) 1,000. Advertising License Application toy 1,200 (Honored). Packmule Treat pet 1,500 (Revered). Tabard 200 (Exalted). Reins of the Pack Kodo mount 6,000 (Exalted).
 - Legacy Performance Bonus: chance of double Merchant's Favor from crates.
+- Nov 19 podcast (per guides): Blizzard calls these two factions cumbersome and plans to improve them; new recipes are to be added in every future patch.
 
 ### Best profession combos (Forever guides)
 keywords: best professions, mejores profesiones, profesiones por clase, profession pairing, combos, gold professions
@@ -1025,7 +1081,7 @@ keywords: gold, oro, farm gold, farmear oro, make money, ganar oro, gold guide, 
   - Get bags early: quest bags, Tailoring, Old Toolbox.
 - Level 40: save 100g for riding, plus 50g if you want dual spec.
 - Levels 48-60: most quests now give gold (Nov 10 hotfix). Quest XP no longer converts to gold at 60.
-- Level 60 goals: Journeyman Riding 1,000g + 200g swift mount.
+- Level 60 goals: Journeyman Riding 1,000g, which includes the first swift mount (free for paladins and warlocks since Nov 25).
 - Farm spots suggested by guides (the guides call these Classic knowledge, not Forever-tested): Felwood Jadefire satyrs (runes, Felcloth); Badlands earth elementals; Winterfall furbolgs (E'ko, Juju); Eastern Plaguelands Tyr's Hand Scarlets (Runecloth, silver); Dire Maul East.
 - Forever-specific income: Waylaid Crates and Merchant's Favor; Pristine materials (Scarce); herb seeds; tailored bags and reagent bags at launch; necklace enchants; SAF-T explosives for non-engineers; selling Black Market-tier materials.
 - The crafted-armor "vendor shuffle" was nerfed on Nov 10.
@@ -1035,7 +1091,7 @@ keywords: gold, oro, farm gold, farmear oro, make money, ganar oro, gold guide, 
 keywords: training cost, coste de entrenamiento, repair cost, reparación, prices, precios
 - Riding 100g at level 40 (mount included), 1,000g at level 60, swift mount 200g. Dual spec 50g. First talent respec 1g, then rising.
 - Legacy respec 10g (beta). Transmog outfit slots 10s-100g. Expert fishing book 1g. Merchant's Favor certifications 1,000.
-- First bank bag slot 10s (per guides). Mail stack 30c. AH minimum deposit 1s (1c expected after Nov 17 maintenance).
+- First bank bag slot 10s (per guides). Mail stack 30c. AH minimum deposit: Blizzard set 1c on Nov 10 and pulled it on Nov 12; per guides it was live after the Nov 17 maintenance, but some players still can't list under 1s.
 - Class training costs were "adjusted for all classes" (Nov 3 notes), but no figures are published.
 - No Forever source reports repair costs or profession training prices.
 - Blacksmiths do NOT have a confirmed "Repair All" ability (single unverified source). Repairs in the field come from the Engineering Repair Bot (camp T2) or Field Repair Bot 74A.

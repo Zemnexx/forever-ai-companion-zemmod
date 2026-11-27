@@ -24,7 +24,7 @@ const signGuide = (text, key = project.privateKey) => encodeSignature(crypto.sig
 test('the built-in guide has a date and the game build it describes', () => {
   assert.ok(builtin, 'header parsed');
   assert.match(builtin.meta.date, /^\d{4}-\d{2}-\d{2}$/);
-  assert.equal(builtin.meta.build, 70938);
+  assert.equal(builtin.meta.build, 71139);
   assert.ok(!builtin.body.startsWith('---'), 'the header is not sent to the AI');
   assert.match(builtin.body, /December 9, 2026/);
   assert.match(builtin.body, /esMX: La Ciudad Anegada/, 'Spanish client names for Spanish players');
