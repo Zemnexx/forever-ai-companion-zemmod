@@ -346,11 +346,11 @@ keywords: flight path, ruta de vuelo, maestro de vuelo, grifo, wyvern, barco, ze
 
 ### Riding and mounts
 keywords: montura, equitación, riding, mount, nivel 40, epic mount, montura épica, Galestrider, 100%
-- Forever has one universal Riding skill learned from your race's riding trainer (WT).
-  - Apprentice: level 40, 100g training that includes your race's first mount (extra colors 20g each), 60% speed.
-  - Journeyman: level 60, 1,000g training; swift mounts 200g each, 100% speed.
-  - Honored with your home faction gives a 10% discount on training and mounts. Other races' mounts need Exalted (per guides, WT).
-- Paladins and Warlocks get their mounts and riding through class quests. Hotfix Nov 10: completing "Summon Felsteed" grants the riding skill.
+- Riding is learned from your race's riding trainer. Per mount type or one skill for all: not settled. The in-game quest "Learning to Ride" says each creature needs its own riding skill, and per guides (games.gg) another race's mounts need Exalted with that race plus its own training (about 100g); Warcraft Tavern describes one universal skill.
+  - Apprentice: level 40, 100g training that includes your race's first mount (extra colors 20g each), 60% speed (WH).
+  - Journeyman: level 60, 1,000g training that includes your race's first swift mount (WH quest "Swift as the Wind"); extra swift mounts 200g each, 100% speed.
+  - Honored with your home faction gives a 10% discount on training and mounts (WH, WT). Other races' mounts need Exalted (per guides, WT).
+- Paladins and Warlocks get their mounts and riding through class quests. Hotfix Nov 10: completing "Summon Felsteed" grants the riding skill; a warlock who finished it earlier gets Apprentice Riding by summoning the Felsteed once (Blizz).
 - Since Nov 10, racial vendor mounts are Bind on Pickup (Blizzard).
 - Skyborne ride Galestriders from Genn Fairweather on Zephras Isle (53.8,81.3).
 - Riding trainers (WT):
@@ -396,7 +396,7 @@ keywords: PvP, JcJ, honor, honor points, rango, rank points, Gran Mariscal, Señ
 - Ranking resets with seasons, expected every few months. Each season has a journey of weekly tasks, and 3 tasks per season grant a Legacy Point.
 - Rank decay: Blizzard has said nothing. Icy Veins says there is no decay. Do not assert the Classic decay or standing system.
 - There are no arenas and no rated battlegrounds.
-- Gear: Honor buys a blue (Rare) set with NO rank requirement. An epic piece costs the blue piece plus an Emboldened Seal, and each seal has a rank requirement. Shamans get healer, melee and caster sets.
+- Gear: Honor buys a blue (Rare) set with NO rank requirement (WH); per Warcraft Tavern it needs level 55 to wear, and Blizzard's rank list puts cloaks at rank 3. An epic piece costs the blue piece plus an Emboldened Seal, and each seal has a rank requirement. Shamans get healer, melee and caster sets.
 - Unlocks by rank (Blizzard):
   - R1: tabard.
   - R2: PvP trinket.
@@ -566,7 +566,7 @@ keywords: Skyborne, cielonato, cielonatos, High Order Skyborne, Alto Orden, Wind
 - Classes: High Order = Druid, Hunter, Mage, Rogue, Warrior. Windshapers = Druid, Hunter, Rogue, Shaman, Warrior. (No Skyborne priest, paladin or warlock; no High Order shaman; no Windshaper mage.)
 - Start zone: Zephras Isle (es: Isla de Zephras), contested, levels 1-12 (WH); start in Thendal Village; hub Valanaar (bank, AH, trainers). Leave around 12-14: High Order go to Dalaran, Windshapers to Thunder Bluff, by skycutter ship from Valanaar (per guides). Skyborne portals to Dalaran and Stormwind exist in WH data.
 - Access requires the Skyborne Heroic Pack, Skyborne Epic Pack, Warcraft Forever Collection or physical Collector's Edition (per guides; Blizzard product info).
-- Racials (WH, final values): Walk on Air (es: Caminar sobre el aire) both, active, 1.5 min CD: glide downward 10 sec controlling direction. Wind Blessed (es: Bendición del viento) both, passive: +2% spell, melee and ranged Haste (beta was 3%, an early article said 1%). Elemental Insight (es: Perspicacia elemental) both, passive: +5% damage vs Elementals.
+- Racials (WH, final values): Walk on Air (es: Caminar sobre el aire; a Blizzard esMX article says "Caminar en el aire") both, active, 1.5 min CD: glide downward 10 sec controlling direction. Wind Blessed (es: Bendición del viento) both, passive: +2% spell, melee and ranged Haste (beta was 3%, an early article said 1%). Elemental Insight (es: Perspicacia elemental) both, passive: +5% damage vs Elementals.
 - High Order only: Read Leyline (es: Leer línea Ley) active, 0.5 sec cast, 2 min CD: +50% Health and Mana regen for 15 sec; if a leyline is nearby you become Attuned for 1 hour and the effect is +100%. Not usable while Innervate is active; Attuned persists through death, removed on entering a raid. Starter quest "Reading the Leylines" (use it at the leyline in Thendal Grove).
 - Windshapers only: Skysight (es: Visión cielonata) active, 0.5 sec cast, 2 min CD: +15% movement and mounted speed (WH tooltip: 30 sec; patch notes said 15 sec); near an elemental convergence you become Charged for 1 hour and the effect doubles (30%). Charged persists through death, removed in raids.
 - Class trainers on Zephras Isle (WH/guides): shaman Windshaper Boro (42.7, 23.5); druid Lotheluum Starbreeze, Valanaar (64.0, 75.1); hunter Quel'ana Quickgale, Valanaar; mage quest "Speak with Belann" (Belann Windwood, Valanaar).
@@ -700,7 +700,7 @@ keywords: weapon master, maestro de armas, weapon trainer, instructor de armas, 
 - Weapon masters (per WT): Woo Ping, Stormwind 63.8, 69.0 (swords, polearms, staves, daggers, crossbows); Bixi Wobblebonk and Buliwyf Stonehand, Ironforge (axes, maces, fist, guns, crossbows, thrown); Ilyenia Moonfire, Darnassus 57.6, 46.7 (bows, daggers, fist, staves, thrown); Hanashi/Sayoc, Orgrimmar 81.5, 19.6 (axes, bows, staves, thrown, daggers, fist); Ansekhwa, Thunder Bluff 40.9, 62.7 (maces, guns, staves); Archibald, Undercity 57.3, 32.8 (swords, polearms, daggers, crossbows). Most skills 10s at level 1; Polearms need level 20 and cost 1g. Wands, Defense, Unarmed are default.
 - Plate (warrior, paladin) and Mail (hunter, shaman) are learned at 40 from the class trainer.
 - Riding: Apprentice at 40 = 100g training (includes first mount per guides), extra mounts 20g, 60% speed; Journeyman at 60 = 1000g, epic mounts 200g, 100% speed. No flying. Honored with home faction = 10% discount. Riding is learned from your race's own riding trainer (other races need Exalted) (per guides).
-- Free class mounts at 40: Paladin Summon Warhorse (Alliance "The Tome of Nobility"; Undead "A Paladin's Steed") and Warlock Summon Felsteed (Strahad Farsan, Ratchet) - they skip buying a mount; whether they still pay riding training is not confirmed.
+- Free class mounts at 40: Paladin Summon Warhorse (Alliance "The Tome of Nobility", Duthorian Rall, Stormwind; Undead "A Paladin's Steed", Danitha Morr, Tirisfal Glades) and Warlock "Summon Felsteed" (Strahad Farsan, above Ratchet). They skip the 100g Apprentice training too (Icy Veins; for warlocks Blizzard's hotfix says the quest grants the riding skill). Whether they pay for Journeyman Riding is not confirmed.
 - Epic class mounts at 60: Paladin Summon Charger (Alliance) / Summon Forsaken Charger (Undead); Warlock Summon Dreadsteed (quest "Dreadsteed of Xoroth": read Mor'zul's Instructions, summon and defeat a Xorothian Dreadsteed, bind its spirit).
 
 ## Systems, professions and economy
@@ -716,7 +716,7 @@ keywords: riding, mount, montura, equitación, ride, montar, learn to ride, apre
 - Nov 10 hotfix: all racial vendor mounts are now Bind-on-Pickup (Blizzard).
 - A mounts window exists. Mounts are learned, so you don't carry them in bags (Warcraft Tavern, Sep 16).
 - Budget tip from guides: about 100g at level 40, or 150g if you also buy dual spec (50g) (MeinMMO).
-- Paladin: free class mount via quest (Alliance "The Tome of Nobility" from Mystic Ward, Ironforge or Cathedral of Light, Stormwind; Horde equivalent "A Trusty Steed"; Forsaken Paladins have their own mount quests). Warlock: free mount from Strahad Farsan in Ratchet, level 40 quest (per guides: Method, Fextralife).
+- Paladin: free class mount via a level 40 quest: Alliance "The Tome of Nobility" from Duthorian Rall, Stormwind (WH); Undead (Horde) "A Paladin's Steed" from Danitha Morr, Tirisfal Glades (WH). Warlock: "Summon Felsteed" from Strahad Farsan, above Ratchet (WH); it grants Apprentice Riding (Blizz hotfix).
 - Store mounts still require you to buy the riding skill (Method).
 
 ### Riding trainers and mount vendors (WH-verified coordinates)
@@ -733,9 +733,9 @@ keywords: riding trainer location, dónde aprender a montar, aprender a montar, 
 
 ### Epic riding and swift mounts (level 60)
 keywords: epic mount, montura épica, Journeyman Riding, Oficial jinete, swift mount, montura presta, level 60 mount, 100% speed
-- Journeyman Riding (es: Oficial jinete), WH spell 33391: ride swift mounts (riding skill 150), +100% speed. Level 60. Cost 1,000g (Method, Warcraft Tavern, MeinMMO).
-- Swift/epic racial mounts: 200g each (Method, Warcraft Tavern). Guides list 1,000g training and 200g mounts separately, so plan on about 1,200g before discounts. Whether training includes a free swift mount is NOT confirmed.
-- Honored home-faction discount: -10% (per guides).
+- Journeyman Riding (es: Oficial jinete), WH spell 33391: ride swift mounts (riding skill 150), +100% speed. Level 60. Cost 1,000g (WH guide, Method, Warcraft Tavern, MeinMMO).
+- The training includes your race's first swift mount: the quest "Swift as the Wind" says the mount vendor gives you a free mount after your final training (WH). Extra swift/epic racial mounts: 200g each. Plan on about 1,000g, not 1,200g.
+- Honored home-faction discount: -10% (WH). Whether it also lowers Journeyman training to 900g: only games.gg says so.
 - Paladin and Warlock epic mounts are level 60 questlines with expensive reagents ("hundreds of gold", Method).
 - Gift of Galloping (es: Don del galope), WH item 271871: level 60, BoP, +10% mounted speed for 360 h, stacks with other mount-speed bonuses. The tooltip says it expires while offline. Sold by Mister Graphed (Black Market agent, Riverglades) for 150g (beta price per Kami-labs).
 - Deathcharger's Reins seen on the Black Market Auction House in beta with a 3,000g starting bid (per guides).

@@ -30,33 +30,36 @@ Facts from Blizzard and public guides, gathered 9 days after launch. Anything ma
 - Alcaz Prison (es: Prisión de Alcaz): Alcaz Island (Dustwallow Marsh, es: Marjal Revolcafango), 48-53.
 - Blackmaw Hold (es: Bastión Faucenegra): Azshara, 55-60.
 - Shaper's Terrace (es: El Bancal del Creador): Un'Goro Crater (es: Cráter de Un'Goro), 58-60.
-- The original dungeons (Deadmines, Gnomeregan, Scarlet Monastery...) still exist. There is no automatic dungeon finder and meeting stones don't summon; at most 5 dungeon instances per hour.
+- The original dungeons (Deadmines, Gnomeregan, Scarlet Monastery...) still exist. No automatic dungeon finder and no teleport: a Classic-style Looking For Group tool lists players and groups by dungeon. Meeting stones don't summon (only a warlock's Ritual of Summoning). At most 5 dungeon instances per hour (per guides).
 
 ### Raids
-- Open on December 9, 2026: The Barrow Deeps (10 players), Hyjal Summit (20 players) and, per guides, Onyxia's Lair (40, with the Drakefire Amulet attunement).
+- Open on December 9, 2026: The Barrow Deeps (10 players), Hyjal Summit (20 players) and Onyxia's Lair (40, needs the Drakefire Amulet in your bags from its attunement chain). Raids reset weekly.
 - From November 4 to December 8, 2026 there are no WoW Forever raids available. From December 9 on there are: if today is that date or later, they are open (search their current state if it matters).
 
 ### New race: Skyborne (es: "Cielonata")
-- Elves from Zephras Isle, of Highborne origin. Players choose a faction at character creation: the Alliance branch "High Order" (es: "de la Suma Orden", arcane) or the Horde branch (per guides "Windshapers", elemental).
+- Elves from Zephras Isle, of Highborne origin. Players choose a faction at character creation: the Alliance branch "High Order Skyborne" (es: "de la Suma Orden", arcane) or the Horde branch "Windshaper Skyborne" (es: "Formavientos", elemental).
 - Classes: warrior, hunter, rogue, druid (both factions); shaman Horde only; mage Alliance only. Their own druid forms.
-- They start on Zephras Isle (1-12). They have an air movement racial (es: "Caminar en el aire") and an arcane one (es: "Leer línea ley"): search their exact effect if it matters.
+- They start on Zephras Isle (1-12).
+- Racials, both branches: Walk on Air (es: "Caminar en el aire"; active, glide downward for 10 sec, 1.5 min cooldown), Wind Blessed (passive, +2% haste) and Elemental Insight (passive, +5% damage against Elementals).
+- High Order only: Read Leyline (es: "Leer línea ley"; +50% health and mana regeneration for 15 sec, 2 min cooldown; near a leyline you become Attuned for 1 hour and it gives +100%). Windshaper only: Skysight (+15% movement and mounted speed, 2 min cooldown; near an elemental convergence you become Charged for 1 hour and it gives +30%).
 
 ### Other changes
 - New race and class combinations: gnome priest, human hunter, dwarf shaman, orc mage, troll warlock, undead paladin.
 - Talents from level 10, with milestones at 11, 16, 21 and 31. Some classic buffs (Divine Spirit, Blessing of Kings, Improved Mark of the Wild) are part of the base class.
 - Each race has two active and two passive racials.
-- Burning Crusade-style riding: the cost is in the training, and learning it gives a mount. Per guides (October 2026, from the beta):
+- Burning Crusade-style riding: the cost is in the training, and each step gives a free mount (Wowhead, Blizzard interview):
   - Level 40, Apprentice Riding: 100 gold, includes your race's basic mount (+60% speed); extra colors 20 gold each.
-  - Level 60: Journeyman Riding 1,000 gold; epic (swift) mounts 200 gold each (+100% speed).
+  - Level 60, Journeyman Riding: 1,000 gold, includes your race's swift mount (+100% speed); extra swift mounts 200 gold each. About 1,000 gold in all, not 1,200.
   - Trained from your own race's riding trainer, next to its mount vendor (e.g. human: Eastvale Logging Camp, Elwynn Forest; dwarf: Amberstill Ranch, Dun Morogh; gnome: Steelgrill's Depot, Dun Morogh; night elf: Cenarion Enclave, Darnassus; Skyborne: Fairweather Stables, Zephras Isle; orc: Valley of Honor, Orgrimmar; troll: Sen'jin Village, Durotar; tauren: Bloodhoof Village, Mulgore; undead: Brill, Tirisfal Glades). Other races' mounts need Exalted reputation.
   - Honored with your home faction: 10% off the training and your race's mounts.
-  - Paladins (quest The Tome of Nobility for the Alliance) and warlocks (Strahad Farsan in Ratchet, level 40 quest) get their first mount free from a class quest.
+  - Riding seems to be learned per mount type: the in-game quest text says each creature needs its own riding skill, and per guides another race's mounts need Exalted with that race plus its own training. Some guides describe one riding skill for every mount: not settled.
+  - Paladins and warlocks get their first mount free from a level 40 class quest, and skip the 100 gold training: paladin "The Tome of Nobility" (Duthorian Rall, Stormwind) or, undead, "A Paladin's Steed" (Danitha Morr, Tirisfal Glades); warlock "Summon Felsteed" (Strahad Farsan, above Ratchet), which grants Apprentice Riding (Blizzard hotfix).
 - Camps: the cooking fire becomes a shared campfire with camp bonuses. "Well Fed" gives +5% experience from kills.
 - Legacy: account points (from classes, professions, PvP, exploration, dungeons and raids) spent on per-character perks.
 - Optional transmog, HD/SD graphics, controller support. Realm rules: Normal, PvP and RP; as of November 13, 2026 Hardcore mode was announced for later, with no date.
 - PvP: new battleground Darkspear Islands (15 vs 15) besides Warsong Gulch, Arathi Basin and Alterac Valley; revamped honor system.
 - Dungeon experience: a November 8, 2026 hotfix raised XP from dungeon kills by 50%; since November 13, kills give no XP to the whole party if the enemy is trivial (gray) to any member (no boosting).
-- PvP: no rank is needed for the blue honor gear; epic pieces need an Emboldened Seal with a rank requirement.
+- PvP: the blue honor gear needs no rank (per guides, level 55 to wear it; cloaks unlock at rank 3); epic pieces need an Emboldened Seal with a rank requirement.
 
 ### Calendar
 - Launch: November 4, 2026. Raids: December 9, 2026.
