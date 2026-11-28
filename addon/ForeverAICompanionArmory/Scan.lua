@@ -722,6 +722,26 @@ local function idTip(id)
   return nil
 end
 
+-- What a spell's own tooltip says it does, on one line, or nil when the
+-- client gives nothing under the name. Used for buffs (Auras.lua): a proc's
+-- spell id is often not in the spellbook, so only its tooltip tells the AI
+-- what it is. Lines the client hides were already left out by dataLines and
+-- tipLines.
+function Scan.SpellDescription(id, limit)
+  if type(id) ~= "number" or Util.secret(id) then return nil end
+  local ok, lines = pcall(idTip, id)
+  if not ok or not lines then return nil end
+  local text = description(lines, 2000)
+  if not text or Util.secret(text) then return nil end
+  -- Lines joined with " | ", as the talents' and spells' descriptions are.
+  text = Util.trim(oneLine((text:gsub("%c", " "))))
+  if text == "" then return nil end
+  limit = limit or MAX_DESC
+  if #text <= limit then return text end
+  -- Cut at the limit without leaving half a letter of a language with accents.
+  return (text:sub(1, limit):gsub("[\192-\255][\128-\191]*$", ""))
+end
+
 -- One ability at the entry chosen for it: the slot's own tooltip first, and
 -- the id whose tooltip is that one. Without the slot's tooltip, the id whose
 -- tooltip shows the highest rank (the override first when they tie).

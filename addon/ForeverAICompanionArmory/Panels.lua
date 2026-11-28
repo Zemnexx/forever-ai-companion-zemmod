@@ -658,6 +658,51 @@ local function fightLine(blocks, f)
   add(blocks, { t = "p", text = line, color = "muted" })
 end
 
+-- Entries of a talents list that are a table with a plain name: the name and
+-- the other text (how it was counted, or why not), both without markup.
+local MAX_TALENTS = 60
+local function talentEntries(list, field)
+  local out = {}
+  if type(list) ~= "table" then return out end
+  for _, e in ipairs(list) do
+    if #out >= MAX_TALENTS then break end
+    local name, extra
+    if type(e) == "table" then
+      name, extra = ns.OneButton.Plain(e.name, 80), ns.OneButton.Plain(e[field], 160)
+    elseif field == nil then
+      name = ns.OneButton.Plain(e, 80)
+    end
+    if name then out[#out + 1] = { name = name, extra = extra } end
+  end
+  return out
+end
+
+-- "Name (how); Name; Name (how)": one paragraph for a whole list.
+local function talentLine(entries)
+  local parts = {}
+  for _, e in ipairs(entries) do
+    parts[#parts + 1] = e.extra and string.format("%s (%s)", e.name, e.extra) or e.name
+  end
+  return table.concat(parts, "; ")
+end
+
+-- What the analysis did with each of the character's talents (data.talents,
+-- from a newer app): counted in the combat model, left out and why, and the
+-- ones the AI said nothing about, which come first because the numbers may
+-- leave them out. A result without it draws nothing here.
+local function talentsUsed(blocks, t)
+  if type(t) ~= "table" then return end
+  local counted, left = talentEntries(t.counted, "how"), talentEntries(t.left, "why")
+  local missing = talentEntries(t.missing)
+  if #counted == 0 and #left == 0 and #missing == 0 then return end
+  add(blocks, { t = "h", text = L.TALENTS_USED })
+  if #missing > 0 then
+    add(blocks, { t = "p", text = string.format(L.TALENTS_MISSING, talentLine(missing)), color = "warn" })
+  end
+  if #counted > 0 then add(blocks, { t = "p", text = string.format(L.TALENTS_COUNTED, talentLine(counted)) }) end
+  if #left > 0 then add(blocks, { t = "p", text = string.format(L.TALENTS_LEFT, talentLine(left)), color = "muted" }) end
+end
+
 -- A result from a newer app simulates two kinds of fight (data.otherFight):
 -- the primary one, which every number of the result is about, and the other,
 -- with its own best rotation, the candidates' numbers there and its own list
@@ -793,6 +838,7 @@ function Panels.Rotation()
   fightLine(blocks, data.fight)
   if other then fightLine(blocks, other) end
   if data.modelIssues then add(blocks, { t = "p", text = string.format(L.MODEL_ISSUES, data.modelIssues), color = "warn" }) end
+  talentsUsed(blocks, data.talents)
   notes(blocks, data.assumptions, L.ASSUMPTIONS)
   notes(blocks, data.notes, L.NOTES)
   calibration(blocks, data)

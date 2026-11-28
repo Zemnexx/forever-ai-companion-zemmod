@@ -270,12 +270,19 @@ local L = {
   AURAS_HEADING = "Buffs seen on this character, newest first (%d):",
   AURAS_NONE = "No buffs seen on this character yet.",
   AURAS_ON = "[on now]",
+  -- A buff, its spell id and the most stacks seen on it.
+  AURAS_STACKS = "%s (%d, up to %d)",
   COMPARED_BOTH = "%s in %s, then in %s. The bars are for %s.",
   COMPARED_TWO = "%s · %s",
   BREAKDOWN_FOR = "%s in %s, with %s",
   PRIMARY_ONLY = "What follows is for %s, the kind of fight your goal is about.",
   MODEL_ISSUES = "%d parts of the combat model could not be simulated and were left out.",
   ASSUMPTIONS = "Assumptions",
+  -- What a rotation analysis did with each of the character's talents.
+  TALENTS_USED = "Your talents in this analysis",
+  TALENTS_MISSING = "The AI did not say what it did with these talents: %s. The numbers above may leave them out.",
+  TALENTS_COUNTED = "Counted: %s.",
+  TALENTS_LEFT = "Not counted: %s.",
   STALE_SCALING = "New measurements of how your abilities scale came in after this rotation was simulated. Analyze again to use them.",
 
   -- Calibration: how each ability scales, measured from the character's own tooltips

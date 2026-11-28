@@ -7,6 +7,7 @@ import { shapeBuild, talentIndex, validateOrder } from './talents.js';
 import { SLOTS, shapeGear } from './gear.js';
 import { runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
+import { talentNames } from './accounting.js';
 
 // The chosen tree first (by name), row by row, then the other trees.
 function sampleOrder(index, spec) {
@@ -129,11 +130,14 @@ function sampleRotation({ ctx, profile, iterations }) {
   const name = model.abilities[0].name;
   if (!/^Test /.test(name)) assumptions.push(`The placeholder ability borrows the name of your ${name}, so that its One Button lists can be tried.`);
   if (tank) assumptions.push('The threat numbers and the enemy are placeholders too: the enemy hits for 8 damage per level every 2 seconds.');
+  // Every talent accounted for, as a real answer must be: none is in the placeholder.
+  const talents = talentNames(ctx.armory_talents);
   return shapeRotation({
     summary: 'Test mode: a made-up model simulated for real, without an AI. The numbers only show that the simulator runs.',
     assumptions,
+    talents: talents.map((name) => ({ name, in: [], how: 'Test mode: no talent is in the placeholder model.' })),
     model,
-  }, run, { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile?.aoe ? 'aoe' : 'st' });
+  }, run, { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile?.aoe ? 'aoe' : 'st', talents });
 }
 
 function sampleIdeas() {

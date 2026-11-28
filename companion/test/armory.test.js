@@ -443,6 +443,8 @@ const scripted = (...replies) => {
   return { askImpl, calls };
 };
 const cfg = { ...DEFAULTS, provider: 'anthropic', armory: { ...DEFAULTS.armory, iterations: 60 } };
+// The one talent the request's character has, accounted for as a rotation answer must.
+const ACCOUNTED = [{ name: 'Improved Heroic Strike', in: ['hs'], how: 'Heroic Strike costs 3 rage less' }];
 // No test reaches Wowhead: a gear plan's id checks get this instead.
 const noNetwork = async () => { throw new Error('no network in tests'); };
 
@@ -515,7 +517,7 @@ test('a gear request passes on what the player left out, and drops a pick that i
 
 test('a rotation request is simulated, and its model kept for the gear plan and for ideas', async () => {
   const store = tmpStore();
-  const first = scripted({ summary: 'Bloodthirst on cooldown.', assumptions: ['armor guessed'], model: MELEE_MODEL });
+  const first = scripted({ summary: 'Bloodthirst on cooldown.', assumptions: ['armor guessed'], talents: ACCOUNTED, model: MELEE_MODEL });
   const armory = createArmory({ store, askImpl: first.askImpl });
   const out = await armory.handle(request('rotation'), { cfg });
   assert.equal(first.calls.length, 1);
@@ -618,12 +620,12 @@ test('the rotation request carries the buffs seen on the character, and the AI i
 test('what is wrong with the One Button lists goes back to the AI only when the model does', async () => {
   const badLists = { short: [{ use: 'bt', if: { timeAtLeast: 5 } }, { use: 'nothing' }] };
   // A good model with poor lists: one request, nothing sent back.
-  const fine = scripted({ summary: 's', model: { ...MELEE_MODEL, oneButton: badLists } });
+  const fine = scripted({ summary: 's', talents: ACCOUNTED, model: { ...MELEE_MODEL, oneButton: badLists } });
   await createArmory({ store: tmpStore(), askImpl: fine.askImpl }).handle(request('rotation'), { cfg });
   assert.equal(fine.calls.length, 1);
   // A model with three problems is sent back, and the lists' problems ride along.
   const sloppy = { ...MELEE_MODEL, oneButton: badLists, procs: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] };
-  const again = scripted({ summary: 's', model: sloppy }, { summary: 's', model: MELEE_MODEL });
+  const again = scripted({ summary: 's', talents: ACCOUNTED, model: sloppy }, { summary: 's', talents: ACCOUNTED, model: MELEE_MODEL });
   await createArmory({ store: tmpStore(), askImpl: again.askImpl }).handle(request('rotation'), { cfg });
   assert.equal(again.calls.length, 2);
   const repair = again.calls[1].messages[2].content;
@@ -675,6 +677,32 @@ test('a worst case stays under what one answer may weigh, trimming the other fig
   assert.ok(out.data.oneButton.list.length === 14 && out.data.otherFight.oneButton.list.length === 14);
 });
 
+// 51 talents taken, each with a name as long as the game may give one, half
+// of them counted in the model and half left out, every text at its length.
+function fiftyOneTalents() {
+  const name = (i) => `Talent ${i} ${'Long Name '.repeat(8)}`.slice(0, 80);
+  const talents = Array.from({ length: 51 }, (_, i) => ({ id: 1000 + i, name: name(i), row: 1, col: i, rank: 1, max: 1, desc: 'Something.' }));
+  const how = 'Word '.repeat(40);
+  return {
+    section: { pointsAtCap: 51, trees: [{ id: 1, name: 'Arms', points: 51, talents }] },
+    answer: talents.map((t, i) => ({ name: t.name, in: i % 2 ? [] : ['a0', 'player'], how })),
+  };
+}
+
+test('a worst case with 51 talents accounted for still fits, shortening what is said about them first', async () => {
+  const { raw, spells, auras } = worstCase();
+  const { section, answer } = fiftyOneTalents();
+  const req = request('rotation', { armory_spells: spells, armory_auras: auras, armory_combat: TANK_COMBAT, armory_talents: section });
+  req.ext.input.role = 'tank';
+  const ai = scripted({ ...raw, talents: answer });
+  const out = await createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(req, { cfg });
+  assert.equal(ai.calls.length, 1, 'every talent accounted for');
+  const size = JSON.stringify(out.data).length;
+  assert.ok(size <= 60000, `${size} bytes`);
+  assert.equal(out.data.talents.counted.length + out.data.talents.left.length, 51);
+  assert.equal(out.data.talents.missing, undefined);
+});
+
 test('test mode answers every kind without an AI, through the same checks', async () => {
   const echo = { ...cfg, provider: 'echo' };
   const never = async () => { throw new Error('the AI must not be asked'); };
@@ -690,6 +718,7 @@ test('test mode answers every kind without an AI, through the same checks', asyn
   assert.deepEqual(gear.data.weights, { STRENGTH: 1 });
   const rotation = await armory.handle(request('rotation'), { cfg: echo });
   assert.equal(rotation.data.rotations.length, 2);
+  assert.deepEqual(rotation.data.talents.left.map((t) => t.name), ['Improved Heroic Strike'], 'every talent accounted for');
   assert.ok(rotation.data.rotations[0].value > 0);
   // The placeholder ability borrows a spell's name, so both One Button lists can be tried.
   assert.equal(rotation.data.rotations[0].steps[0].spell, 'Bloodthirst');

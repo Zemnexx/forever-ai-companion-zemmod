@@ -27,6 +27,7 @@ import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.
 import { equippable, leftOut, shapeGear } from './gear.js';
 import { baselineOf, fitRotation, keepFromRun, oneButtonLists, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
+import { accountTalents, aurasForPrompt, talentNames } from './accounting.js';
 import { fillIds } from './item-ids.js';
 import { compareScaling, shapeScaling } from './scaling.js';
 import { openArmoryStore } from './store.js';
@@ -202,12 +203,15 @@ const handlers = {
     const last = lastAnalysis(kept, profile);
     const data = {
       request: profile,
-      ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'armory_auras', 'gear', 'buffs', 'pet']),
+      ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'gear', 'buffs', 'pet']),
+      armory_auras: aurasForPrompt(ctx.armory_auras) || undefined,
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
       armory_scaling: scaling || undefined,
       armory_model: last?.model || undefined,
     };
-    const shape = { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile.aoe ? 'aoe' : 'st' };
+    // The talents the character has: the answer has to account for each one.
+    const talents = talentNames(ctx.armory_talents);
+    const shape = { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile.aoe ? 'aoe' : 'st', talents };
     // A tank's rotations are ranked by threat, and survival is estimated with
     // the defensive numbers the game gave (never the AI's).
     const tank = profile.role === 'tank';
@@ -219,13 +223,16 @@ const handlers = {
       // The model's scaling next to what was measured (only reported, not changed).
       const compared = scaling ? compareScaling(run.model, scaling) : null;
       if (compared) result.scaling = compared;
-      // Simulated, but with parts the simulator had to drop: worth one
-      // correction. The One Button lists are a by-product, too costly to ask
-      // again for: what was wrong with them only rides along.
+      // Simulated, but with parts the simulator had to drop, or with talents
+      // the model does not account for: worth one correction (the model's
+      // own smaller problems ride along). Either way the answer can be used.
+      // The One Button lists are a by-product, too costly to ask again for:
+      // what was wrong with them only rides along.
+      const accounted = accountTalents(raw.talents, run.model, talents);
+      const retry = run.problems.length >= 3 || accounted.problems.length ? [...accounted.problems, ...run.problems] : null;
       return {
-        result, keep: keepFromRun(run, { rawModel: raw.model }), score: 1000 - run.problems.length,
-        retry: run.problems.length >= 3 ? run.problems : null,
-        also: lists.problems,
+        result, keep: keepFromRun(run, { rawModel: raw.model }), score: 1000 - run.problems.length - accounted.missing.length,
+        retry, also: lists.problems,
       };
     });
     // Kept on this PC for the gear plan (measured weights), for testing ideas

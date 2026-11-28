@@ -6,6 +6,7 @@
 import { num, round, str, text, texts, list } from './json.js';
 import { abilityTable, fitActions, normalizeModel, simulate, statWeights, survival } from './sim/engine.js';
 import { oneButtonFor } from './onebutton.js';
+import { accountTalents, shapeTalents } from './accounting.js';
 
 const MAX_ROTATIONS = 4;
 // Candidates from the last analysis are shown even below the limit, up to this many more.
@@ -376,8 +377,10 @@ function shapeOther(run, entryOf, oneButton, isKept) {
 // assumptions, notes, model }); run: runModel()'s result for raw.model.
 // context: "aoe" when the analysis was asked for several enemies, else "st"
 // (the list a One Button profile fills). auras: the buffs the addon saw on
-// the character. lists: oneButtonLists() already made for this run.
-export function shapeRotation(raw, run, { spells = [], auras = [], context = 'st', lists = null } = {}) {
+// the character. lists: oneButtonLists() already made for this run. talents:
+// the names of the talents the character has (accounting.js), which the
+// answer's "talents" is checked against.
+export function shapeRotation(raw, run, { spells = [], auras = [], context = 'st', lists = null, talents = [] } = {}) {
   const { model, sim } = run;
   const abilities = new Map(list(model.abilities).map((a) => [a.id, a]));
   const rawRotations = list(raw?.model?.rotations);
@@ -413,6 +416,9 @@ export function shapeRotation(raw, run, { spells = [], auras = [], context = 'st
   }
   const buffs = shapeBuffs(raw?.buffs, spells);
   if (buffs.length) data.buffs = buffs;
+  // Which talents the model carries, which it leaves out and why, and which it forgot.
+  const accounted = shapeTalents(accountTalents(raw?.talents, model, talents), talents);
+  if (accounted) data.talents = accounted;
   if (run.problems.length) data.modelIssues = run.problems.length;
   const worth = measured(run.weights?.perPoint);
   if (Object.keys(worth).length) {
@@ -472,24 +478,37 @@ export function continuityOf(run) {
   return lines.slice(0, MAX_CONTINUITY);
 }
 
-// What one answer may weigh (index.js) is kept by trimming the other fight
-// first: its best candidate's breakdown, then the other candidates (not
-// those from the last analysis), then its
-// best candidate's steps, then its One Button lines left out. data is
-// changed in place.
+// What one answer may weigh (index.js) is kept by shortening what is said
+// about each talent first (a talent's name says most of it), then by
+// trimming the other fight: its best candidate's breakdown, then the other
+// candidates (not those from the last analysis), then its best candidate's
+// steps, then its One Button lines left out. data is changed in place.
+const SHORT_TALENT_TEXT = 50;
+function talentTexts(data, cut) {
+  for (const entry of [...list(data.talents?.counted), ...list(data.talents?.left)]) {
+    for (const k of ['how', 'why']) {
+      if (entry[k] === undefined) continue;
+      const shorter = cut ? text(entry[k], cut) : '';
+      if (shorter) entry[k] = shorter;
+      else delete entry[k];
+    }
+  }
+}
 export function fitRotation(data, maxBytes) {
   const size = () => JSON.stringify(data).length;
+  if (size() <= maxBytes) return data;
   const other = data.otherFight;
-  if (!other || size() <= maxBytes) return data;
-  const [best] = other.rotations;
+  const [best] = other?.rotations || [];
   // The candidates from the last analysis stay: they are one line each.
   const first = (n) => other.rotations.filter((r, i) => i < n || r.kept);
   const steps = [
+    () => talentTexts(data, SHORT_TALENT_TEXT),
+    () => talentTexts(data, 0),
     () => { if (best?.breakdown) best.breakdown = best.breakdown.slice(0, 3); },
-    () => { other.rotations = first(2); },
-    () => { other.rotations = first(1); },
+    () => { if (other) other.rotations = first(2); },
+    () => { if (other) other.rotations = first(1); },
     () => { if (best) best.steps = best.steps.slice(0, 6); },
-    () => { if (other.oneButton) delete other.oneButton.left; },
+    () => { if (other?.oneButton) delete other.oneButton.left; },
   ];
   for (const step of steps) {
     step();

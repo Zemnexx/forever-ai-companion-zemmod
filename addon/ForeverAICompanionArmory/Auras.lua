@@ -3,14 +3,18 @@
 -- spellbook gives: a talent's, an item's) has an id only the game knows. So
 -- the Armory remembers every buff it sees on the player, and rotation
 -- requests carry them (the section armory_auras) for the app to let the AI
--- use them in a list for One Button.
+-- use them in a list for One Button. A name and an id do not say what a buff
+-- is ("Echo of Command" is a talent's stored seal), so each also carries what
+-- its spell's tooltip says and the most stacks seen on it.
 --
 -- Read when the player's buffs change (at most about once a second), when a
 -- fight ends and when a rotation request is put together, with whichever of
 -- the game's ways to read buffs this client has. Kept per character as
--- c.auras = { { name, id, at, first }, ... }, the most recently seen first:
--- "at" when it was last seen, "first" when it was first seen (an entry saved
--- without it counts as first seen when it was last seen).
+-- c.auras = { { name, id, at, first, desc, stacks }, ... }, the most recently
+-- seen first: "at" when it was last seen, "first" when it was first seen (an
+-- entry saved without it counts as first seen when it was last seen), "desc"
+-- the spell's tooltip text and "stacks" the most applications seen, each only
+-- when known.
 local _, ns = ...
 local Util = ns.Util
 
@@ -23,6 +27,14 @@ Auras.MAX_SENT = 120
 local MAX_INDEX = 80
 -- Seconds between two reads on UNIT_AURA, which comes many times a second in a fight.
 local THROTTLE = 1
+-- Tooltip reads for descriptions: a learn runs up to once a second in a
+-- fight, so it reads only a few, and the rest wait for later learns. A buff
+-- whose tooltip gives nothing is tried a few times a session, not forever.
+Auras.DESC_READS = 3
+Auras.DESC_TRIES = 3
+Auras.MAX_DESC = 200
+-- Spell id -> tooltip reads tried this session (not saved).
+Auras.tries = {}
 
 -- How the last read went, for /armory debug.
 Auras.how = nil   -- the way it was read
@@ -44,16 +56,31 @@ local function plainId(id)
   return id
 end
 
--- name, id of an aura as a table (the modern AuraData), or nil.
+-- Stacks worth keeping: a plain whole number above 1 (a buff that does not
+-- stack shows 0 or 1).
+local function plainStacks(n)
+  if type(n) ~= "number" or Util.secret(n) then return nil end
+  if n <= 1 or n >= 10000 or n ~= math.floor(n) then return nil end
+  return n
+end
+
+local function plainDesc(s)
+  if type(s) ~= "string" or Util.secret(s) or s == "" then return nil end
+  return s
+end
+
+-- name, id, stacks of an aura as a table (the modern AuraData), or nil.
 local function fromData(aura)
   if type(aura) ~= "table" then return nil end
   local ok, name, id = pcall(function() return aura.name, aura.spellId end)
   if not ok then return nil end
-  return plainName(name), plainId(id)
+  -- Read on its own: an aura whose count is hidden still has its name and id.
+  local okStacks, stacks = pcall(function() return aura.applications end)
+  return plainName(name), plainId(id), okStacks and plainStacks(stacks) or nil
 end
 
 -- The ways to read the player's buffs, tried in this order. Each returns the
--- auras found as { { name, id } }, or nil and why it could not be used.
+-- auras found as { { name, id, stacks } }, or nil and why it could not be used.
 local WAYS = {
   {
     name = "C_UnitAuras.GetAuraDataByIndex",
@@ -79,13 +106,13 @@ local WAYS = {
       if type(each) ~= "function" then return false, "missing" end
       local count = 0
       -- Packed: the modern client hands over an AuraData table. An older one
-      -- hands over UnitBuff's values, the spell id tenth.
+      -- hands over UnitBuff's values, the count third and the spell id tenth.
       local ok, err = pcall(each, "player", "HELPFUL", nil, function(first, ...)
         count = count + 1
         if type(first) == "table" then
           add(fromData(first))
         else
-          add(plainName(first), plainId((select(9, ...))))
+          add(plainName(first), plainId((select(9, ...))), plainStacks((select(2, ...))))
         end
         return count >= MAX_INDEX
       end, true)
@@ -98,13 +125,13 @@ local WAYS = {
     read = function(add)
       if type(UnitBuff) ~= "function" then return false, "missing" end
       for i = 1, MAX_INDEX do
-        local ok, name, _, _, _, _, _, _, _, _, id = pcall(UnitBuff, "player", i)
+        local ok, name, _, count, _, _, _, _, _, _, id = pcall(UnitBuff, "player", i)
         if not ok then
           if i == 1 then return false, tostring(name) end
           break
         end
         if name == nil then break end
-        add(plainName(name), plainId(id))
+        add(plainName(name), plainId(id), plainStacks(count))
       end
       return true
     end,
@@ -118,11 +145,11 @@ function Auras.Read()
   local failed = {}
   for _, way in ipairs(WAYS) do
     local found, seen = {}, {}
-    local function add(name, id)
+    local function add(name, id, stacks)
       -- An aura with a hidden name or id is skipped; so is one listed twice.
       if name and id and not seen[id] then
         seen[id] = true
-        found[#found + 1] = { name = name, id = id }
+        found[#found + 1] = { name = name, id = id, stacks = stacks }
       end
     end
     local ok, worked, why = pcall(way.read, add)
@@ -151,6 +178,29 @@ local function kept()
   return out
 end
 
+-- Reads the tooltips of a few buffs still without a description, in the
+-- order kept (the ones on now first). Each read is guarded and a hidden or
+-- empty tooltip leaves the buff as it was, for a later learn.
+local function describe(list)
+  local reads = 0
+  for _, e in ipairs(list) do
+    if reads >= Auras.DESC_READS then return end
+    if not plainDesc(e.desc) and (Auras.tries[e.id] or 0) < Auras.DESC_TRIES then
+      reads = reads + 1
+      Auras.tries[e.id] = (Auras.tries[e.id] or 0) + 1
+      local ok, desc = pcall(ns.Scan.SpellDescription, e.id, Auras.MAX_DESC)
+      if ok and plainDesc(desc) then e.desc = desc end
+    end
+  end
+end
+
+-- The most stacks seen: the old count or the new one.
+local function most(old, new)
+  old, new = plainStacks(old), plainStacks(new)
+  if old and new then return math.max(old, new) end
+  return old or new
+end
+
 -- Reads the buffs now and puts them at the front of what is kept: a buff
 -- seen again moves there. Returns how many are on now, or nil.
 function Auras.Learn()
@@ -158,7 +208,10 @@ function Auras.Learn()
   if not list then return nil end
   local now = Auras.Read()
   if not now then return nil end
-  if #now == 0 then return 0 end
+  if #now == 0 then
+    describe(list)
+    return 0
+  end
   local at = time()
   local before = {}
   for _, e in ipairs(list) do
@@ -169,7 +222,8 @@ function Auras.Learn()
     -- A buff seen again keeps when it was first seen.
     local old = before[a.id]
     local first = old and (tonumber(old.first) or tonumber(old.at)) or at
-    out[#out + 1] = { name = a.name, id = a.id, at = at, first = first }
+    out[#out + 1] = { name = a.name, id = a.id, at = at, first = first,
+      desc = old and plainDesc(old.desc) or nil, stacks = most(old and old.stacks, a.stacks) }
     placed[a.id] = true
   end
   for _, e in ipairs(list) do
@@ -179,6 +233,7 @@ function Auras.Learn()
       placed[e.id] = true
     end
   end
+  describe(out)
   ns.Store:Char().auras = out
   return #now
 end
@@ -209,13 +264,15 @@ function Auras.Changed()
 end
 
 -- For a rotation request: what is on now, then the most recently seen,
--- { name, id } only. An empty list when nothing could be read.
+-- { name, id, desc, stacks } (the last two when known) and nothing else. An
+-- empty list when nothing could be read.
 function Auras.Section()
   pcall(Auras.Learn)
   local out = {}
   for _, e in ipairs(kept() or {}) do
     if #out >= Auras.MAX_SENT then break end
-    out[#out + 1] = { name = e.name, id = e.id }
+    local desc = plainDesc(e.desc)
+    out[#out + 1] = { name = e.name, id = e.id, desc = desc and desc:sub(1, Auras.MAX_DESC) or nil, stacks = plainStacks(e.stacks) }
   end
   return out
 end
@@ -246,7 +303,8 @@ end
 local PER_LINE = 5
 
 -- The chat lines of /armory buffs: every buff remembered, newest first, with
--- its spell id, the ones on the character now marked.
+-- its spell id and the most stacks seen, the ones on the character now
+-- marked. The descriptions are too long for chat and are not listed.
 function Auras.Lines()
   pcall(Auras.Learn)
   local list = Auras.Newest()
@@ -257,7 +315,8 @@ function Auras.Lines()
   for _, a in ipairs(ok and type(current) == "table" and current or {}) do on[a.id] = true end
   local lines, parts = { string.format(L.AURAS_HEADING, #list) }, {}
   for _, e in ipairs(list) do
-    local entry = string.format("%s (%d)", e.name, e.id)
+    local stacks = plainStacks(e.stacks)
+    local entry = stacks and string.format(L.AURAS_STACKS, e.name, e.id, stacks) or string.format("%s (%d)", e.name, e.id)
     if on[e.id] then entry = entry .. " " .. L.AURAS_ON end
     parts[#parts + 1] = entry
     if #parts >= PER_LINE then
@@ -275,7 +334,11 @@ function Auras.Diagnose()
   local list = Auras.Newest()
   local names = {}
   for i = 1, math.min(3, #list) do names[i] = list[i].name end
-  local line = string.format("buffs seen: %d remembered", #list)
+  local described = 0
+  for _, e in ipairs(list) do
+    if plainDesc(e.desc) then described = described + 1 end
+  end
+  local line = string.format("buffs seen: %d remembered, %d with a description", #list, described)
   if #names > 0 then line = line .. " (newest: " .. table.concat(names, ", ") .. ")" end
   if Auras.how then return line .. "; read with " .. Auras.how end
   return line .. "; none could be read now: " .. tostring(Auras.why or "not tried")
