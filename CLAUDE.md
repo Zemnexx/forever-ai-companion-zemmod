@@ -88,7 +88,7 @@ This fork is Windows only, doesn't publish to CurseForge and doesn't build on Gi
 
 ## Commits
 
-- End every commit message with exactly `Co-Authored-By: Claude Code`. No `Claude-Session` line and no model names. This replaces the default attribution.
+- No attribution lines in commit messages: no `Co-Authored-By` line, no `Claude-Session` line and no model names. This replaces the default attribution. (Until November 2026 commits here ended with `Co-Authored-By: Claude Code`; the owner dropped it.)
 
 ## The app
 
