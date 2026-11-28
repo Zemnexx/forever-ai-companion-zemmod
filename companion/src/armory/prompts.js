@@ -116,7 +116,7 @@ You do not estimate the numbers yourself. You write a combat model of this chara
 - Measured scaling: wherever "armory_scaling" measures an ability's number, use the measurement instead of your own coefficient. For "scales", the coefficient for that stat is "perPoint" (for a number "overTime", divide it by the number of ticks for the per-tick coefficient) and the base is the tooltip number minus "perPoint" times the stat now; take "perPoint" as it is, even where it differs from what you remember of WoW Classic. "flat" is a coefficient of 0 for every stat in "tested" (keep the tooltip's number as the base). "ambiguous": choose one of the "candidates" with its "perPoint" from what the ability does (a heal from healingPower, a spell's damage from spellPower), and say which in "assumptions". Match an effect to the part of the ability it describes by its "kind", "text" and "value" (Judgement's damage, not a second number for a stunned target). Abilities and stats that are not measured still use your own judgment as above. In "assumptions", say in one entry which abilities' scaling was measured and in another which ones you had to guess; the program compares your model with the measurements afterwards.
 - Weapons in the model take the weapon's own damage range ("weaponDamage" and "weaponSpeed" of the item in "gear"), not the character sheet's range in "armory_combat", which already includes attack power: the simulator adds attack power to each weapon hit itself. Without "weaponDamage", take the sheet's range and subtract attackPower / 14 * speed from both ends (and for the off hand, double what is left).
 - Model what decides the result for the role in "request": the damaging (or healing) abilities, the buffs, debuffs and procs that change their numbers, and the resource. Leave utility out. Talents and gear effects that change the numbers go in as "modifiers", buffs or procs.
-- "talents": one entry for every talent in "armory_talents" (this request sends only the ones the character has points in), named exactly as there, with where the model carries it ("in") or why it does not. A talent that changes the result is in the model, whatever the last analysis did: a talent the character has that "armory_model" does not carry is something that was wrong in it. A talent that only pays off when the rotation plays around it (a swap, stacks to spend, a buff to consume) is played around by at least one candidate, and by the One Button lists where they can. The program checks the list against the character's talents and the model.
+- "talents": every talent in "armory_talents" (this request sends only the ones the character has points in), named exactly as there: in "counted" with where the model carries it ("in"), or in "left" with why it does not, grouped by that reason. A talent that changes the result is in the model, whatever the last analysis did: a talent the character has that "armory_model" does not carry is something that was wrong in it. A talent that only pays off when the rotation plays around it (a swap, stacks to spend, a buff to consume) is played around by at least one candidate, and by the One Button lists where they can. The program checks the list against the character's talents and the model.
 - "fight", from the goal: raids = a boss 3 levels above a level-60 character (level 63, about 3700 armor), 180 seconds; dungeons = a boss 2 levels above the character, about 60 seconds; leveling, solo or pvp = an enemy of the character's level, about 25 seconds, armor of roughly 60 per level for a physical attacker. "targets" is 1 unless "request" has "aoe": true. The program simulates every candidate twice: in this fight, and in the other kind (an ordinary enemy for 25 seconds, or an elite or boss for a minute or more), since players meet both whatever their goal.
 - "aoe": true in "request": the player fights groups of enemies at once. Set "fight.targets" to 3 (a typical pull while leveling or a dungeon pack), keep the fight's length and target level from the goal, give area abilities their "maxTargets" as their tooltips state it, and let at least one candidate rotation open with the area abilities. Say in "summary" that the numbers are for 3 targets.
 - Healers ("role": "healer"): "kind" is "healing". The rotations compare ways of spending the mana over the fight (the big heal on cooldown, an efficient rank cast back to back, a mix), and the simulator also builds a table of every ability's healing per second and per mana from your model, so include each rank worth comparing as its own ability.
@@ -136,10 +136,13 @@ ${ONE_BUTTON_SPEC}
   "assumptions": [ "what you had to assume or could not model, one per line" ],
   "notes": [ "what the numbers do not show: when to use the long cooldowns, what changes while moving..." ],
   "buffs": [ { "name": "Retribution Aura", "why": "a few words", "counted": false } ],
-  "talents": [ { "name": "exactly as in armory_talents", "in": [ "ids of the model's abilities, buffs or procs that carry its effect, or \\"player\\" for a modifier, a stat or a resource rule on the player" ], "how": "a few words" } ],
+  "talents": {
+    "counted": [ { "name": "exactly as in armory_talents", "in": [ "ids of the model's abilities, buffs or procs that carry its effect, or \\"player\\" for a modifier, a stat or a resource rule on the player" ], "how": "a few words" } ],
+    "left": [ { "names": [ "every talent left out for the same reason, exactly as in armory_talents" ], "why": "a few words" } ]
+  },
   "model": { }
 }
-"model" is the combat model in the format above. "assumptions": up to 6. "notes": up to 5. "buffs": up to 6. "talents": one entry per talent in "armory_talents"; "in": [] means it is not in the model, and "how" then says why it does not change the result for this role (utility, defense for a damage dealer, healing only, not usable in this fight).`,
+"model" is the combat model in the format above. "assumptions": up to 6. "notes": up to 5. "buffs": up to 6. "talents": each talent in "armory_talents" once, in "counted" when the model carries it, otherwise in one group of "left", whose "why" says why those talents do not change the result for this role (utility, defense for a damage dealer, healing only, not usable in this fight). The answer has a lot to hold: keep every "how", "why" and "note" to a few words.`,
 
   discover: (hasModel) => `## Task: find strong interactions
 Look for combinations within THIS character's reach that are stronger than they look: a talent that multiplies a gear proc, an item effect that feeds a class mechanic, two talents in different trees that scale each other, a rank or a spell used in an unusual way, a stat that crosses a threshold. WoW Forever is new and reworked, so its builds are not solved: read the actual descriptions in the data (talents, spells, and item effects in gear, inventory, bank and armory_seen) instead of repeating known Classic builds. A well-known strong build is worth one idea at most; the rest should be things a guide would not list.
@@ -198,9 +201,21 @@ export function buildArmorySystem(kind, {
   return parts.join('\n\n');
 }
 
+// What a request asked again after a cut-off answer adds: the last answer
+// was longer than the AI may write, and how to keep this one shorter.
+const SHORTER = {
+  rotation: 'at most 3 candidate rotations besides the ones kept from the last analysis, and no ability, buff or proc in the model that no candidate and no talent needs',
+};
+export function cutOffNote(kind) {
+  const more = SHORTER[kind] ? `, ${SHORTER[kind]}` : '';
+  return `Your last answer to this was cut off: it was longer than you may write in one reply, so none of it could be used. Answer again from the start, complete and shorter: every "how", "why" and "note" in a few words${more}.`;
+}
+
 // The one user message: the data, then a reminder of the only valid reply.
-export function buildArmoryMessage(data) {
-  return `Character data (JSON):\n${JSON.stringify(data)}\n\nReply with the JSON object only.`;
+// cutOff: the kind of request, when its last answer was cut off for length.
+export function buildArmoryMessage(data, { cutOff = null } = {}) {
+  const note = cutOff ? `\n\n${cutOffNote(cutOff)}` : '';
+  return `Character data (JSON):\n${JSON.stringify(data)}${note}\n\nReply with the JSON object only.`;
 }
 
 // Item ids for a gear plan, looked up after the plan in a short conversation

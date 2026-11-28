@@ -92,15 +92,17 @@ const sent = (call) => JSON.parse(call.messages[0].content.split('\n')[1]);
 
 test('the AI is told to account for every talent, and how, in the task and the answer format', () => {
   const system = buildArmorySystem('rotation', {});
-  assert.match(system, /- "talents": one entry for every talent in "armory_talents" \(this request sends only the ones the character has points in\), named exactly as there/);
+  assert.match(system, /- "talents": every talent in "armory_talents" \(this request sends only the ones the character has points in\), named exactly as there: in "counted" with where the model carries it \("in"\), or in "left" with why it does not, grouped by that reason\./);
   assert.match(system, /a talent the character has that "armory_model" does not carry is something that was wrong in it/);
   assert.match(system, /A talent that only pays off when the rotation plays around it \(a swap, stacks to spend, a buff to consume\) is played around by at least one candidate, and by the One Button lists where they can\./);
-  assert.match(system, /"talents": \[ \{ "name": "exactly as in armory_talents", "in": \[/);
-  assert.match(system, /"in": \[\] means it is not in the model, and "how" then says why it does not change the result for this role \(utility, defense for a damage dealer, healing only, not usable in this fight\)/);
+  assert.match(system, /"talents": \{\n    "counted": \[ \{ "name": "exactly as in armory_talents", "in": \[/);
+  assert.match(system, /\n    "left": \[ \{ "names": \[ "every talent left out for the same reason, exactly as in armory_talents" \], "why": "a few words" \} \]\n  \},/);
+  assert.match(system, /otherwise in one group of "left", whose "why" says why those talents do not change the result for this role \(utility, defense for a damage dealer, healing only, not usable in this fight\)/);
+  assert.match(system, /keep every "how", "why" and "note" to a few words\./);
   assert.match(system, /- armory_auras: buffs the addon has seen on the character, each \{ "name", "id" \} \(the buff's own spell id\), with "desc" \(the buff's own tooltip text\) and "stacks"/);
   assert.match(system, /A buff here can be the visible form of a talent under another name \(a talent's stored copies or charges\): match them by what they do, and give the model's buff exactly the name the game gives it here\./);
   // The other requests have no such list.
-  assert.ok(!buildArmorySystem('discover', { hasModel: true }).includes('"talents": [ { "name"'));
+  assert.ok(!buildArmorySystem('discover', { hasModel: true }).includes('"counted": [ { "name"'));
 });
 
 test('the talents the character has, by the names the game gave', () => {
@@ -131,7 +133,7 @@ test('the accounting: counted, left out with why, and what is missing or points 
   assert.deepEqual(bad.left, []);
   assert.deepEqual(bad.missing, ['Unsealed Wrath', 'Benediction']);
   assert.deepEqual(bad.problems, [
-    '"talents" does not account for this talent the character has: Unsealed Wrath. Give each one an entry: in the model if it changes the result, or with "in": [] and why it does not',
+    '"talents" does not account for this talent the character has: Unsealed Wrath. Put each one in "counted" with where the model carries it if it changes the result, or in a group of "left" with why it does not',
     '"talents": "Benediction" is in "seal_cost", which the model has no ability, buff or proc for: put its effect in the model, or point "in" at where it is',
     '"talents": "Toughness" is in "armor_buff", which the model has no ability, buff or proc for: put its effect in the model, or point "in" at where it is',
   ]);
@@ -249,4 +251,39 @@ test('test mode accounts for the talents it is given', async () => {
   assert.deepEqual(out.data.talents.left.map((t) => t.name), TAKEN);
   assert.equal(out.data.talents.missing, undefined);
   assert.equal(out.data.talents.counted, undefined);
+});
+
+test('the grouped form: talents left out share one reason, and the result keeps its shape', () => {
+  const run = runModel(MODEL, { iterations: 20, weights: false });
+  const grouped = {
+    counted: [ACCOUNTED[0], ACCOUNTED[1]],
+    left: [{ names: ['Toughness'], why: 'armor: defense, not damage' }],
+  };
+  // The same accounting as the older list, entry for entry.
+  assert.deepEqual(accountTalents(grouped, run.model, TAKEN), accountTalents(ACCOUNTED, run.model, TAKEN));
+  const data = shapeRotation({ summary: 's', model: MODEL, talents: grouped }, run, { spells: SPELLS, auras: AURAS, talents: TAKEN });
+  assert.deepEqual(data.talents, {
+    counted: [{ name: 'Unsealed Wrath', how: 'stored seals as Echo of Command, spent by the swap' }, { name: 'Benediction', how: 'seals cost 15% less mana' }],
+    left: [{ name: 'Toughness', why: 'armor: defense, not damage' }],
+  });
+  // One reason for several talents, a group with a single "name", and one forgotten.
+  const many = accountTalents({ left: [{ names: ['Benediction', 'Toughness'], why: 'not for this fight' }, { name: 'Eye for an Eye', why: 'x' }] }, run.model, [...TAKEN, 'Eye for an Eye']);
+  assert.deepEqual(many.left, [{ name: 'Benediction', why: 'not for this fight' }, { name: 'Toughness', why: 'not for this fight' }, { name: 'Eye for an Eye', why: 'x' }]);
+  assert.deepEqual(many.missing, ['Unsealed Wrath']);
+  assert.match(many.problems[0], /this talent the character has: Unsealed Wrath\. Put each one in "counted"/);
+  // "in" still has to point at the model, in "counted" as in the older form.
+  const wrong = accountTalents({ counted: [{ name: 'Benediction', in: ['nothing'] }], left: [{ names: ['Toughness', 'Unsealed Wrath'], why: 'y' }] }, run.model, TAKEN);
+  assert.deepEqual(wrong.missing, ['Benediction']);
+  assert.match(wrong.problems[0], /"Benediction" is in "nothing", which the model has no ability, buff or proc for/);
+  // Neither form: nothing accounted for.
+  assert.deepEqual(accountTalents({ something: 1 }, run.model, TAKEN).missing, TAKEN);
+});
+
+test('a rotation answered in the grouped form needs no correction round', async () => {
+  const answer = { summary: 's', model: MODEL, talents: { counted: ACCOUNTED.slice(0, 2), left: [{ names: ['Toughness'], why: 'defense' }] } };
+  const ai = scripted(answer);
+  const out = await createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request(), { cfg });
+  assert.equal(ai.calls.length, 1);
+  assert.deepEqual(out.data.talents.left, [{ name: 'Toughness', why: 'defense' }]);
+  assert.equal(out.data.talents.missing, undefined);
 });

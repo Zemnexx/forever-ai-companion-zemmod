@@ -27,6 +27,19 @@ function firstObject(text, from = 0) {
   return null;
 }
 
+// True when `text` opens an object it never closes: what a reply cut off in
+// the middle of its JSON looks like. A closed object that does not parse is
+// not that.
+export function opensUnclosed(text) {
+  const s = String(text || '');
+  for (let at = 0; s.indexOf('{', at) >= 0;) {
+    const found = firstObject(s, at);
+    if (!found) return true;
+    at = found.end;
+  }
+  return false;
+}
+
 // What models add that JSON.parse refuses: // comments and trailing commas.
 function relax(json) {
   let out = '';

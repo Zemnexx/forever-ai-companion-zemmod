@@ -1,4 +1,5 @@
-// AI providers. Each returns { text, model }.
+// AI providers. Each returns { text, model, usage }, with truncated: true when
+// the provider says the output limit cut the answer off.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -56,8 +57,20 @@ export function anthropicWebTools(model) {
   ];
 }
 
+// Above this many output tokens an answer counts as long. The Claude API
+// streams a long one: it can take many minutes, longer than a request that
+// sends nothing back may stay open, and the SDK asks for streaming there.
+// Claude Code is told the limit, since its own is lower. At or below it
+// (every chat question) nothing changes.
+export const LONG_ANSWER_TOKENS = 16000;
+
 async function anthropic(cfg, system, messages) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  return askClaudeApi(Anthropic, cfg, system, messages);
+}
+
+// The Claude API with the SDK passed in (tests pass a stand-in for it).
+export async function askClaudeApi(Anthropic, cfg, system, messages) {
   const c = cfg.anthropic;
   const client = new Anthropic(c.apiKey ? { apiKey: c.apiKey } : {});
   const params = {
@@ -69,9 +82,15 @@ async function anthropic(cfg, system, messages) {
     output_config: { effort: c.effort },
   };
   if (canSearch(cfg)) params.tools = anthropicWebTools(c.model);
-  const send = (p) => (c.fallbacks && FALLBACK_MODELS.has(c.model)
-    ? client.beta.messages.create({ ...p, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: cfg.timeoutMs })
-    : client.messages.create(p, { timeout: cfg.timeoutMs }));
+  const beta = c.fallbacks && FALLBACK_MODELS.has(c.model);
+  const api = beta ? client.beta.messages : client.messages;
+  const extra = beta ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {};
+  const streamed = (Number(c.maxTokens) || 0) > LONG_ANSWER_TOKENS;
+  // A stream's timeout only covers the wait for its first bytes, so the
+  // whole answer gets its own deadline as well.
+  const send = (p) => (streamed
+    ? api.stream({ ...p, ...extra }, { timeout: cfg.timeoutMs, signal: AbortSignal.timeout(cfg.timeoutMs) }).finalMessage()
+    : api.create({ ...p, ...extra }, { timeout: cfg.timeoutMs }));
   let response;
   let usage = null;
   const count = (r) => {
@@ -88,7 +107,9 @@ async function anthropic(cfg, system, messages) {
       response = await send({ ...params, messages: [...messages, { role: 'assistant', content: response.content }] });
       count(response);
     }
-  } catch (error) {
+  } catch (caught) {
+    // A stream stopped by its deadline is a timeout, as a whole request would report it.
+    const error = streamed && caught instanceof Anthropic.APIUserAbortError ? new Anthropic.APIConnectionTimeoutError() : caught;
     if (error instanceof Anthropic.AuthenticationError) {
       throw err('claudeBadKey');
     } else if (error instanceof Anthropic.PermissionDeniedError) {
@@ -107,8 +128,10 @@ async function anthropic(cfg, system, messages) {
   }
   // With web search the answer comes in several text blocks (one per citation).
   let text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  if (response.stop_reason === 'max_tokens') text += ' [...]';
-  return { text, model: response.model, usage };
+  // Cut off by the output limit: the chat shows it, and the Armory is told.
+  const truncated = response.stop_reason === 'max_tokens';
+  if (truncated) text += ' [...]';
+  return { text, model: response.model, usage, ...(truncated ? { truncated } : {}) };
 }
 
 async function openaiCompatible(cfg, system, messages) {
@@ -126,16 +149,19 @@ async function openaiCompatible(cfg, system, messages) {
   if (res.status === 429) throw err('apiRateLimit');
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const json = await res.json();
-  const text = json.choices?.[0]?.message?.content;
+  const choice = json.choices?.[0];
+  const text = choice?.message?.content;
   if (!text) throw err('noText');
   const u = json.usage;
   const usage = u ? tokenUsage(u.prompt_tokens, u.prompt_tokens_details?.cached_tokens, u.completion_tokens) : null;
-  return { text, model: json.model || c.model, usage };
+  // "length": the output limit (the server's own, none is sent) ended the answer.
+  return { text, model: json.model || c.model, usage, ...(choice.finish_reason === 'length' ? { truncated: true } : {}) };
 }
 
-function run(bin, args, input, timeoutMs, cwd, shell = process.platform === 'win32') {
+// env: variables added to the child's own (null = just the app's).
+function run(bin, args, input, timeoutMs, cwd, shell = process.platform === 'win32', env = null) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd, shell, windowsHide: true });
+    const child = spawn(bin, args, { cwd, shell, windowsHide: true, ...(env ? { env: { ...process.env, ...env } } : {}) });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {
@@ -193,6 +219,14 @@ export function claudeCodeArgs(c, systemFile, shell, { webSearch = false } = {})
   return args;
 }
 
+// What Claude Code is given besides its arguments: a long answer's limit, since
+// its own output limit is lower than what the Armory asks for. Nothing for a
+// chat question.
+export function claudeCodeEnv(c) {
+  const limit = Math.round(Number(c?.maxTokens) || 0);
+  return limit > LONG_ANSWER_TOKENS ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(limit) } : null;
+}
+
 // "claude-sonnet-5-5" -> "Claude Sonnet 5.5"
 function prettyModel(id) {
   const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id || '');
@@ -214,7 +248,7 @@ async function claudeCode(cfg, system, messages) {
   const args = claudeCodeArgs(c, systemFile, shell, { webSearch: canSearch(cfg) });
   let out;
   try {
-    out = await run(file, args, flattenPrompt(null, messages), cfg.timeoutMs, sandboxDir(), shell);
+    out = await run(file, args, flattenPrompt(null, messages), cfg.timeoutMs, sandboxDir(), shell, claudeCodeEnv(c));
   } catch (e) {
     // claude -p exits with 1 on errors but still prints its JSON result.
     out = e.stdout;

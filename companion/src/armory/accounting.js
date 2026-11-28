@@ -1,10 +1,10 @@
 // What a rotation answer says about the character's talents, checked. The AI
-// lists every talent the character has, with where its effect is in the
-// combat model ("in": ids of abilities, buffs or procs, or "player") or why
-// it leaves it out. A talent it forgets, or one it says is somewhere the
-// model has nothing, is what lets a model drop a talent without anyone
-// noticing, and with the last model shown again the next time, keep it
-// dropped. Also: the buffs seen on the character as the AI is shown them.
+// accounts for every talent the character has: in "counted", with where its
+// effect is in the combat model ("in": ids of abilities, buffs or procs, or
+// "player"), or in a group of "left" with why those talents are left out.
+// A talent it forgets, or one it says is somewhere the model has nothing, is
+// what lets a model drop a talent without anyone noticing, and with the last
+// model shown again the next time, keep it dropped. Also: the buffs seen on the character as the AI is shown them.
 import { list, num, str, text } from './json.js';
 
 const NAME_LEN = 80;
@@ -46,6 +46,17 @@ const named = (names) => {
   return names.length > MAX_NAMED ? `${shown} and ${names.length - MAX_NAMED} more` : shown;
 };
 
+// The answer's "talents" as one entry per talent ({ name, in, how }). The
+// format asks for { counted: [...], left: [{ names: [...], why }] }, which
+// says a reason once for a whole group; the older form, a list of entries
+// with "in": [] for one left out, is still read.
+function entriesOf(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return list(raw);
+  const left = list(raw.left).flatMap((group) => [...list(group?.names), ...list(group?.name)]
+    .map((name) => ({ name, in: [], how: group?.why })));
+  return [...list(raw.counted), ...left];
+}
+
 /**
  * The AI's "talents" (raw) against the talents the character has (taken:
  * talentNames()) and the normalized model. Returns { counted: [{ name, how }],
@@ -60,7 +71,7 @@ export function accountTalents(raw, model, taken) {
   if (!wanted.size) return out;
   const known = knownRefs(model);
   const seen = new Map();
-  for (const entry of list(raw)) {
+  for (const entry of entriesOf(raw)) {
     const k = key(entry?.name);
     if (!wanted.has(k) || seen.has(k)) continue;
     seen.set(k, entry);
@@ -83,7 +94,7 @@ export function accountTalents(raw, model, taken) {
     else out.missing.push(name);
   }
   if (unlisted.length) {
-    out.problems.unshift(`"talents" does not account for ${unlisted.length === 1 ? 'this talent' : 'these talents'} the character has: ${named(unlisted)}. Give each one an entry: in the model if it changes the result, or with "in": [] and why it does not`);
+    out.problems.unshift(`"talents" does not account for ${unlisted.length === 1 ? 'this talent' : 'these talents'} the character has: ${named(unlisted)}. Put each one in "counted" with where the model carries it if it changes the result, or in a group of "left" with why it does not`);
   }
   return out;
 }

@@ -19,10 +19,11 @@
 // The AI is the one chosen in the app (same provider, model and keys as the
 // chat), asked with more effort and a longer timeout (config "armory").
 import { ask, canSearch } from '../providers.js';
+import { DEFAULTS } from '../config.js';
 import { err, t } from '../i18n.js';
 import { playerLang } from '../prompt.js';
 import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.js';
-import { extractJson, list, num, str } from './json.js';
+import { extractJson, list, num, opensUnclosed, str } from './json.js';
 import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
 import { equippable, leftOut, shapeGear } from './gear.js';
 import { baselineOf, fitRotation, keepFromRun, oneButtonLists, runModel, shapeRotation } from './rotation.js';
@@ -65,16 +66,19 @@ export function armoryPatch(cfg, { effort, model } = {}) {
 }
 
 // The chosen AI with the Armory's own effort, model, answer size and patience.
+// The answer size reaches the Claude API and Claude Code; the OpenAI-compatible
+// option sends no limit, so its server's own (the model's) applies.
 export function armoryConfig(cfg) {
   const a = cfg.armory || {};
   const effort = a.effort || 'high';
   const model = armoryModel(cfg);
+  const maxTokens = a.maxTokens || DEFAULTS.armory.maxTokens;
   const withModel = (section) => (model ? { ...section, model } : section);
   return {
     ...cfg,
     timeoutMs: a.timeoutMs || 600000,
-    anthropic: { ...withModel(cfg.anthropic), effort, maxTokens: a.maxTokens || 16000 },
-    claudeCode: { ...withModel(cfg.claudeCode), effort },
+    anthropic: { ...withModel(cfg.anthropic), effort, maxTokens },
+    claudeCode: { ...withModel(cfg.claudeCode), effort, maxTokens },
     codex: { ...withModel(cfg.codex), effort },
     openai: withModel(cfg.openai),
   };
@@ -89,7 +93,7 @@ export function lookupConfig(cfg) {
     ...base,
     timeoutMs: 120000,
     anthropic: { ...base.anthropic, effort, maxTokens: 4000 },
-    claudeCode: { ...base.claudeCode, effort },
+    claudeCode: { ...base.claudeCode, effort, maxTokens: 4000 },
     codex: { ...base.codex, effort },
   };
 }
@@ -120,25 +124,55 @@ function profileOf(req, kind) {
   };
 }
 
+// A reply the output limit cut off: the provider said so, or it opened an
+// object and never closed it. Asking for a correction would not help, since
+// the corrected answer would be just as long.
+const cutOff = (reply, raw) => reply.truncated || (!raw && opensUnclosed(reply.text));
+
+// One line for the app's log about an answer that could not be used, enough
+// to tell a cut-off answer from one that was not JSON. Only its end is shown:
+// a reply can hold the player's character data.
+const TAIL = 120;
+function noteUnusable(log, kind, reply) {
+  const tail = reply.text.replace(/[\r\n]+/g, ' ').slice(-TAIL);
+  const output = reply.output ?? 'unknown';
+  log(`Armory ${kind}: answer not used. ${reply.text.length} characters, cut off by the provider: ${reply.truncated ? 'yes' : 'no'}, output tokens: ${output}, ends with: ${tail}`);
+}
+
 // One request's conversation with the AI: asks, reads the JSON, and asks once
-// more with what was wrong when `check` says the answer can't be used.
+// more with what was wrong when `check` says the answer can't be used. A
+// first answer that was cut off is asked for again from the start, shorter.
 // check(raw) -> { result, score, retry: [problems] | null, also: [problems
 // worth fixing that would not send the answer back on their own], fatal:
 // message key }. Returns the verdict of the answer that was kept.
-async function converse(ai, system, data, check) {
+// ai(system, messages) -> { text, truncated, output }.
+async function converse(ai, system, data, check, { kind = 'request', log = () => {} } = {}) {
   const messages = [{ role: 'user', content: buildArmoryMessage(data) }];
   let reply = await ai(system, messages);
-  let raw = extractJson(reply);
-  let verdict = raw ? check(raw) : { retry: [t('armoryNoJson')] };
-  if (verdict.retry?.length) {
-    reply = await ai(system, [...messages, { role: 'assistant', content: String(reply || '(empty)') },
-      { role: 'user', content: repairMessage(verdict.retry, verdict.also) }]);
-    const second = extractJson(reply);
-    if (second) {
-      const again = check(second);
-      // The second answer wins unless it is worse than the first.
-      if (!verdict.result || (again.result && (again.score ?? 0) >= (verdict.score ?? 0))) { raw = second; verdict = again; }
+  let raw = extractJson(reply.text);
+  if (cutOff(reply, raw)) {
+    noteUnusable(log, kind, reply);
+    // Without the cut-off text, which would only make the conversation longer.
+    reply = await ai(system, [{ role: 'user', content: buildArmoryMessage(data, { cutOff: kind }) }]);
+    raw = extractJson(reply.text);
+    const verdict = raw && !reply.truncated ? check(raw) : null;
+    if (!verdict?.result) {
+      noteUnusable(log, kind, reply);
+      throw err(verdict?.fatal || (cutOff(reply, raw) ? 'armoryCutOff' : 'armoryNoJson'));
     }
+    return verdict;
+  }
+  let verdict = raw ? check(raw) : { retry: [t('armoryNoJson')] };
+  if (!verdict.result) noteUnusable(log, kind, reply);
+  if (verdict.retry?.length) {
+    reply = await ai(system, [...messages, { role: 'assistant', content: String(reply.text || '(empty)') },
+      { role: 'user', content: repairMessage(verdict.retry, verdict.also) }]);
+    const second = reply.truncated ? null : extractJson(reply.text);
+    const again = second ? check(second) : null;
+    // The second answer wins unless it is worse than the first.
+    if (second && (!verdict.result || (again.result && (again.score ?? 0) >= (verdict.score ?? 0)))) { raw = second; verdict = again; }
+    if (!again?.result) noteUnusable(log, kind, reply);
+    if (!verdict.result && !verdict.fatal && cutOff(reply, second)) throw err('armoryCutOff');
   }
   if (!raw || !verdict.result) throw err(verdict.fatal || 'armoryNoJson');
   return verdict;
@@ -163,7 +197,7 @@ function lastAnalysis(kept, profile) {
 }
 
 const handlers = {
-  async talents({ ctx, profile, system, ai }) {
+  async talents({ ctx, profile, system, ai, log }) {
     const index = talentIndex(ctx.armory_talents);
     const data = { request: profile, ...pick(ctx, [...BASE, 'gear', 'armory_talents']) };
     return (await converse(ai, system('talents'), data, (raw) => {
@@ -172,10 +206,10 @@ const handlers = {
       // A few misplaced points are dropped; a build with holes is sent back.
       const result = checked.order.length ? shapeBuild(index, raw, checked) : null;
       return { result, score: checked.order.length, retry: missing > 2 || !result ? checked.problems : null };
-    })).result;
+    }, { kind: 'talents', log })).result;
   },
 
-  async gear({ ctx, profile, system, ai, kept, ids }) {
+  async gear({ ctx, profile, system, ai, kept, ids, log }) {
     const data = {
       request: profile,
       ...pick(ctx, [...BASE, 'gear', 'emptySlots', 'professions', 'reputations', 'lockouts', 'auctionPrices', 'armory_seen']),
@@ -188,7 +222,7 @@ const handlers = {
       const result = shapeGear(raw, { without: profile.without });
       const picks = result.slots.reduce((n, s) => n + s.picks.length, 0);
       return { result: picks || result.summary ? result : null, score: picks, retry: picks ? null : ['"slots" has no usable picks'] };
-    })).result;
+    }, { kind: 'gear', log })).result;
     // Ids checked and filled in afterwards; whatever goes wrong there, the plan stands.
     try {
       await ids(plan);
@@ -198,7 +232,7 @@ const handlers = {
     return plan;
   },
 
-  async rotation({ ctx, profile, system, ai, store, charKey, kept, iterations }) {
+  async rotation({ ctx, profile, system, ai, store, charKey, kept, iterations, log }) {
     const scaling = shapeScaling(ctx.armory_scaling);
     const last = lastAnalysis(kept, profile);
     const data = {
@@ -234,7 +268,7 @@ const handlers = {
         result, keep: keepFromRun(run, { rawModel: raw.model }), score: 1000 - run.problems.length - accounted.missing.length,
         retry, also: lists.problems,
       };
-    });
+    }, { kind: 'rotation', log });
     // Kept on this PC for the gear plan (measured weights), for testing ideas
     // and for the next rotation analysis of the same build.
     if (verdict.keep) store.set(charKey, { ...verdict.keep, spec: profile.spec, goal: profile.goal, role: profile.role });
@@ -245,7 +279,7 @@ const handlers = {
     return verdict.result;
   },
 
-  async discover({ ctx, profile, system, ai, kept, iterations }) {
+  async discover({ ctx, profile, system, ai, kept, iterations, log }) {
     const base = baselineOf(kept);
     const data = {
       request: profile,
@@ -259,7 +293,7 @@ const handlers = {
     return (await converse(ai, system('discover', { hasModel: !!base }), data, (raw) => {
       const result = shapeIdeas(raw, base, { iterations, metric: kept?.metric });
       return { result: result.ideas.length || result.summary ? result : null, score: result.ideas.length };
-    })).result;
+    }, { kind: 'discover', log })).result;
   },
 };
 
@@ -312,7 +346,8 @@ export function createArmory({ store = null, askImpl = ask, fetchImpl = globalTh
         const out = await askImpl(aiCfg, system, messages, req);
         usage = sum(usage, out.usage || null);
         model = out.model || model;
-        return out.text;
+        // What converse needs to tell an answer cut off by the output limit.
+        return { text: String(out.text ?? ''), truncated: out.truncated === true, output: out.usage?.output ?? null };
       };
       // The id lookup counts toward the request's tokens, not its model line.
       const idCfg = lookupConfig(cfg);

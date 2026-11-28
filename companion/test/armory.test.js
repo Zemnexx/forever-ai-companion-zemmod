@@ -18,6 +18,7 @@ import { openArmoryStore } from '../src/armory/store.js';
 import { DEFAULTS, loadConfig, wowPaths } from '../src/config.js';
 import { install } from '../src/install.js';
 import { handlePluginRequest } from '../src/watcher.js';
+import { runInLang } from '../src/i18n.js';
 import { createPlugins } from '../src/plugins.js';
 
 // Two small trees: Arms (ids 1xx) and Fury (2xx).
@@ -412,7 +413,8 @@ test('the instructions carry the task, the format and the guide, never the reque
 test('the Armory asks with more effort, a longer answer and more patience than the chat', () => {
   const cfg = armoryConfig({ ...DEFAULTS, provider: 'anthropic' });
   assert.equal(cfg.anthropic.effort, 'high');
-  assert.equal(cfg.anthropic.maxTokens, 16000);
+  assert.equal(cfg.anthropic.maxTokens, 64000);
+  assert.equal(cfg.claudeCode.maxTokens, 64000);
   assert.equal(cfg.anthropic.model, DEFAULTS.anthropic.model);
   assert.equal(cfg.claudeCode.effort, 'high');
   assert.equal(cfg.timeoutMs, 600000);
@@ -1019,4 +1021,73 @@ test('a worst case with two kept candidates still fits what one answer may weigh
   assert.equal(out.data.rotations.filter((r) => r.kept).length, 2, 'both shown in the model\'s own fight');
   assert.equal(out.data.otherFight.rotations.filter((r) => r.kept).length, 2, 'and in the other one');
   assert.equal(out.data.continuity.length, 2);
+});
+
+// An AI whose replies can say they were cut off, as the providers do.
+const scriptedCut = (...replies) => {
+  const calls = [];
+  const askImpl = async (c, system, messages) => {
+    calls.push({ system, messages });
+    const r = replies[Math.min(calls.length - 1, replies.length - 1)];
+    return { text: r.text, model: 'fake', usage: { input: 100, cached: 0, output: r.output ?? 20 }, ...(r.truncated ? { truncated: true } : {}) };
+  };
+  return { askImpl, calls };
+};
+const GOOD_ROTATION = JSON.stringify({ summary: 'Bloodthirst on cooldown.', talents: { counted: ACCOUNTED }, model: MELEE_MODEL });
+// What a rotation answer cut off by the output limit looks like.
+const CUT_ROTATION = `${GOOD_ROTATION.slice(0, 400)}\nmore [...]`;
+
+test('a cut-off answer is asked again from the start, shorter, and the complete one is used', async () => {
+  const lines = [];
+  const ai = scriptedCut({ text: CUT_ROTATION, truncated: true, output: 64000 }, { text: GOOD_ROTATION });
+  const out = await createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request('rotation'), { cfg, log: (l) => lines.push(l) });
+  assert.equal(ai.calls.length, 2);
+  assert.equal(out.data.summary, 'Bloodthirst on cooldown.');
+  assert.deepEqual(out.data.talents.counted.map((t) => t.name), ['Improved Heroic Strike']);
+  // The second request is one user message: the data again, with the note, and not the cut-off text.
+  const again = ai.calls[1].messages;
+  assert.equal(again.length, 1);
+  assert.equal(again[0].role, 'user');
+  assert.ok(!again[0].content.includes('more [...]'));
+  assert.ok(again[0].content.startsWith(ai.calls[0].messages[0].content.replace('\n\nReply with the JSON object only.', '')));
+  assert.match(again[0].content, /Your last answer to this was cut off: it was longer than you may write in one reply/);
+  assert.match(again[0].content, /every "how", "why" and "note" in a few words, at most 3 candidate rotations besides the ones kept from the last analysis, and no ability, buff or proc in the model that no candidate and no talent needs\./);
+  assert.ok(again[0].content.endsWith('Reply with the JSON object only.'));
+  // One log line about the cut-off answer: its size and end, nothing more.
+  assert.equal(lines.length, 1);
+  const tail = CUT_ROTATION.replace(/[\r\n]+/g, ' ').slice(-120);
+  assert.equal(lines[0], `Armory rotation: answer not used. ${CUT_ROTATION.length} characters, cut off by the provider: yes, output tokens: 64000, ends with: ${tail}`);
+});
+
+test('an answer that opens its object and never closes it counts as cut off, even when the provider does not say so', async () => {
+  const lines = [];
+  const ai = scriptedCut({ text: CUT_ROTATION }, { text: GOOD_ROTATION });
+  await createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request('rotation'), { cfg, log: (l) => lines.push(l) });
+  assert.match(ai.calls[1].messages[0].content, /was cut off/);
+  assert.match(lines[0], /cut off by the provider: no, output tokens: 20, ends with: /);
+});
+
+test('cut off twice: the request fails saying so, in the player\'s language', async () => {
+  const lines = [];
+  const ai = scriptedCut({ text: CUT_ROTATION, truncated: true });
+  await assert.rejects(createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request('rotation'), { cfg, log: (l) => lines.push(l) }),
+    /The AI's answer was too long and was cut off\. Ask again, or choose a lower "How thorough" for Forever AI Armory in the companion app\./);
+  assert.equal(ai.calls.length, 2, 'no third request');
+  assert.equal(lines.length, 2, 'a line for each answer not used');
+  const es = scriptedCut({ text: CUT_ROTATION, truncated: true });
+  await assert.rejects(runInLang('es', () => createArmory({ store: tmpStore(), askImpl: es.askImpl }).handle(request('rotation'), { cfg })),
+    /La respuesta de la IA era demasiado larga y se cortó\./);
+});
+
+test('a complete answer without JSON still gets the correction round and today\'s message', async () => {
+  const lines = [];
+  const ai = scriptedCut({ text: 'I cannot do that.\nSorry.' }, { text: 'Still no. {"broken": }' });
+  await assert.rejects(createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request('rotation'), { cfg, log: (l) => lines.push(l) }), /could not be read/);
+  assert.equal(ai.calls[1].messages.length, 3, 'the reply and what was wrong with it');
+  assert.equal(ai.calls[1].messages[1].content, 'I cannot do that.\nSorry.');
+  assert.ok(!ai.calls[1].messages[2].content.includes('cut off'));
+  assert.deepEqual(lines, [
+    'Armory rotation: answer not used. 24 characters, cut off by the provider: no, output tokens: 20, ends with: I cannot do that. Sorry.',
+    'Armory rotation: answer not used. 22 characters, cut off by the provider: no, output tokens: 20, ends with: Still no. {"broken": }',
+  ]);
 });

@@ -98,8 +98,11 @@ export const DEFAULTS = {
   // same AI as the chat, asked with more effort, room for a longer answer and
   // more patience. iterations: fights simulated per rotation. models: the
   // model to use instead of the chat's, per AI option ("claude-code": "opus"),
-  // chosen in the app's window; none = the chat's model.
-  armory: { effort: 'high', maxTokens: 16000, timeoutMs: 600000, iterations: 300, models: {} },
+  // chosen in the app's window; none = the chat's model. maxTokens: room for
+  // the thinking and the answer together (a rotation answer is long), so the
+  // Claude API streams it (providers.LONG_ANSWER_TOKENS). Nothing in the app
+  // writes it to config.json, so only a hand-edited file holds another value.
+  armory: { effort: 'high', maxTokens: 64000, timeoutMs: 600000, iterations: 300, models: {} },
 
   // Where the up-to-date WoW Forever guide is published (see src/guide.js).
   // The app downloads it every few hours; null = only the guide inside the app.
