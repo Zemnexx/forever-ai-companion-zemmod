@@ -169,9 +169,27 @@ test('an effect on the target: kept up by its own ability as a dot, otherwise co
   assert.deepEqual(gatesOf([{ use: 'judge', if: { buffDown: 'jotc' } }]), [{ t: 'dot', id: 20271 }]);
   assert.deepEqual(gatesOf([{ use: 'cons', if: { buffDown: 'cons' } }]), [{ t: 'dot', id: 20924 }], 'an ability\'s dot by its id');
   assert.deepEqual(gatesOf([{ use: 'exo', if: { buffUp: 'jotc' } }]), [{ t: 'stack', id: 20271, op: '>=', n: 1, tgt: true }]);
-  assert.deepEqual(gatesOf([{ use: 'exo', if: { buffDown: 'cons' } }]), [{ t: 'stack', id: 20924, op: '<', n: 1, tgt: true }]);
+  // A target stack gate names rank 1 of the spell (Consecration 20924 is a
+  // higher rank of 26573), the one id One Button counts it under.
+  assert.deepEqual(gatesOf([{ use: 'exo', if: { buffDown: 'cons' } }]), [{ t: 'stack', id: 26573, op: '<', n: 1, tgt: true }]);
   assert.deepEqual(gatesOf([{ use: 'exo', if: { buffStacksAtLeast: { id: 'jotc', n: 2 } } }]), [{ t: 'stack', id: 20271, op: '>=', n: 2, tgt: true }]);
-  assert.deepEqual(gatesOf([{ use: 'judge', if: { buffStacksAtLeast: { id: 'soc_buff', n: 2 } } }]), [{ t: 'stack', id: 20920, op: '>=', n: 2 }]);
+});
+
+test('a buff on the player: only what the player casts, and never its stacks', () => {
+  // The stacks of a buff on the player are hidden in a fight, even of a seal
+  // the player casts: Judgement has a cooldown, so it stays without the condition.
+  const ob = translate([{ use: 'judge', if: { buffStacksAtLeast: { id: 'soc_buff', n: 2 } } }]);
+  assert.deepEqual(ob.list[0].gates, []);
+  assert.deepEqual(ob.left, ['Judgement is suggested without checking for Seal of Command\'s stacks, hidden in a fight, which One Button cannot do.']);
+  // A buff only the addon saw: not even whether it is up.
+  const m = model([{ use: 'cs', if: { buffUp: 'vengeance' } }, { use: 'exo', if: { not: { buffDown: 'vengeance' } } }, { use: 'soc' }]);
+  const seen = cleanRotation(m, m.rotations[0], SPELLS, { auras: [{ name: 'vengeance', id: 20050 }] });
+  assert.deepEqual(seen.list.map((e) => [e.name, e.gates]), [['Crusader Strike', []], ['Seal of Command', []]]);
+  assert.deepEqual(seen.left, [
+    'Exorcism was left out: One Button cannot check for Vengeance, hidden in a fight, and without it the spell would always come first.',
+    'Crusader Strike is suggested without checking for Vengeance, hidden in a fight, which One Button cannot do.',
+  ]);
+  assert.deepEqual(seen.actions, [{ use: 'cs' }, { use: 'soc' }], 'simulated without it');
 });
 
 test('combo points are One Button\'s own resource', () => {
@@ -413,6 +431,43 @@ test('an effect on the target One Button does not track is counted from the play
   assert.deepEqual(gatesOf([{ use: 'exo', if: { not: { buffStacksAtLeast: { id: 'hexed', n: 3 } } } }]), [{ t: 'stack', id: 5001, op: '<', n: 3, tgt: true }]);
 });
 
+test('usedOnTarget with times, and not usedWithin, as gates One Button answers in a fight', () => {
+  assert.deepEqual(gatesOf([{ use: 'exo', if: { usedOnTarget: { id: 'judge', times: 2 } } }]), [{ t: 'stack', id: 20271, op: '>=', n: 2, tgt: true }]);
+  assert.deepEqual(gatesOf([{ use: 'exo', if: { not: { usedOnTarget: { id: 'judge', times: 3 } } } }]), [{ t: 'stack', id: 20271, op: '<', n: 3, tgt: true }]);
+  // A target stack gate names rank 1 (Exorcism 10314 is a higher rank of
+  // 879); the entry and every other gate keep the character's own id. Hex
+  // Mark is in no rank chain and keeps its id.
+  const ranked = translate([
+    { use: 'exo', if: { usedOnTarget: 'exo', cooldownUp: 'cs', not: { usedWithin: { id: 'exo', sec: 10 } } } },
+    { use: 'hex', if: { not: { usedOnTarget: { id: 'hex', times: 2 } } } },
+  ]);
+  assertOneButton(ranked);
+  assert.deepEqual(ranked.list, [
+    { id: 10314, name: 'Exorcism', gates: [{ t: 'stack', id: 879, op: '>=', n: 1, tgt: true }, { t: 'cd', id: 35395 }, { t: 'buff', id: 10314, dur: 10, neg: true }] },
+    { id: 5001, name: 'Hex Mark', gates: [{ t: 'stack', id: 5001, op: '<', n: 2, tgt: true }] },
+  ]);
+  assert.equal(ranked.left, undefined, 'exact');
+  // The positive form cannot be carried over: Exorcism has no cooldown, so it is left out.
+  const within = translate([{ use: 'exo', if: { usedWithin: { id: 'cs', sec: 6 } } }, { use: 'cs' }]);
+  assert.deepEqual(within.list.map((e) => e.name), ['Crusader Strike']);
+  assert.deepEqual(within.left, ['Exorcism was left out: One Button cannot check for Crusader Strike used in the last 6 seconds, and without it the spell would always come first.']);
+  // Seal of Command's own buff outlasts 10 seconds: One Button also holds
+  // back while it is up, and so does the simulated list.
+  const m = model([{ use: 'exo', if: { not: { usedWithin: { id: 'soc', sec: 10 } } } }]);
+  const held = cleanRotation(m, m.rotations[0], SPELLS);
+  assert.deepEqual(held.list[0].gates, [{ t: 'buff', id: 20920, dur: 10, neg: true }]);
+  assert.deepEqual(held.actions, [{ use: 'exo', if: { not: { usedWithin: { id: 'soc', sec: 10 } }, buffDown: 'soc_buff' } }]);
+  assert.deepEqual(held.left, ['Exorcism also waits while Seal of Command is up: One Button holds it back for as long as that buff lasts.']);
+  // No longer than the time asked: nothing more to wait for.
+  const m30 = model([{ use: 'exo', if: { not: { usedWithin: { id: 'soc', sec: 30 } } } }]);
+  const exact = cleanRotation(m30, m30.rotations[0], SPELLS);
+  assert.deepEqual(exact.actions, [{ use: 'exo', if: { not: { usedWithin: { id: 'soc', sec: 30 } } } }]);
+  assert.deepEqual(exact.left, []);
+  // A DoT One Button tracks itself still cannot be counted, however many times.
+  const dot = translate([{ use: 'exo', if: { usedOnTarget: { id: 'swp', times: 2 } } }, { use: 'cs' }]);
+  assert.match(dot.left[0], /^Exorcism was left out: One Button cannot check for Shadow Word: Pain used 2 times on the target, each within 30 seconds of the one before \(One Button keeps/);
+});
+
 test('left: actions left out first, then conditions, then approximations', () => {
   const ob = translate([
     { use: 'soc', if: { buffRemainsBelow: { id: 'soc_buff', sec: 2 } } },
@@ -473,11 +528,12 @@ test('shapeRotation carries the list of the best rotation only, and none for a h
 // ------------------------------------------------ the lists of an analysis
 
 // The model of the owner's case: a seal on the pull, Judgement, Seal of
-// Command kept up, Seal of Righteousness at 3 stacks of a proc buff just
-// after a swing, Holy Strike. The proc buff is no spell of the character.
-// Seal of Command's buff is listed under another id than the spell: the
-// character's spell of that name still names it.
-const PALADIN_AURAS = [{ name: 'Zealous Fervor', id: 1300042 }, { name: 'seal of command', id: 99920 }];
+// Command kept up, a swap to Seal of Righteousness that spends a talent's
+// stored copies of Seal of Command (the buff "Echo of Command", which only
+// the addon saw: no spell of the character), Holy Strike. Seal of Command's
+// buff is listed under another id than the spell: the character's spell of
+// that name still names it.
+const PALADIN_AURAS = [{ name: 'Echo of Command', id: 1311703 }, { name: 'seal of command', id: 99920 }];
 function paladin(oneButton, extra = {}) {
   return {
     version: 1, kind: 'damage', fight: { duration: 60, targets: 1, targetLevel: 60, targetArmor: 3000 },
@@ -487,7 +543,7 @@ function paladin(oneButton, extra = {}) {
       { id: 'sotc', name: 'Seal of the Crusader', type: 'spell', school: 'holy', cost: 40, gcd: 1.5, applies: ['sotc_buff'], consumes: ['soc_buff', 'sor_buff'] },
       { id: 'judge', name: 'Judgement', type: 'spell', school: 'holy', cost: 50, gcd: 0, cooldown: 8, damage: { min: 300, max: 300 }, applies: ['jotc'] },
       { id: 'soc', name: 'Seal of Command', type: 'spell', school: 'holy', cost: 65, gcd: 1.5, applies: ['soc_buff'], consumes: ['sotc_buff', 'sor_buff'] },
-      { id: 'sor', name: 'Seal of Righteousness', type: 'spell', school: 'holy', cost: 60, gcd: 1.5, applies: ['sor_buff'], consumes: ['soc_buff', 'sotc_buff', 'zeal'] },
+      { id: 'sor', name: 'Seal of Righteousness', type: 'spell', school: 'holy', cost: 60, gcd: 1.5, applies: ['sor_buff'], consumes: ['soc_buff', 'sotc_buff', 'echo'] },
       { id: 'hs', name: 'Holy Strike', type: 'melee', cost: 30, gcd: 1.5, cooldown: 6, damage: { weaponPct: 100 } },
       { id: 'exo', name: 'Exorcism', type: 'spell', school: 'holy', cost: 200, gcd: 1.5, cooldown: 0, damage: { min: 400, max: 400 } },
       { id: 'swp', name: 'Shadow Word: Pain', type: 'spell', school: 'shadow', cost: 100, gcd: 1.5, dot: { tickDamage: 40, interval: 3, duration: 18 } },
@@ -497,9 +553,9 @@ function paladin(oneButton, extra = {}) {
       { id: 'soc_buff', name: 'Seal of Command', duration: 30, modifiers: [{ stat: 'damagePct', value: 10 }] },
       { id: 'sor_buff', name: 'Seal of Righteousness', duration: 30, modifiers: [{ stat: 'damagePct', value: 12 }] },
       { id: 'jotc', name: 'Judgement of the Crusader', onTarget: true, duration: 10 },
-      { id: 'zeal', name: 'Zealous Fervor', duration: 20, maxStacks: 3 },
+      { id: 'echo', name: 'Echo of Command', duration: 15, maxStacks: 3 },
     ],
-    procs: [{ id: 'zealproc', name: 'Zeal', trigger: 'meleeHit', chance: 0.5, effect: { buff: 'zeal' } }],
+    procs: [{ id: 'store', name: 'Unsealed Wrath', trigger: 'meleeHit', chance: 1, effect: { buff: 'echo' } }],
     rotations: [
       { name: 'Command', actions: [{ use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }, { use: 'hs' }] },
       { name: 'Strike first', actions: [{ use: 'hs' }, { use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }] },
@@ -508,13 +564,23 @@ function paladin(oneButton, extra = {}) {
     ...extra,
   };
 }
+// The owner's list as the AI now writes it: the swap while Seal of Command
+// is up, once Judgement was used twice on the target (time for the copies to
+// build up), at most once every 12 seconds (time to rebuild), just before a
+// swing, with mana to spare.
+const SWAP = {
+  buffUp: 'soc_buff', usedOnTarget: { id: 'judge', times: 2 }, resourceAtLeast: 250,
+  not: { any: [{ usedWithin: { id: 'sor', sec: 12 } }, { swingTimerAbove: 0.5 }] },
+};
 const OWNER_LIST = [
   { use: 'sotc', if: { buffDown: 'sotc_buff', not: { usedOnTarget: 'judge' } } },
   { use: 'judge' },
-  { use: 'sor', if: { buffStacksAtLeast: { id: 'zeal', n: 3 }, swingTimerAbove: 1.5, buffDown: 'sor_buff' } },
+  { use: 'sor', if: SWAP },
   { use: 'soc', if: { buffDown: 'soc_buff' } },
   { use: 'hs' },
 ];
+// The same swap written the old way, on 3 stacks of the buff only the addon saw.
+const OLD_SWAP = { buffStacksAtLeast: { id: 'echo', n: 3 }, resourceAtLeast: 250, not: { swingTimerAbove: 0.5 } };
 // An analysis of one of these models: the run and its One Button lists.
 function analyse(raw, { goal = 'leveling', auras = PALADIN_AURAS } = {}) {
   const run = runModel(raw, { iterations: 40, weights: false, goal });
@@ -525,8 +591,13 @@ const worth = (run, actions, fight = run.model.fight) => {
   const sim = simulate({ ...run.model, fight, rotations: [{ name: 'x', actions }] }, run.opts);
   return Math.round(sim.rotations[0].value * 10) / 10;
 };
+// How often an ability is used per minute when these actions are simulated in the run's fight.
+const usesOf = (run, actions, id) => {
+  const sim = simulate({ ...run.model, rotations: [{ name: 'x', actions }] }, run.opts);
+  return sim.rotations[0].breakdown.find((b) => b.id === id)?.perMinute ?? 0;
+};
 
-test('the AI\'s own list is used and said to be: the owner\'s case, carried over exactly', () => {
+test('the AI\'s own list is used and said to be: the owner\'s case, with gates One Button answers in a fight', () => {
   const { run, lists } = analyse(paladin({ short: OWNER_LIST, long: OWNER_LIST }));
   const ob = lists.primary;
   assertOneButton(ob);
@@ -536,24 +607,49 @@ test('the AI\'s own list is used and said to be: the owner\'s case, carried over
     // The opener: "this target has not been judged yet".
     { id: 20305, name: 'Seal of the Crusader', gates: [{ t: 'buff', id: 20305, dur: 30, neg: true }, { t: 'stack', id: 20271, op: '<', n: 1, tgt: true }] },
     { id: 20271, name: 'Judgement', gates: [] },
-    // The proc buff is named through armory_auras, by its own id.
+    // Seal of Command up (from its cast), Judgement counted twice on the
+    // target, not swapped in the last 12 seconds, the swing and the mana.
     { id: 20293, name: 'Seal of Righteousness', gates: [
-      { t: 'stack', id: 1300042, op: '>=', n: 3 }, { t: 'swing', op: '>', n: 1.5 }, { t: 'buff', id: 20293, dur: 30, neg: true },
+      { t: 'buff', id: 20920, dur: 30 }, { t: 'stack', id: 20271, op: '>=', n: 2, tgt: true }, { t: 'power', res: 'mana', op: '>=', n: 250 },
+      { t: 'buff', id: 20293, dur: 12, neg: true }, { t: 'swing', op: '<=', n: 0.5 },
     ] },
     { id: 20920, name: 'Seal of Command', gates: [{ t: 'buff', id: 20920, dur: 30, neg: true }] },
     { id: 1310001, name: 'Holy Strike', gates: [] },
   ]);
+  // Seal of Righteousness's own buff outlasts the 12 seconds, but it is
+  // never up while Seal of Command is: nothing more to wait for, nothing to say.
   assert.equal(ob.left, undefined, 'nothing left out');
   assert.deepEqual(lists.problems, []);
-  // Nothing cleaned away: the value is the AI's list as it was written.
+  // The value is that of exactly the cleaned list, which here plays as written.
+  const cleaned = cleanRotation(run.model, { actions: run.model.oneButton.short }, SPELLS, { auras: PALADIN_AURAS });
+  assert.equal(ob.value, worth(run, cleaned.actions));
   assert.equal(ob.value, worth(run, run.model.oneButton.short));
-  // Without the aura the proc buff cannot be named: that place goes.
-  const blind = analyse(paladin({ short: OWNER_LIST }), { auras: [] }).lists.primary;
-  assert.deepEqual(blind.list.map((e) => e.name), ['Seal of the Crusader', 'Judgement', 'Seal of Command', 'Holy Strike']);
-  assert.match(blind.left[0], /^Seal of Righteousness was left out: One Button cannot check for 3 or more stacks of Zealous Fervor/);
+  assert.ok(usesOf(run, cleaned.actions, 'sor') > 0, 'the swap is played');
+});
+
+test('the owner\'s case written the old way: stacks of a buff One Button cannot read leave the swap out', () => {
+  const old = [...OWNER_LIST.slice(0, 2), { use: 'sor', if: OLD_SWAP }, ...OWNER_LIST.slice(3)];
+  const { run, lists } = analyse(paladin({ short: old }));
+  const ob = lists.primary;
+  assertOneButton(ob);
+  assert.equal(ob.source, 'ai');
+  // The seal has no cooldown: without the condition it would always come first.
+  assert.deepEqual(ob.list.map((e) => e.name), ['Seal of the Crusader', 'Judgement', 'Seal of Command', 'Holy Strike']);
+  assert.deepEqual(ob.left, ['Seal of Righteousness was left out: One Button cannot check for Echo of Command\'s stacks, hidden in a fight, and without it the spell would always come first.']);
+  assert.deepEqual(lists.problems, ob.left.map((l) => `oneButton.short: ${l}`));
+  // What is measured is the list without the swap, not the list as written.
+  const cleaned = [OWNER_LIST[0], { use: 'judge' }, OWNER_LIST[3], { use: 'hs' }];
+  assert.equal(ob.value, worth(run, cleaned));
+  assert.notEqual(ob.value, worth(run, run.model.oneButton.short));
+  // buffUp of that buff cannot be carried over either; without the addon
+  // having seen it, it is a buff One Button cannot name at all.
+  const up = analyse(paladin({ short: [{ use: 'sor', if: { buffUp: 'echo' } }, { use: 'hs' }] })).lists.primary;
+  assert.match(up.left[0], /^Seal of Righteousness was left out: One Button cannot check for Echo of Command, hidden in a fight, and without it/);
+  const blind = analyse(paladin({ short: [{ use: 'sor', if: { buffUp: 'echo' } }, { use: 'hs' }] }), { auras: [] }).lists.primary;
+  assert.equal(blind.left[0], 'Seal of Righteousness was left out: One Button cannot check for Echo of Command being up, and without it the spell would always come first.');
   // Names are compared without case.
-  const lower = analyse(paladin({ short: OWNER_LIST }), { auras: [{ name: 'zealous FERVOR', id: 7 }] }).lists.primary;
-  assert.deepEqual(lower.list[2].gates[0], { t: 'stack', id: 7, op: '>=', n: 3 });
+  const lower = analyse(paladin({ short: [{ use: 'sor', if: { buffUp: 'echo' } }, { use: 'hs' }] }), { auras: [{ name: 'echo of COMMAND', id: 7 }] }).lists.primary;
+  assert.match(lower.left[0], /Echo of Command, hidden in a fight/);
 });
 
 test('without a list of its own the best candidate of that fight is translated', () => {

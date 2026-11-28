@@ -59,7 +59,13 @@ const MODEL = {
     { name: 'Command', actions: [{ use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }] },
     { name: 'Swap at 3 echoes', actions: [{ use: 'sor', if: { buffStacksAtLeast: { id: 'echo_cmd', n: 3 } } }, { use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }] },
   ],
-  oneButton: { short: [{ use: 'sor', if: { buffStacksAtLeast: { id: 'echo_cmd', n: 3 } } }, { use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } }] },
+  // One Button cannot read Echo of Command in a fight: its list times the
+  // swap by what it counts, after two Judgements on the target and at most
+  // once every 12 seconds.
+  oneButton: { short: [
+    { use: 'sor', if: { buffUp: 'soc_buff', usedOnTarget: { id: 'judge', times: 2 }, not: { usedWithin: { id: 'sor', sec: 12 } } } },
+    { use: 'judge' }, { use: 'soc', if: { buffDown: 'soc_buff' } },
+  ] },
 };
 const ACCOUNTED = [
   { name: ' unsealed WRATH', in: ['echo_cmd', 'store'], how: 'stored seals as Echo of Command, spent by the swap' },
@@ -226,7 +232,7 @@ test('the buffs seen go to the AI with what the game says about them, bounded', 
   assert.deepEqual(auras.slice(0, 2), AURAS);
 });
 
-test('the owner\'s case: Unsealed Wrath counted in its Echo of Command buff, checked by One Button under the aura\'s id', async () => {
+test('the owner\'s case: Unsealed Wrath counted in its Echo of Command buff, the swap timed by what One Button counts', async () => {
   const ai = scripted({ summary: 'Swap seals at 3 echoes.', model: MODEL, talents: ACCOUNTED });
   const out = await createArmory({ store: tmpStore(), askImpl: ai.askImpl }).handle(request(), { cfg });
   assert.equal(ai.calls.length, 1);
@@ -239,10 +245,19 @@ test('the owner\'s case: Unsealed Wrath counted in its Echo of Command buff, che
   });
   // The aura reached the AI with what it is and how many stacks were seen.
   assert.deepEqual(sent(ai.calls[0]).armory_auras[0], { name: 'Echo of Command', id: 1311703, desc: 'A stored copy of Seal of Command.', stacks: 3 });
-  // The short list (goal leveling) checks 3 stacks of the buff by the game's own id.
+  // The short list (goal leveling): Seal of Command up from its cast,
+  // Judgement counted twice on the target, not swapped in the last 12 seconds.
   const ob = out.data.oneButton;
   assert.equal(ob.source, 'ai');
-  assert.deepEqual(ob.list[0], { id: 20293, name: 'Seal of Righteousness', gates: [{ t: 'stack', id: 1311703, op: '>=', n: 3 }] });
+  assert.deepEqual(ob.list[0], { id: 20293, name: 'Seal of Righteousness', gates: [
+    { t: 'buff', id: 20920, dur: 30 }, { t: 'stack', id: 20271, op: '>=', n: 2, tgt: true }, { t: 'buff', id: 20293, dur: 12, neg: true },
+  ] });
+  assert.equal(ob.left, undefined);
+  // The same swap on 3 stacks of the buff, as it used to be written: left out, and said why.
+  const old = { ...MODEL, oneButton: { short: [{ use: 'sor', if: { buffStacksAtLeast: { id: 'echo_cmd', n: 3 } } }, ...MODEL.oneButton.short.slice(1)] } };
+  const again = await createArmory({ store: tmpStore(), askImpl: scripted({ summary: 's', model: old, talents: ACCOUNTED }).askImpl }).handle(request(), { cfg });
+  assert.deepEqual(again.data.oneButton.list.map((e) => e.name), ['Judgement', 'Seal of Command']);
+  assert.deepEqual(again.data.oneButton.left, ['Seal of Righteousness was left out: One Button cannot check for Echo of Command\'s stacks, hidden in a fight, and without it the spell would always come first.']);
 });
 
 test('test mode accounts for the talents it is given', async () => {

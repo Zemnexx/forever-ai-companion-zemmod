@@ -53,6 +53,10 @@ export const RULES = Object.freeze({
   // "usedOnTarget": how long a use counts, as Forever One Button counts the
   // player's own casts on a target (Engine/Dots.lua DEFAULT_STACKING).
   USED_ON_TARGET_SEC: 30,
+  // The most uses it counts on one target (Dots.DEFAULT_STACKING max).
+  USED_ON_TARGET_MAX: 5,
+  // "usedWithin": the longest look back a condition may ask for.
+  USED_WITHIN_MAX_SEC: 300,
   MAX_ACTIONS_PER_DECISION: 32,
   MAX_EVENTS_PER_FIGHT: 500000,
   EPS: 1e-9,
@@ -324,10 +328,19 @@ function normCond(c, where, refs, R, problems) {
       if (!id) { problems.push(`${where} ${key} references unknown ability ${quote(o.id)}: ignored`); continue; }
       if (key === 'cooldownUp') out[key] = id;
       else out[key] = { id, sec: R.num(o.sec, 0, 0, 1e6, `${where} ${key}.sec`) };
-    } else if (key === 'usedOnTarget') {
-      const id = refs.ability(v);
-      if (!id) { problems.push(`${where} ${key} references unknown ability ${quote(v)}: ignored`); continue; }
-      out[key] = id;
+    } else if (key === 'usedOnTarget' || key === 'usedWithin') {
+      const o = key === 'usedOnTarget' && !isObj(v) ? { id: v } : asObj(v);
+      const id = refs.ability(o.id);
+      if (!id) { problems.push(`${where} ${key} references unknown ability ${quote(o.id)}: ignored`); continue; }
+      if (key === 'usedWithin') {
+        const sec = R.num(o.sec, NaN, 1, RULES.USED_WITHIN_MAX_SEC, `${where} ${key}.sec`);
+        if (Number.isNaN(sec)) { problems.push(`${where} ${key} needs an id and a number: ignored`); continue; }
+        out[key] = { id, sec };
+        continue;
+      }
+      // One use is the plain string form, so the two forms of it read alike.
+      const times = Math.round(R.num(o.times, 1, 1, RULES.USED_ON_TARGET_MAX, `${where} ${key}.times`));
+      out[key] = times > 1 ? { id, times } : id;
     } else if (key === 'any' || key === 'all') {
       // "all" is not in the spec: the One Button translation (onebutton.js)
       // uses it when two conditions of one action share a key.
@@ -739,7 +752,13 @@ function compileCond(c, C) {
       case 'buffRemainsBelow': { const L = look(v.id); tests.push((S) => remains(L, S) < v.sec); break; }
       case 'cooldownUp': { const i = C.abIdx.get(v); tests.push((S) => S.cd[i] <= S.t + RULES.EPS); break; }
       case 'cooldownRemainsAbove': { const i = C.abIdx.get(v.id); tests.push((S) => S.cd[i] - S.t > v.sec); break; }
-      case 'usedOnTarget': { const i = C.abIdx.get(v); tests.push((S) => S.t - S.lastUse[i] < RULES.USED_ON_TARGET_SEC); break; }
+      case 'usedOnTarget': {
+        const i = C.abIdx.get(typeof v === 'string' ? v : v.id);
+        const times = typeof v === 'string' ? 1 : v.times;
+        tests.push((S) => S.t - S.lastUse[i] < RULES.USED_ON_TARGET_SEC && S.useRun[i] >= times);
+        break;
+      }
+      case 'usedWithin': { const i = C.abIdx.get(v.id); tests.push((S) => S.t - S.lastUse[i] < v.sec); break; }
       case 'any': { const fs = v.map((x) => compileCond(x, C)).filter(Boolean); tests.push((S) => fs.some((f) => f(S))); break; }
       case 'all': { const fs = v.map((x) => compileCond(x, C)).filter(Boolean); tests.push((S) => fs.every((f) => f(S))); break; }
       case 'not': { const f = compileCond(v, C); if (f) tests.push((S) => !f(S)); break; }
@@ -760,7 +779,7 @@ function newState(C, seed, iter) {
     res: C.resOn ? C.res.start : 0, gcdReady: 0, cast: null, queued: -1,
     mhNext: C.melee ? 0 : Infinity, ohNext: C.dualWield ? 0 : Infinity, rgNext: C.rangedAuto ? 0 : Infinity,
     tickNext: C.resOn && C.res.tick ? C.res.tick.interval : Infinity, wake: Infinity,
-    cd: new Float64Array(nAb), used: new Int32Array(nAb), stamp: 0, lastUse: new Float64Array(nAb).fill(-Infinity),
+    cd: new Float64Array(nAb), used: new Int32Array(nAb), stamp: 0, lastUse: new Float64Array(nAb).fill(-Infinity), useRun: new Int32Array(nAb),
     bStacks: new Int32Array(nB), bExp: new Float64Array(nB), bCharges: new Int32Array(nB),
     bSince: new Float64Array(nB), bUp: new Float64Array(nB),
     dLeft: new Int32Array(nAb), dNext: new Float64Array(nAb), dExp: new Float64Array(nAb), dVal: new Float64Array(nAb),
@@ -1004,6 +1023,9 @@ function dotTick(S, a) {
 // Everything that follows a use once its hit roll is known: charges,
 // consumed buffs, applied buffs and dots, resource gain, use procs.
 function afterUse(S, a, landed) {
+  // "usedOnTarget" counts a run of uses, each less than 30 seconds after the
+  // one before, as One Button counts casts on a target (Engine/Dots.lua).
+  S.useRun[a.idx] = S.t - S.lastUse[a.idx] < RULES.USED_ON_TARGET_SEC ? S.useRun[a.idx] + 1 : 1;
   S.lastUse[a.idx] = S.t;
   useCharges(S, a.chargeKind);
   for (const b of a.consumeIdx) removeBuff(S, b);

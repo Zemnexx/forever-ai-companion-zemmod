@@ -27,6 +27,10 @@ Short and long fights, and One Button lists written by the AI and measured (the 
   - the providers say when the output limit ended an answer, and the Armory then asks again from the start with an instruction to be brief instead of sending the broken text back. Cut off twice, the request fails with a message of its own ("The AI's answer was too long and was cut off...");
   - the talent accounting is smaller: talents that are not in the model are grouped by reason;
   - the log says, for every Armory answer that was not used, how long it was, whether the provider cut it off, the output tokens and how it ended.
+- **A One Button list only uses what One Button can know in a fight.** A list checked "3 stacks of Echo of Command" by the buff's id, and in play One Button suggested the swap almost always: on this client buff values are hidden from addons during a fight, and a condition One Button cannot answer never holds an ability back. Now:
+  - the AI is told what One Button can know there: a buff the player casts, the player's own casts on the target (`usedOnTarget`, now also "at least N times", up to 5), and "not used in the last N seconds" (`usedWithin`, under `not`). Stacks of a buff on the player and buffs the player does not cast are not available, and the app no longer exports a condition on them;
+  - the simulator has both conditions, so a list written this way is measured as it will play;
+  - a condition that counts casts on the target is written with the spell's rank-1 id: One Button 1.1.4-zm9 only counts those (fixed there from zm10).
 - **The Armory shows which buffs it learned.** Its debug line named the buffs on the character right now instead of the ones newly learned. It now names the newest, and `/armory buffs` lists them all with their spell ids. The Armory stays 0.5.0.
 
 ## 2.5.0 (addon 1.17.1)

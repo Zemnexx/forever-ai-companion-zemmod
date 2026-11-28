@@ -745,6 +745,84 @@ test('usedOnTarget: the ability was used less than 30 seconds ago in this fight'
   assert.ok(problems.some((p) => /usedOnTarget references unknown ability "nothing": ignored/.test(p)), problems.join(' | '));
 });
 
+test('usedOnTarget with times: a run of uses, each less than 30 seconds after the one before', () => {
+  const abilities = [
+    { id: 'mark', name: 'Mark', type: 'spell', school: 'holy', canMiss: false, damage: { min: 1, max: 1 } },
+    { id: 'hit', name: 'Hit', type: 'spell', school: 'holy', canMiss: false, canCrit: false, damage: { min: 100, max: 100 } },
+  ];
+  // Mark every "every" seconds (its "not usedWithin"), Hit while the condition holds.
+  const spaced = (name, every, used) => ({ name, actions: [
+    { use: 'mark', if: { not: { usedWithin: { id: 'mark', sec: every } } } }, { use: 'hit', if: { usedOnTarget: used } },
+  ] });
+  const m = base({
+    autoAttack: 'none', weapons: null, fight: { duration: 60 }, abilities,
+    rotations: [
+      spaced('twice, 25 apart', 25, { id: 'mark', times: 2 }),
+      spaced('twice, 35 apart', 35, { id: 'mark', times: 2 }),
+      spaced('once, 35 apart', 35, { id: 'mark', times: 1 }),
+      // Marked for the first 15 seconds only: the run ends 30 seconds after its last use.
+      { name: 'run ends', actions: [{ use: 'mark', if: { not: { timeAtLeast: 15 } } }, { use: 'hit', if: { usedOnTarget: { id: 'mark', times: 2 } } }] },
+    ],
+  });
+  assert.deepEqual(normalizeModel(m).model.rotations.map((r) => r.actions[1].if.usedOnTarget), [{ id: 'mark', times: 2 }, { id: 'mark', times: 2 }, 'mark', { id: 'mark', times: 2 }],
+    'one use reads as the plain string form');
+  const [twice, broken, once, ends] = run(m, { iterations: 5 }).rotations;
+  // Mark at 0 and 25: Hit from 26.5 to the end, but for Mark again at 50.
+  assert.equal(entry(twice, 'hit').perMinute, 22);
+  assert.equal(entry(broken, 'hit'), undefined, 'a 35 second gap starts the run again: never two');
+  // Once: 1.5 to 28.5, then 36.5 to the end (Mark at 35).
+  assert.equal(entry(once, 'hit').perMinute, 35);
+  // Mark at 0, 1.5 ... 13.5; Hit from 15 while the last Mark is under 30 seconds old: 15 ... 42.
+  assert.equal(entry(ends, 'hit').perMinute, 19);
+});
+
+test('usedWithin: the ability was used less than so many seconds ago, never when it was not used', () => {
+  const abilities = [
+    { id: 'mark', name: 'Mark', type: 'spell', school: 'holy', canMiss: false, cooldown: 900, damage: { min: 1, max: 1 } },
+    { id: 'hit', name: 'Hit', type: 'spell', school: 'holy', canMiss: false, canCrit: false, damage: { min: 100, max: 100 } },
+  ];
+  const within = (sec) => ({ use: 'hit', if: { usedWithin: { id: 'mark', sec } } });
+  const m = base({
+    autoAttack: 'none', weapons: null, fight: { duration: 60 }, abilities,
+    rotations: [
+      { name: 'just inside', actions: ['mark', within(9.1)] },
+      { name: 'just outside', actions: ['mark', within(9)] },
+      { name: 'never used', actions: [within(30)] },
+      { name: 'not within', actions: [{ use: 'hit', if: { not: { usedWithin: { id: 'mark', sec: 30 } }, timeAtLeast: 0 } }, 'mark'] },
+    ],
+  });
+  const [inside, outside, never, notWithin] = run(m, { iterations: 5 }).rotations;
+  // Mark at 0, Hit at 1.5, 3 ... 9: the use at 9 is 9 seconds after Mark.
+  assert.equal(entry(inside, 'hit').perMinute, 6);
+  assert.equal(entry(outside, 'hit').perMinute, 5, 'exactly 9 seconds after is no longer within 9');
+  assert.equal(entry(never, 'hit'), undefined, 'never used: false');
+  assert.equal(entry(notWithin, 'hit').perMinute, 40, 'never used: its "not" holds all fight');
+});
+
+test('usedOnTarget and usedWithin are checked: unknown abilities, times and seconds out of range', () => {
+  const abilities = [{ id: 'hit', name: 'Hit', type: 'spell', damage: { min: 100, max: 100 } }];
+  const cond = (c) => ({ name: 'r', actions: [{ use: 'hit', if: c }] });
+  const { model, problems } = normalizeModel(base({ autoAttack: 'none', weapons: null, abilities, rotations: [
+    cond({ usedOnTarget: { id: 'nothing', times: 2 } }), cond({ usedWithin: { id: 'nothing', sec: 5 } }),
+    cond({ usedOnTarget: { id: 'hit', times: 6 } }), cond({ usedOnTarget: { id: 'hit', times: 0 } }),
+    cond({ usedWithin: { id: 'hit', sec: 0 } }), cond({ usedWithin: { id: 'hit', sec: 301 } }), cond({ usedWithin: { id: 'hit' } }),
+  ] }));
+  const said = problems.join(' | ');
+  for (const p of [
+    /action 1 condition usedOnTarget references unknown ability "nothing": ignored/,
+    /action 1 condition usedWithin references unknown ability "nothing": ignored/,
+    /usedOnTarget\.times 6 is out of range: clamped to 5/,
+    /usedOnTarget\.times 0 is out of range: clamped to 1/,
+    /usedWithin\.sec 0 is out of range: clamped to 1/,
+    /usedWithin\.sec 301 is out of range: clamped to 300/,
+    /usedWithin needs an id and a number: ignored/,
+  ]) assert.match(said, p);
+  assert.deepEqual(model.rotations.map((r) => r.actions[0].if ?? null), [
+    null, null, { usedOnTarget: { id: 'hit', times: 5 } }, { usedOnTarget: 'hit' },
+    { usedWithin: { id: 'hit', sec: 1 } }, { usedWithin: { id: 'hit', sec: 300 } }, null,
+  ]);
+});
+
 test('the One Button lists of a model are kept apart from its candidates and its problems', () => {
   const abilities = [{ id: 'hit', name: 'Hit', type: 'spell', damage: { min: 100, max: 100 } }];
   const out = normalizeModel(base({

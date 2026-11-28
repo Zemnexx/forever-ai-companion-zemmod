@@ -30,7 +30,8 @@ const CONDITION_TEXT = {
   timeRemainingBelow: (v) => `last ${v}s of the fight`,
   targetsAtLeast: (v) => `${v}+ targets`,
   swingTimerAbove: (v) => `more than ${v}s before the next swing`,
-  usedOnTarget: (v) => `once ${v} was used on the target`,
+  usedOnTarget: (v) => (typeof v === 'string' ? `once ${v} was used on the target` : `once ${v?.id} was used ${v?.times} times on the target`),
+  usedWithin: (v) => `within ${v?.sec}s of ${v?.id}`,
 };
 export function describeCondition(cond) {
   if (!cond || typeof cond !== 'object') return '';

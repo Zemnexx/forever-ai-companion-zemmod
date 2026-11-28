@@ -156,6 +156,8 @@ CONDITION = an object; every key in it must hold:
   "timeAtLeast": 5, "timeRemainingBelow": 20, "targetsAtLeast": 3,
   "swingTimerAbove": 1.0,                           // seconds until the next main-hand auto attack
   "usedOnTarget": "abilityId",                      // that ability was used in the last 30 seconds
+  "usedOnTarget": { "id": "abilityId", "times": 2 }, // used at least 2 times (1 to 5), each within 30 seconds of the one before
+  "usedWithin": { "id": "abilityId", "sec": 12 },  // that ability was used in the last 12 seconds (1 to 300)
   "any": [ CONDITION ], "not": CONDITION`;
 
 // The lists for Forever One Button (onebutton.js), a key of the model that
@@ -163,14 +165,15 @@ CONDITION = an object; every key in it must hold:
 // MODEL_SPEC, word for word.
 export const ONE_BUTTON_SPEC = `### One Button lists: "oneButton" in "model"
 "oneButton": { "short": [ ACTION ], "long": [ ACTION ] }
-Priority lists that the addon Forever One Button plays by itself, one per kind of fight ("short": about 25 seconds against an ordinary enemy; "long": a minute or more against an elite or boss). They may be the same list. The simulator measures each one next to the candidates.
+Lists that the addon Forever One Button plays by itself, one per kind of fight ("short": about 25 seconds against an ordinary enemy; "long": a minute or more against an elite or boss). They may be the same list. The simulator measures each one next to the candidates.
 These limits are for the "oneButton" lists only. The candidate rotations in "rotations" are not bound by them: they use everything the character has, procs, any buff and conditions on time included.
-- Each ability at most once in a list. The first action that can be used is used.
-- One Button already waits by itself for an ability's cooldown, its resource cost and its range, and does not repeat a DoT it applied while it runs: no condition is needed for those.
-- Only these conditions: "resourceAtLeast", "resourceBelow"; "buffUp", "buffDown", "buffStacksAtLeast" of a buff ON THE PLAYER that One Button can name (its name is the name of one of the character's spells, or it is in "armory_auras"; combo points count); "cooldownUp" of another ability; "targetHealthBelow", "targetHealthAbove", "targetsAtLeast", "swingTimerAbove"; "buffDown" of an ability's own DoT or debuff on that ability's own action (keep it up); "usedOnTarget"; and "any" / "not" of these.
-- "usedOnTarget": One Button counts the player's own casts on the current target for 30 seconds. That is how it knows a debuff was applied, an opener was done, a target was already judged ("not": { "usedOnTarget": "judgement" } = not judged yet). It cannot name an ability whose DoT One Button tracks itself.
-- Not available: "timeAtLeast", "timeRemainingBelow", "buffRemainsBelow", "cooldownRemainsAbove", buffs it cannot name, other conditions on effects on the target.
-- Write each list as the strongest one these limits allow for that kind of fight.`;
+- Each ability at most once. The first action that can be used is used.
+- One Button already waits for cooldowns, costs and range, and does not repeat its own DoT while it runs: no condition needed for those.
+- Only these conditions: "resourceAtLeast", "resourceBelow"; "buffUp", "buffDown" of a buff the player casts (one of the character's spells); combo points; "cooldownUp" of another ability; "targetHealthBelow", "targetHealthAbove", "targetsAtLeast", "swingTimerAbove"; "buffDown" of an ability's own DoT or debuff on its own action (keep it up); "usedOnTarget"; "not": { "usedWithin": ... } (at most once every "sec"); "any" / "not" of these.
+- "usedOnTarget" counts the player's casts on the current target, up to 5, 30 seconds each: a debuff applied or built up, a target judged ("not": { "usedOnTarget": "judgement" } = not yet). Not for a DoT it tracks itself.
+- Not available: time conditions, "buffRemainsBelow", "cooldownRemainsAbove", stacks of a player buff, a buff the player does not cast (a proc, a talent's stored stacks or charges, anything in "armory_auras": hidden in a fight), other target effects.
+- Time what it cannot read by what it counts: enough uses on the target to build it up, not again before it can rebuild.
+- Write each list as the strongest these limits allow for its kind of fight.`;
 
 // Stats the engine can move one at a time to get stat weights (see
 // sim/engine.js statWeights). Primary stats go through "statConversions".
