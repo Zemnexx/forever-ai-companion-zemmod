@@ -4,10 +4,12 @@
 // rotations as steps to follow, what each stat is worth, and a table of every
 // ability's value per use, per second and per point of resource.
 import { num, round, str, text, texts, list } from './json.js';
-import { abilityTable, normalizeModel, simulate, statWeights, survival } from './sim/engine.js';
+import { abilityTable, fitActions, normalizeModel, simulate, statWeights, survival } from './sim/engine.js';
 import { oneButtonFor } from './onebutton.js';
 
 const MAX_ROTATIONS = 4;
+// Candidates from the last analysis are shown even below the limit, up to this many more.
+const MAX_KEPT = 2;
 const MAX_STEPS = 14;
 const MAX_TABLE = 14;
 
@@ -69,19 +71,88 @@ export function otherFight(primary, { level = 60, goal = 'leveling' } = {}) {
 }
 const withoutKind = ({ kind, ...fight }) => fight;
 
+// The rotations that won the last analysis (store.js, keepFromRun below),
+// each with "won": its value per kind of fight it won. An entry kept before
+// the kinds were recorded has its one best, for the fight of its goal.
+export function keptRotations(kept) {
+  const rotations = list(kept?.model?.rotations).filter((r) => r && typeof r === 'object' && Array.isArray(r.actions));
+  if (rotations.some((r) => r.won && typeof r.won === 'object')) return rotations.filter((r) => r.won && typeof r.won === 'object').slice(0, MAX_KEPT);
+  const value = num(kept?.value);
+  return rotations.slice(0, 1).map((r) => ({ ...r, won: { [fightKind(kept?.goal)]: value ?? 0 } }));
+}
+
+// What the gear plan and the ideas take as their baseline: the kept model
+// with its first rotation only, the best of the fight of its goal.
+export function baselineOf(kept) {
+  if (!kept?.model || typeof kept.model !== 'object') return null;
+  return { ...kept.model, rotations: list(kept.model.rotations).slice(0, 1) };
+}
+
+const nameKey = (name) => String(name ?? '').trim().toLowerCase();
+const sameActions = (a, b) => JSON.stringify(a.map(({ use, if: cond }) => ({ use, if: cond }))) === JSON.stringify(b.map(({ use, if: cond }) => ({ use, if: cond })));
+
+// The names a reference had in the last model, for a player who never saw its ids.
+function oldName(lastModel, ref) {
+  const hit = [...list(lastModel?.abilities), ...list(lastModel?.buffs)].find((x) => x?.id === ref);
+  return str(hit?.name, 60) || str(ref, 60);
+}
+function lacking(lastModel, missing) {
+  const names = [...new Set(missing.map((ref) => oldName(lastModel, ref)).filter(Boolean))].slice(0, 2);
+  return names.length ? `this analysis has no ${names.join(' or ')}` : 'it no longer fits this analysis';
+}
+
+/**
+ * The rotations that won the last analysis, among this one's candidates
+ * (model: normalized, changed in place). One the AI kept, under its name or
+ * with the same actions, is found; one it left out is added when the model
+ * can run it (every ability it uses, every buff and ability its conditions
+ * name). Returns one entry per kept rotation: { name, won, index: its place
+ * in model.rotations or -1, added, reason: why it could not be run }.
+ */
+export function carryOver(model, kept) {
+  const out = [];
+  const lastModel = kept?.model;
+  const alias = (ref) => oldName(lastModel, ref);
+  for (const last of keptRotations(kept)) {
+    const entry = { name: String(last.name ?? ''), won: last.won, index: -1, added: false };
+    entry.index = model.rotations.findIndex((r) => nameKey(r.name) === nameKey(last.name));
+    if (entry.index < 0) {
+      const fit = fitActions(model, last.actions, { alias });
+      if (fit.missing.length || fit.problems.length) {
+        entry.reason = lacking(lastModel, fit.missing);
+      } else {
+        entry.index = model.rotations.findIndex((r) => sameActions(r.actions, fit.actions));
+        if (entry.index < 0) {
+          // Its notes for the player come along: the actions line up one to one.
+          const actions = fit.actions.map((a, i) => (last.actions[i]?.note ? { ...a, note: last.actions[i].note } : a));
+          model.rotations.push({ name: entry.name, actions });
+          entry.index = model.rotations.length - 1;
+          entry.added = true;
+        }
+      }
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 // Normalizes and simulates a model. Never throws on a bad model: the problems
 // say what the AI has to fix. tank: rank by threat per second, and estimate
 // survival against the model's "enemy" with the defensive numbers the game
 // gave (defense: the addon's armory_combat). goal: the request's, which says
 // what kind of fight the model's own is (the other kind is simulated too).
-export function runModel(rawModel, { iterations = 300, seed = 1, weights = true, tank = false, defense = null, goal = 'leveling' } = {}) {
+// kept: what the last analysis of this character kept (store.js): its
+// winning rotations are made sure of among the candidates (carryOver).
+export function runModel(rawModel, { iterations = 300, seed = 1, weights = true, tank = false, defense = null, goal = 'leveling', kept = null } = {}) {
   const { model, problems, fatal, oneButtonProblems = [] } = normalizeModel(rawModel);
   if (fatal) return { model, problems, fatal: true };
+  const carried = kept ? carryOver(model, kept) : [];
   const metric = tank ? 'tps' : undefined;
   const opts = { iterations, seed, metric };
   const sim = simulate(model, opts);
   if (!sim.rotations.length) return { model, problems: [...problems, 'no rotation could be simulated'], fatal: true };
   const out = { model, problems, oneButtonProblems, fatal: false, sim, opts, kind: fightKind(goal) };
+  if (carried.length) out.carried = carried;
   // The same candidates in the other kind of fight: ranked only, no weights.
   const fight = otherFight(model.fight, { level: model.player.level, goal });
   const otherSim = simulate({ ...model, fight: withoutKind(fight) }, opts);
@@ -253,7 +324,7 @@ export function oneButtonLists(run, { spells = [], auras = [], context = 'st' } 
 
 // One rotation's result as the addon shows it. source: the AI's rotation
 // (for the steps and their notes).
-function shapeEntry(r, i, { best, source, abilities, tank }) {
+function shapeEntry(r, i, { best, kept, source, abilities, tank }) {
   return {
     name: str(r.name, 80) || `Rotation ${i + 1}`,
     value: round(r.value, 1),
@@ -261,6 +332,8 @@ function shapeEntry(r, i, { best, source, abilities, tank }) {
     // A tank's rotation is ranked by threat; its damage is still worth knowing.
     damage: tank ? round(r.dps, 1) : undefined,
     best: best || undefined,
+    // A candidate from the last analysis (carryOver).
+    kept: kept || undefined,
     steps: stepsOf(source, abilities),
     // The simulator gives shares and percentages as 0..100.
     breakdown: breakdownOf(r.breakdown),
@@ -271,16 +344,27 @@ function shapeEntry(r, i, { best, source, abilities, tank }) {
   };
 }
 
+// The first MAX_ROTATIONS of a ranked list, and below them the candidates
+// from the last analysis, so that the player sees how they did.
+function shown(ranked, isKept) {
+  const extra = ranked.slice(MAX_ROTATIONS).filter(isKept).slice(0, MAX_KEPT);
+  return [...ranked.slice(0, MAX_ROTATIONS), ...extra];
+}
+
 // The same candidates in the other kind of fight, best first: the best in
 // full, the others by their numbers only (the steps are those of the
 // primary fight's list).
-function shapeOther(run, entryOf, oneButton) {
+function shapeOther(run, entryOf, oneButton, isKept) {
   const { fight, sim } = run.other;
-  const ranked = sim.rotations.map((r, i) => ({ r, i })).sort((a, b) => b.r.value - a.r.value).slice(0, MAX_ROTATIONS);
+  const ranked = shown(sim.rotations.map((r, i) => ({ r, i })).sort((a, b) => b.r.value - a.r.value), ({ r }) => isKept(r));
   const out = {
     kind: fight.kind, duration: fight.duration, targets: fight.targets, targetLevel: fight.targetLevel, targetArmor: fight.targetArmor,
-    rotations: ranked.map(({ r, i }, n) => (n === 0 ? entryOf(r, i, true)
-      : { name: str(r.name, 80) || `Rotation ${i + 1}`, value: round(r.value, 1), spread: round(r.stdev, 1) })),
+    rotations: ranked.map(({ r, i }, n) => {
+      if (n === 0) return entryOf(r, i, true);
+      const entry = { name: str(r.name, 80) || `Rotation ${i + 1}`, value: round(r.value, 1), spread: round(r.stdev, 1) };
+      if (isKept(r)) entry.kept = true;
+      return entry;
+    }),
   };
   const best = sim.rotations[sim.best];
   if (best && best.index === run.sim.rotations[run.sim.best]?.index) out.sameBest = true;
@@ -297,12 +381,18 @@ export function shapeRotation(raw, run, { spells = [], auras = [], context = 'st
   const { model, sim } = run;
   const abilities = new Map(list(model.abilities).map((a) => [a.id, a]));
   const rawRotations = list(raw?.model?.rotations);
+  const carried = list(run.carried).filter((c) => c.index >= 0);
+  const isKept = (r) => carried.some((c) => c.index === r.index);
+  const added = (r) => carried.some((c) => c.added && c.index === r.index);
   const entryOf = (r, i, best) => {
-    const source = rawRotations.find((x) => str(x?.name, 80) === r.name) || rawRotations[r.index ?? i] || model.rotations?.[r.index ?? i];
-    return shapeEntry(r, i, { best, source, abilities, tank: run.tank });
+    // A rotation the app added is not in the AI's answer: its steps come from the model.
+    const source = (added(r) && model.rotations?.[r.index])
+      || rawRotations.find((x) => str(x?.name, 80) === r.name) || rawRotations[r.index ?? i] || model.rotations?.[r.index ?? i];
+    return shapeEntry(r, i, { best, kept: isKept(r), source, abilities, tank: run.tank });
   };
-  const rotations = sim.rotations.map((r, i) => entryOf(r, i, i === sim.best))
-    .sort((a, b) => b.value - a.value).slice(0, MAX_ROTATIONS);
+  const ranked = sim.rotations.map((r, i) => ({ r, entry: entryOf(r, i, i === sim.best) }))
+    .sort((a, b) => b.entry.value - a.entry.value);
+  const rotations = shown(ranked, ({ r }) => isKept(r)).map(({ entry }) => entry);
 
   const data = {
     v: 1,
@@ -345,12 +435,46 @@ export function shapeRotation(raw, run, { spells = [], auras = [], context = 'st
   // A Forever One Button priority list per fight (onebutton.js).
   const made = lists || oneButtonLists(run, { spells, auras, context });
   if (made.primary) data.oneButton = made.primary;
-  if (run.other) data.otherFight = shapeOther(run, entryOf, made.other);
+  if (run.other) data.otherFight = shapeOther(run, entryOf, made.other, isKept);
+  const continuity = continuityOf(run);
+  if (continuity.length) data.continuity = continuity;
   return data;
 }
 
+// What became of the last analysis's best rotations, in sentences for the
+// player: still the best, beaten (by how much), or not run again and why.
+const METRIC_WORDS = { dps: 'damage per second', hps: 'healing per second', tps: 'threat per second' };
+const MAX_CONTINUITY = 3;
+const fightsOf = (kinds) => `${kinds.join(' and ')} fights`;
+export function continuityOf(run) {
+  const sims = { [run.kind || 'short']: run.sim };
+  if (run.other) sims[run.other.fight.kind] = run.other.sim;
+  const lines = [];
+  for (const c of list(run.carried)) {
+    const kinds = FIGHT_KINDS.filter((k) => c.won && Object.hasOwn(c.won, k) && sims[k]);
+    const name = str(c.name, 80);
+    if (!kinds.length || !name) continue;
+    if (c.index < 0) {
+      lines.push(`Last time's best for ${fightsOf(kinds)}, "${name}", could not be simulated again: ${c.reason}.`);
+      continue;
+    }
+    const still = kinds.filter((k) => sims[k].rotations[sims[k].best]?.index === c.index);
+    if (still.length) lines.push(`The best rotation for ${fightsOf(still)} is the same as last time: "${name}".`);
+    for (const k of kinds.filter((x) => !still.includes(x))) {
+      const sim = sims[k];
+      const again = sim.rotations.find((r) => r.index === c.index);
+      const best = sim.rotations[sim.best];
+      if (!again || !best) continue;
+      const words = METRIC_WORDS[best.metric] || METRIC_WORDS.dps;
+      lines.push(`Last time's best for ${fightsOf([k])}, "${name}", was simulated again: ${round(again.value, 1)} ${words}, against ${round(best.value, 1)} for "${str(best.name, 80)}".`);
+    }
+  }
+  return lines.slice(0, MAX_CONTINUITY);
+}
+
 // What one answer may weigh (index.js) is kept by trimming the other fight
-// first: its best candidate's breakdown, then the other candidates, then its
+// first: its best candidate's breakdown, then the other candidates (not
+// those from the last analysis), then its
 // best candidate's steps, then its One Button lines left out. data is
 // changed in place.
 export function fitRotation(data, maxBytes) {
@@ -358,10 +482,12 @@ export function fitRotation(data, maxBytes) {
   const other = data.otherFight;
   if (!other || size() <= maxBytes) return data;
   const [best] = other.rotations;
+  // The candidates from the last analysis stay: they are one line each.
+  const first = (n) => other.rotations.filter((r, i) => i < n || r.kept);
   const steps = [
     () => { if (best?.breakdown) best.breakdown = best.breakdown.slice(0, 3); },
-    () => { other.rotations = other.rotations.slice(0, 2); },
-    () => { other.rotations = other.rotations.slice(0, 1); },
+    () => { other.rotations = first(2); },
+    () => { other.rotations = first(1); },
     () => { if (best) best.steps = best.steps.slice(0, 6); },
     () => { if (other.oneButton) delete other.oneButton.left; },
   ];
@@ -372,18 +498,48 @@ export function fitRotation(data, maxBytes) {
   return data;
 }
 
+// The notes of a rotation's actions from the AI's own answer (the simulator
+// drops them), so that a rotation brought back later still reads well. The
+// normalizer only drops actions, so the AI's actions are walked in order.
+function withNotes(rotation, rawModel, abilities) {
+  const raw = list(rawModel?.rotations).find((x) => nameKey(x?.name) === nameKey(rotation.name));
+  const rawActions = list(raw?.actions);
+  let j = 0;
+  return rotation.actions.map((a) => {
+    if (a.note) return a;
+    // The AI may have named the ability instead of giving its id.
+    const refs = [nameKey(a.use), nameKey(abilities.find((x) => x.id === a.use)?.name)].filter(Boolean);
+    while (j < rawActions.length && !refs.includes(nameKey(rawActions[j]?.use))) j += 1;
+    const note = text(rawActions[j]?.note, 160);
+    if (j < rawActions.length) j += 1;
+    return note ? { ...a, note } : a;
+  });
+}
+
 // What is kept for later requests about the same character (store.js): the
-// model with its best rotation only, and the measured weights. For a tank the
-// weights are on threat, and what each defensive stat is worth comes along.
-export function keepFromRun(run) {
-  const best = run.model.rotations?.[run.sim.rotations[run.sim.best]?.index ?? run.sim.best];
+// model with the best rotation of each kind of fight ("won": its value in
+// each fight it won; the primary fight's first), and the measured weights.
+// For a tank the weights are on threat, and what each defensive stat is worth
+// comes along. rawModel: the AI's model, for the notes of the actions.
+export function keepFromRun(run, { rawModel = null } = {}) {
+  const winners = [];
+  const won = (sim, kind) => {
+    const result = sim?.rotations[sim.best];
+    const rotation = result ? run.model.rotations?.[result.index ?? sim.best] : null;
+    if (!rotation) return;
+    let entry = winners.find((w) => w.rotation === rotation);
+    if (!entry) winners.push(entry = { rotation, won: {} });
+    entry.won[kind] = round(result.value, 1);
+  };
+  won(run.sim, run.kind || 'short');
+  if (run.other) won(run.other.sim, run.other.fight.kind);
   const weights = run.weights ? { metric: run.weights.metric, reference: run.weights.reference, perPoint: measured(run.weights.perPoint) } : null;
   const worth = run.tank ? shapeSurvival(run.survival)?.worth : undefined;
   if (weights && worth) weights.survival = worth;
   // The One Button lists are a by-product: not kept for later requests.
   const { oneButton, ...model } = run.model;
   return {
-    model: { ...model, rotations: best ? [best] : [] },
+    model: { ...model, rotations: winners.map(({ rotation, won: w }) => ({ name: rotation.name, actions: withNotes(rotation, rawModel, list(model.abilities)), won: w })) },
     weights,
     value: run.sim.rotations[run.sim.best]?.value ?? null,
     metric: run.sim.rotations[run.sim.best]?.metric,

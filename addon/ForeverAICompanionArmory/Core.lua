@@ -192,6 +192,10 @@ SlashCmdList.FOREVERAICOMPANIONARMORY = function(msg)
     -- The rotation as a profile for Forever One Button, or why there is none.
     local ok, why = ns.UI:ShowOneButton()
     if not ok then Util.chat(why == "class" and L.OB_NO_CLASS or L.OB_NOTHING) end
+  elseif word == "buffs" then
+    -- Every buff remembered for this character, with its spell id: what One Button lists can check.
+    local ok, lines = pcall(ns.Auras.Lines)
+    for _, line in ipairs(ok and lines or { "buffs: " .. tostring(lines) }) do Util.chat(line) end
   elseif word == "dump" then
     -- The game's own talent data, saved for the addon's author to read.
     local ok, nodes = pcall(ns.Dump.Run)

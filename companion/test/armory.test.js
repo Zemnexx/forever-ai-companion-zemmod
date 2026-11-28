@@ -9,7 +9,7 @@ import path from 'node:path';
 import { extractJson, text, texts } from '../src/armory/json.js';
 import { talentIndex, validateOrder, shapeBuild, takenTalents, distribution } from '../src/armory/talents.js';
 import { shapeGear, slotName, cleanWeights, equippable, leftOut } from '../src/armory/gear.js';
-import { runModel, shapeRotation, shapeBuffs, describeCondition, keepFromRun, otherFight, fitRotation } from '../src/armory/rotation.js';
+import { runModel, shapeRotation, shapeBuffs, describeCondition, keepFromRun, otherFight, fitRotation, baselineOf, keptRotations } from '../src/armory/rotation.js';
 import { applyIdea, measureIdea, shapeIdeas } from '../src/armory/discover.js';
 import { buildArmorySystem, buildArmoryMessage, repairMessage } from '../src/armory/prompts.js';
 import { MODEL_SPEC, ONE_BUTTON_SPEC } from '../src/armory/model-spec.js';
@@ -523,8 +523,9 @@ test('a rotation request is simulated, and its model kept for the gear plan and 
   assert.ok(out.text.includes('dps'));
   assert.ok(first.calls[0].system.includes('Combat model format'));
   const kept = store.get('Player-1-ABC');
-  assert.equal(kept.model.rotations.length, 1);
+  assert.ok(kept.model.rotations.length >= 1 && kept.model.rotations.length <= 2, 'the best of each kind of fight');
   assert.equal(kept.goal, 'raids');
+  assert.equal(kept.role, 'dps');
 
   // The gear plan gets the measured weights...
   const gear = scripted({ summary: 'g', weights: { STRENGTH: 2 }, slots: [{ slot: 'head', picks: [{ name: 'Bag Helm', itemId: 77, source: { type: 'world' }, confidence: 'high' }] }] });
@@ -818,4 +819,175 @@ test('test mode answers a tank with a placeholder tank result', async () => {
   bare.ext.input.role = 'tank';
   const thin = await createArmory({ store: tmpStore() }).handle(bare, { cfg: echo });
   assert.deepEqual(thin.data.survival.missing, ['armor', 'dodgePct', 'parryPct', 'blockPct', 'defense', 'maxHealth']);
+});
+
+// Continuity between two rotation analyses of one character: the last one's
+// winners are shown to the AI, made sure of among the candidates and reported on.
+const BURST_MODEL = {
+  ...MELEE_MODEL,
+  abilities: [...MELEE_MODEL.abilities, { id: 'burst', name: 'Burst', type: 'melee', cost: 0, gcd: 1.5, damage: { min: 700, max: 700 } }],
+};
+const STEADY = { name: 'Steady', actions: [{ use: 'bt', note: 'on cooldown' }] };
+// Three uses at the start of any fight, nothing after: wins a short fight, loses a long one.
+const BURST_EARLY = { name: 'Burst early', actions: [{ use: 'burst', if: { not: { timeAtLeast: 4.5 } }, note: 'the first three globals' }] };
+// What a last analysis kept: one winner per kind of fight, one of them on a buff.
+const lastTime = (rotations) => ({
+  spec: 'Arms', goal: 'raids', role: 'dps', value: 140, metric: 'dps',
+  model: { ...BURST_MODEL, buffs: [{ id: 'unsealed', name: 'Unsealed Wrath', duration: 10, maxStacks: 5 }], rotations },
+});
+const UNSEALED = { name: 'Unsealed Wrath swap', actions: [{ use: 'bt', if: { buffStacksAtLeast: { id: 'unsealed', n: 3 } } }], won: { long: 131.3 } };
+
+test('what is kept after an analysis: the best of each kind of fight, with its notes, and the baseline is the first', () => {
+  const model = { ...BURST_MODEL, rotations: [STEADY, BURST_EARLY] };
+  const run = runModel(model, { iterations: 40, goal: 'raids' });
+  const kept = keepFromRun(run, { rawModel: model });
+  assert.deepEqual(kept.model.rotations.map((r) => [r.name, Object.keys(r.won)]), [['Steady', ['long']], ['Burst early', ['short']]]);
+  assert.equal(kept.model.rotations[0].won.long, Math.round(run.sim.rotations[run.sim.best].value * 10) / 10);
+  assert.equal(kept.model.rotations[1].actions[0].note, 'the first three globals', 'the AI\'s notes come along');
+  assert.deepEqual(baselineOf(kept).rotations.map((r) => r.name), ['Steady'], 'the gear plan and the ideas keep one baseline');
+  assert.equal(kept.value, run.sim.rotations[run.sim.best].value);
+  // One winner of both fights is kept once.
+  const one = runModel({ ...BURST_MODEL, rotations: [STEADY] }, { iterations: 20, goal: 'raids' });
+  assert.deepEqual(keepFromRun(one).model.rotations.map((r) => Object.keys(r.won)), [['long', 'short']]);
+  // An entry kept before the kinds were recorded: its one best, for the fight of its goal.
+  assert.deepEqual(keptRotations({ goal: 'leveling', value: 99, model: { rotations: [STEADY] } }).map((r) => r.won), [{ short: 99 }]);
+  assert.equal(baselineOf(null), null);
+});
+
+test('a kept rotation the AI left out is added and ranked; one naming a buff the model lacks is not, with the reason', () => {
+  const kept = lastTime([{ ...BURST_EARLY, won: { short: 301.5 } }, UNSEALED]);
+  const answer = { ...BURST_MODEL, rotations: [STEADY] };
+  const run = runModel(answer, { iterations: 40, goal: 'raids', kept });
+  assert.deepEqual(run.model.rotations.map((r) => r.name), ['Steady', 'Burst early']);
+  assert.deepEqual(run.carried.map((c) => [c.name, c.index, c.added, c.reason]), [
+    ['Burst early', 1, true, undefined],
+    ['Unsealed Wrath swap', -1, false, 'this analysis has no Unsealed Wrath'],
+  ]);
+  assert.equal(run.sim.rotations.length, 2, 'simulated like the others');
+  const data = shapeRotation({ model: answer }, run);
+  assert.deepEqual(data.rotations.map((r) => [r.name, r.kept]), [['Steady', undefined], ['Burst early', true]]);
+  const best = data.otherFight.rotations[0];
+  assert.deepEqual([best.name, best.kept, best.steps[0].when], ['Burst early', true, 'the first three globals']);
+  assert.deepEqual(data.continuity, [
+    'The best rotation for short fights is the same as last time: "Burst early".',
+    'Last time\'s best for long fights, "Unsealed Wrath swap", could not be simulated again: this analysis has no Unsealed Wrath.',
+  ]);
+  // With the buff in the model, it runs again.
+  const withBuff = { ...answer, buffs: [{ id: 'wrath', name: 'Unsealed Wrath', duration: 10, maxStacks: 5 }] };
+  const again = runModel(withBuff, { iterations: 20, goal: 'raids', kept });
+  assert.deepEqual(again.model.rotations.map((r) => r.name), ['Steady', 'Burst early', 'Unsealed Wrath swap']);
+  assert.deepEqual(again.model.rotations[2].actions[0].if, { buffStacksAtLeast: { id: 'wrath', n: 3 } }, 'found by its name under a new id');
+});
+
+test('a kept rotation that was simulated again and lost says by how much', () => {
+  const kept = lastTime([{ ...BURST_EARLY, won: { long: 200 } }]);
+  const answer = { ...BURST_MODEL, rotations: [STEADY] };
+  const run = runModel(answer, { iterations: 40, goal: 'raids', kept });
+  const data = shapeRotation({ model: answer }, run);
+  const mine = data.rotations.find((r) => r.name === 'Burst early');
+  const steady = data.rotations.find((r) => r.name === 'Steady');
+  assert.ok(steady.value > mine.value);
+  assert.deepEqual(data.continuity, [
+    `Last time's best for long fights, "Burst early", was simulated again: ${mine.value} damage per second, against ${steady.value} for "Steady".`,
+  ]);
+});
+
+test('a kept rotation the AI kept is not added twice, under its name or with the same actions', () => {
+  const kept = lastTime([{ ...BURST_EARLY, won: { short: 301.5 } }, { ...STEADY, won: { long: 140 } }]);
+  // Under its name (another case, spaces around it), adapted; and Steady's actions under another name.
+  const answer = { ...BURST_MODEL, rotations: [
+    { name: '  burst EARLY ', actions: [{ use: 'burst', if: { not: { timeAtLeast: 6 } } }] },
+    { name: 'Bloodthirst on cooldown', actions: [{ use: 'Bloodthirst' }] },
+  ] };
+  const run = runModel(answer, { iterations: 20, goal: 'raids', kept });
+  assert.equal(run.model.rotations.length, 2);
+  assert.deepEqual(run.carried.map((c) => [c.index, c.added]), [[0, false], [1, false]]);
+  const data = shapeRotation({ model: answer }, run);
+  assert.ok(data.rotations.every((r) => r.kept === true), 'both marked');
+  // No last analysis: nothing carried, nothing said.
+  const first = runModel(answer, { iterations: 20, goal: 'raids' });
+  assert.equal(first.carried, undefined);
+  assert.equal(shapeRotation({ model: answer }, first).continuity, undefined);
+});
+
+test('a kept candidate is shown even below the limit of shown candidates', () => {
+  const answer = { ...BURST_MODEL, rotations: [
+    STEADY, BURST_EARLY,
+    { name: 'Heroic', actions: [{ use: 'bt' }, { use: 'hs', if: { resourceAtLeast: 60 } }] },
+    { name: 'Heroic early', actions: [{ use: 'bt' }, { use: 'hs', if: { resourceAtLeast: 30 } }] },
+    { name: 'Burst then steady', actions: [{ use: 'burst', if: { not: { timeAtLeast: 3 } } }, { use: 'bt' }] },
+  ] };
+  // Auto attacks only: last in every fight.
+  const kept = lastTime([{ name: 'Auto attacks', actions: [], won: { long: 90 } }]);
+  const run = runModel(answer, { iterations: 20, goal: 'raids', kept });
+  const data = shapeRotation({ model: answer }, run);
+  assert.equal(data.rotations.length, 5, 'the limit grows by the kept one');
+  assert.deepEqual([data.rotations[4].name, data.rotations[4].kept], ['Auto attacks', true]);
+  assert.equal(data.otherFight.rotations.length, 5);
+  assert.equal(data.otherFight.rotations[4].kept, true);
+  assert.match(data.continuity[0], /^Last time's best for long fights, "Auto attacks", was simulated again: /);
+  // Without it, as before.
+  assert.equal(shapeRotation({ model: answer }, runModel(answer, { iterations: 20, goal: 'raids' })).rotations.length, 4);
+});
+
+test('the last analysis goes to the AI with a rotation request for the same specialization and role only', async () => {
+  const store = tmpStore();
+  const first = scripted({ summary: 's', model: { ...BURST_MODEL, rotations: [STEADY, BURST_EARLY] } });
+  const one = await createArmory({ store, askImpl: first.askImpl }).handle(request('rotation'), { cfg });
+  const sentFirst = JSON.parse(first.calls[0].messages[0].content.split('\n')[1]);
+  assert.equal(sentFirst.armory_model, undefined, 'nothing to build on yet');
+  assert.ok(!first.calls[0].system.includes('the model of this character\'s last rotation analysis'));
+  assert.equal(one.data.continuity, undefined);
+  assert.deepEqual(store.get('Player-1-ABC').model.rotations.map((r) => r.name), ['Steady', 'Burst early']);
+  assert.equal(store.get('Player-1-ABC').role, 'dps');
+
+  // The same build: the model is sent, the instructions say what to do with it,
+  // and the winner the AI left out is run again by the app.
+  const second = scripted({ summary: 's', model: { ...BURST_MODEL, rotations: [{ name: 'Heroic', actions: [{ use: 'bt' }, { use: 'hs', if: { resourceAtLeast: 60 } }] }] } });
+  const two = await createArmory({ store, askImpl: second.askImpl }).handle(request('rotation'), { cfg });
+  const sent = JSON.parse(second.calls[0].messages[0].content.split('\n')[1]);
+  assert.deepEqual(sent.armory_model.rotations.map((r) => [r.name, Object.keys(r.won)]), [['Steady', ['long']], ['Burst early', ['short']]]);
+  const system = second.calls[0].system;
+  assert.match(system, /- "armory_model" is the model of this character's last rotation analysis, with the rotation or rotations that won it/);
+  assert.match(system, /Its rotations are among your candidates, under their own names, adapted only where an ability changed, next to at least two new or different ones/);
+  assert.match(system, /say in "notes", in one entry, what changed and why/);
+  assert.deepEqual(two.data.rotations.filter((r) => r.kept).map((r) => r.name).sort(), ['Burst early', 'Steady']);
+  assert.ok(two.data.continuity.length >= 1 && two.data.continuity.length <= 2);
+
+  // Another specialization or role: a fresh start.
+  for (const input of [{ spec: 'Fury' }, { role: 'tank' }]) {
+    const other = scripted({ summary: 's', model: { ...BURST_MODEL, rotations: [STEADY] } });
+    const req = request('rotation', { armory_combat: TANK_COMBAT });
+    req.ext.input = { ...req.ext.input, ...input };
+    const out = await createArmory({ store, askImpl: other.askImpl }).handle(req, { cfg });
+    const data = JSON.parse(other.calls[0].messages[0].content.split('\n')[1]);
+    assert.equal(data.armory_model, undefined, JSON.stringify(input));
+    assert.ok(!other.calls[0].system.includes('the model of this character\'s last rotation analysis'));
+    assert.equal(out.data.continuity, undefined);
+    // Back to the same build for the next case.
+    await createArmory({ store, askImpl: scripted({ summary: 's', model: { ...BURST_MODEL, rotations: [STEADY, BURST_EARLY] } }).askImpl }).handle(request('rotation'), { cfg });
+  }
+});
+
+test('the One Button limits are said to be for those lists only', () => {
+  assert.match(ONE_BUTTON_SPEC, /These limits are for the "oneButton" lists only\. The candidate rotations in "rotations" are not bound by them: they use everything the character has, procs, any buff and conditions on time included\./);
+  assert.ok(buildArmorySystem('rotation', {}).includes('These limits are for the "oneButton" lists only.'));
+});
+
+test('a worst case with two kept candidates still fits what one answer may weigh', async () => {
+  const { raw, spells, auras } = worstCase();
+  const { model } = raw;
+  // Two winners of the last analysis the AI left out, each as long as a rotation can be.
+  const keptRotation = (n, won) => ({ name: `Kept ${'Long Name '.repeat(8)}${n}`, actions: [...model.rotations[0].actions].reverse().slice(n), won });
+  const store = tmpStore();
+  store.set('Player-1-ABC', { spec: 'Arms', goal: 'raids', role: 'tank', metric: 'tps', model: { ...model, rotations: [keptRotation(0, { long: 1 }), keptRotation(1, { short: 1 })] } });
+  const req = request('rotation', { armory_spells: spells, armory_auras: auras, armory_combat: TANK_COMBAT });
+  req.ext.input.role = 'tank';
+  const out = await createArmory({ store, askImpl: scripted(raw).askImpl }).handle(req, { cfg });
+  const size = JSON.stringify(out.data).length;
+  assert.ok(size <= 60000, `${size} bytes`);
+  assert.ok(out.data.rotations.length >= 4 && out.data.rotations.length <= 6);
+  assert.equal(out.data.rotations.filter((r) => r.kept).length, 2, 'both shown in the model\'s own fight');
+  assert.equal(out.data.otherFight.rotations.filter((r) => r.kept).length, 2, 'and in the other one');
+  assert.equal(out.data.continuity.length, 2);
 });

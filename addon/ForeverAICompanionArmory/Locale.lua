@@ -5,7 +5,7 @@ local _, ns = ...
 
 local L = {
   TITLE = "Forever AI Armory",
-  HELP = "/armory opens the window. /armory talents, gear, rotation or lab opens that tab. /armory debug shows what the addon could read from the game. /armory dump saves the game's raw talent data to a file. /armory onebutton shows your rotation as a profile for Forever One Button. /armory resetwindow puts the window back in the middle at its default size.",
+  HELP = "/armory opens the window. /armory talents, gear, rotation or lab opens that tab. /armory debug shows what the addon could read from the game. /armory dump saves the game's raw talent data to a file. /armory onebutton shows your rotation as a profile for Forever One Button. /armory buffs lists the buffs the addon has seen on this character, with their spell ids. /armory resetwindow puts the window back in the middle at its default size.",
   WINDOW_RESET = "The window is back in the middle at its default size.",
   DUMP_DONE = "Saved what the game says about your talents (%d talent nodes).",
   DUMP_NEXT = "Now type /reload, then send this file from your game folder: WTF\\Account\\(your account)\\SavedVariables\\ForeverAICompanionArmory.lua",
@@ -265,6 +265,11 @@ local L = {
   FIGHTS_LONG = "long fights",
   FIGHT_PRIMARY = "The kind of fight your goal is about.",
   SAME_BEST = "The same rotation is also the best here: %s %s.",
+  FROM_LAST = "%s (from your last analysis)",
+  -- /armory buffs
+  AURAS_HEADING = "Buffs seen on this character, newest first (%d):",
+  AURAS_NONE = "No buffs seen on this character yet.",
+  AURAS_ON = "[on now]",
   COMPARED_BOTH = "%s in %s, then in %s. The bars are for %s.",
   COMPARED_TWO = "%s · %s",
   BREAKDOWN_FOR = "%s in %s, with %s",

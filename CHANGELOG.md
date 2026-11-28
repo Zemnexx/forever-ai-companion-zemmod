@@ -16,6 +16,12 @@ Short and long fights, and One Button lists written by the AI and measured (the 
 - **A One Button profile per kind of fight.** One Button cannot tell an ordinary enemy from a boss, so the lists for short and long fights are two profiles to switch between ("... short" and "... long"); the Armory's export box has a button for each. When both lists are the same there is one profile.
 - What was wrong with a One Button list is only said to the AI when its model is sent back anyway: a list alone never causes a second request.
 
+### Fixed
+
+- **A rotation analysis builds on the last one.** Two analyses of an unchanged character could give unrelated answers: each started from nothing, with a new model and new candidates, so last time's winner might not even be compared. The app now gives the AI the model and the winning rotations of the character's last rotation analysis (same specialization and role) and tells it to keep what has not changed and to say what it changed. Last time's winners are always candidates: when the AI leaves one out, the app adds it itself if the new model can run it. The result says, per kind of fight, that the best is the same as last time, what last time's best scores now against the new best, or why it could not be simulated again, and the Armory shows that under the summary.
+- **The limits for One Button lists are stated as applying to those lists only.** The candidates the simulator compares use everything the character has; the first wording may have made the AI drop a proc buff from them.
+- **The Armory shows which buffs it learned.** Its debug line named the buffs on the character right now instead of the ones newly learned. It now names the newest, and `/armory buffs` lists them all with their spell ids. The Armory stays 0.5.0.
+
 ## 2.5.0 (addon 1.17.1)
 
 The Armory's best rotation as a profile for Forever One Button (the Armory's addon 0.4.0).

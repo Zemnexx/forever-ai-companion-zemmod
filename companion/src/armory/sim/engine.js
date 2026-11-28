@@ -342,6 +342,46 @@ function normCond(c, where, refs, R, problems) {
   return Object.keys(out).length ? out : null;
 }
 
+// A priority list's actions, with ids resolved: what the normalizer does for
+// the rotations and the One Button lists, and fitActions() for a rotation
+// brought over from another model.
+function normActions(list, label, { findAb, refs, R }, into) {
+  const actions = [];
+  asList(list).forEach((act, ai) => {
+    const a = typeof act === 'string' ? { use: act } : asObj(act);
+    const id = findAb(a.use);
+    if (!id) { into.push(`${label} action ${ai + 1} uses unknown ability ${quote(a.use)}`); return; }
+    const cond = normCond(a.if, `${label} action ${ai + 1} condition`, refs, R, into);
+    actions.push(cond ? { use: id, if: cond } : { use: id });
+  });
+  return actions;
+}
+
+/**
+ * Whether a normalized model can run these actions, by the normalizer's own
+ * checks. alias(ref) may give another name to try for a reference the model
+ * does not know (the name it had in the model the actions come from).
+ * Returns { actions, problems, missing }: missing are the references that
+ * matched nothing, abilities and buffs alike.
+ */
+export function fitActions(model, actions, { alias = () => null } = {}) {
+  const problems = [];
+  const missing = [];
+  const byAbility = resolver(asList(model?.abilities).filter((a) => isObj(a) && typeof a.id === 'string'));
+  const byBuff = resolver(asList(model?.buffs).filter((b) => isObj(b) && typeof b.id === 'string'));
+  const either = (r) => byBuff(r) || byAbility(r);
+  // Tried as written, then under its old name; a miss is noted once.
+  const noting = (find) => (ref) => {
+    const id = find(ref) || find(alias(ref));
+    if (!id) missing.push(ref);
+    return id;
+  };
+  const findAb = noting(byAbility);
+  const refs = { ability: findAb, any: noting(either) };
+  const out = normActions(actions, 'rotation', { findAb, refs, R: reader(problems) }, problems);
+  return { actions: out, problems, missing };
+}
+
 /**
  * Repairs and validates a combat model. Never throws.
  * @returns {{ model: object, problems: string[], fatal: boolean }}
@@ -545,17 +585,7 @@ function normalizeInner(raw, problems) {
     if (Object.keys(c).length) statConversions[stat] = c;
   }
 
-  const actionsOf = (list, label, into) => {
-    const actions = [];
-    asList(list).forEach((act, ai) => {
-      const a = typeof act === 'string' ? { use: act } : asObj(act);
-      const id = findAb(a.use);
-      if (!id) { into.push(`${label} action ${ai + 1} uses unknown ability ${quote(a.use)}`); return; }
-      const cond = normCond(a.if, `${label} action ${ai + 1} condition`, refs, R, into);
-      actions.push(cond ? { use: id, if: cond } : { use: id });
-    });
-    return actions;
-  };
+  const actionsOf = (list, label, into) => normActions(list, label, { findAb, refs, R }, into);
   const rotations = [];
   asList(src.rotations).forEach((r, ri) => {
     if (!isObj(r)) { problems.push(`rotation ${ri + 1} is not an object: dropped`); return; }

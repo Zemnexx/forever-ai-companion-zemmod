@@ -25,7 +25,7 @@ import { buildArmoryMessage, buildArmorySystem, repairMessage } from './prompts.
 import { extractJson, list, num, str } from './json.js';
 import { shapeBuild, takenTalents, talentIndex, validateOrder } from './talents.js';
 import { equippable, leftOut, shapeGear } from './gear.js';
-import { fitRotation, keepFromRun, oneButtonLists, runModel, shapeRotation } from './rotation.js';
+import { baselineOf, fitRotation, keepFromRun, oneButtonLists, runModel, shapeRotation } from './rotation.js';
 import { shapeIdeas } from './discover.js';
 import { fillIds } from './item-ids.js';
 import { compareScaling, shapeScaling } from './scaling.js';
@@ -151,6 +151,16 @@ function withTargets(model, profile) {
   return { ...model, fight: { ...(model.fight && typeof model.fight === 'object' ? model.fight : {}), targets: AOE_TARGETS } };
 }
 
+// The last rotation analysis of this character, when it was for the same
+// specialization and role as this request: the AI builds on it, so that two
+// analyses of an unchanged character stay comparable. An entry kept before
+// the role was recorded takes it from its metric.
+function lastAnalysis(kept, profile) {
+  if (!kept?.model || typeof kept.model !== 'object') return null;
+  const role = kept.role || (kept.metric === 'tps' ? 'tank' : kept.metric === 'hps' ? 'healer' : 'dps');
+  return kept.spec === profile.spec && role === profile.role ? kept : null;
+}
+
 const handlers = {
   async talents({ ctx, profile, system, ai }) {
     const index = talentIndex(ctx.armory_talents);
@@ -187,20 +197,22 @@ const handlers = {
     return plan;
   },
 
-  async rotation({ ctx, profile, system, ai, store, charKey, iterations }) {
+  async rotation({ ctx, profile, system, ai, store, charKey, kept, iterations }) {
     const scaling = shapeScaling(ctx.armory_scaling);
+    const last = lastAnalysis(kept, profile);
     const data = {
       request: profile,
       ...pick(ctx, [...BASE, 'armory_combat', 'armory_spells', 'armory_auras', 'gear', 'buffs', 'pet']),
       armory_talents: takenTalents(ctx.armory_talents) || undefined,
       armory_scaling: scaling || undefined,
+      armory_model: last?.model || undefined,
     };
     const shape = { spells: ctx.armory_spells, auras: list(ctx.armory_auras), context: profile.aoe ? 'aoe' : 'st' };
     // A tank's rotations are ranked by threat, and survival is estimated with
     // the defensive numbers the game gave (never the AI's).
     const tank = profile.role === 'tank';
-    const verdict = await converse(ai, system('rotation'), data, (raw) => {
-      const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null, goal: profile.goal });
+    const verdict = await converse(ai, system('rotation', { hasModel: !!last }), data, (raw) => {
+      const run = runModel(withTargets(raw.model, profile), { iterations, tank, defense: tank ? ctx.armory_combat : null, goal: profile.goal, kept: last });
       if (run.fatal) return { result: null, retry: run.problems.length ? run.problems : ['"model" is missing or empty'], fatal: 'armoryNoModel' };
       const lists = oneButtonLists(run, shape);
       const result = shapeRotation(raw, run, { ...shape, lists });
@@ -211,13 +223,14 @@ const handlers = {
       // correction. The One Button lists are a by-product, too costly to ask
       // again for: what was wrong with them only rides along.
       return {
-        result, keep: keepFromRun(run), score: 1000 - run.problems.length,
+        result, keep: keepFromRun(run, { rawModel: raw.model }), score: 1000 - run.problems.length,
         retry: run.problems.length >= 3 ? run.problems : null,
         also: lists.problems,
       };
     });
-    // Kept on this PC for the gear plan (measured weights) and for testing ideas.
-    if (verdict.keep) store.set(charKey, { ...verdict.keep, spec: profile.spec, goal: profile.goal });
+    // Kept on this PC for the gear plan (measured weights), for testing ideas
+    // and for the next rotation analysis of the same build.
+    if (verdict.keep) store.set(charKey, { ...verdict.keep, spec: profile.spec, goal: profile.goal, role: profile.role });
     // Pets are not simulated yet (later work): a class that fights with one is told.
     if (PET_CLASSES.includes(ctx.character?.classToken)) {
       verdict.result.assumptions = [t('armoryNoPets'), ...verdict.result.assumptions].slice(0, 6);
@@ -226,7 +239,7 @@ const handlers = {
   },
 
   async discover({ ctx, profile, system, ai, kept, iterations }) {
-    const base = kept?.model || null;
+    const base = baselineOf(kept);
     const data = {
       request: profile,
       ...pick(ctx, [...BASE, 'armory_combat', 'armory_talents', 'armory_spells', 'gear', 'buffs', 'pet', 'armory_seen']),

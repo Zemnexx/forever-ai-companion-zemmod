@@ -109,7 +109,7 @@ Recommend, slot by slot, the gear this character should go for next, for the spe
 }
 "slot" is one of: head, neck, shoulder, back, chest, wrist, hands, waist, legs, feet, finger1, finger2, trinket1, trinket2, mainHand, offHand, ranged. "notes": up to 4.`,
 
-  rotation: `## Task: the rotation, by simulation
+  rotation: (hasModel) => `## Task: the rotation, by simulation
 You do not estimate the numbers yourself. You write a combat model of this character and the candidate rotations, and the Armory's simulator runs each one for hundreds of fights, ranks them and measures what each stat is worth. Your job is to get the model right.
 - Build it from the data: "armory_spells" (each ability's tooltip as the game shows it for this character now: cost, cast time, cooldown, the damage or healing numbers), "armory_talents" (talents taken, with descriptions), "armory_combat" and "stats" (attack power, crit, weapon damage and speed...), "gear" (item effects: procs, set bonuses) and "buffs".
 - Tooltip numbers are usually already scaled by the character's attack power or spell power. When you know what an ability scales with (from its description, the guide or a Forever source), set the coefficient and lower "min"/"max" so that the total at the character's current stats equals the tooltip: that is what makes the stat weights right. When you do not know how it scales, keep the tooltip's number with a coefficient of 0 and say so in "assumptions".
@@ -122,7 +122,8 @@ You do not estimate the numbers yourself. You write a combat model of this chara
 - Tanks ("role": "tank"): the simulator ranks the rotations by threat per second, not damage, and estimates how well the character survives. Set "player.threatMultiplier" from what the data says changes threat (a stance, Righteous Fury, threat talents), and per ability "threatMultiplier" and "threat" where its tooltip or a Forever source states them; leave the defaults (1 and 0) where nothing does, and say so in "assumptions". The candidates compare ways of holding threat (a threat ability on cooldown, which filler, when to spend on damage). Fill "enemy" from the goal, like "fight": leveling, solo or pvp = an enemy of the character's level; dungeons = a boss 2 levels above; raids = a boss 3 levels above; with its ordinary melee hit before armor, its attack speed and any steady magic damage per second you know of. Say in "assumptions" that the enemy's numbers are estimates. The character's own armor, health, dodge, parry, block and defense come from the game: do not put them in the model.
 - "buffs": what the player should have on themselves before the fight starts, so they do not forget it: their own long-lasting buffs, auras, blessings, stances, forms, weapon enchants from spells and the like, chosen for this specialization and role from the spells they know. Only spells that are in "armory_spells", by that exact name; where the class has several of a kind (auras, blessings), the one to use. Not what the rotation list itself keeps up, and not other players' buffs or consumables. "why": a few words on what it gives. "counted": true when your model already includes its effect, false when the simulated numbers leave it out. An empty list when the class has nothing of the sort yet.
 - "rotations": 3 or 4 genuinely different candidates for the simulator to compare (with and without a filler, a different order between two cooldown abilities, a cooldown saved for the execute phase...), each a priority list: at least one made for a fight of about 25 seconds (what pays back within it, no long setup) and at least one for a fight of a minute or more (buffs and debuffs kept up, the resource lasting). Every action carries a "note": a few words telling the player when to press it ("on cooldown", "at 60 rage or more", "keep it up on the target").
-- "oneButton" in "model": the two lists for Forever One Button, by the rules after the model format.
+- "oneButton" in "model": the two lists for Forever One Button, by the rules after the model format.${hasModel ? `
+- "armory_model" is the model of this character's last rotation analysis, with the rotation or rotations that won it ("won": the kind of fight and the value it won there). Build on it: keep its abilities, mechanics (buffs, procs, modifiers) and numbers wherever the character data has not changed and nothing in it was wrong, so that results stay comparable from one analysis to the next. Change what the data now contradicts (a new rank, talent, weapon or stat, a measurement in "armory_scaling") and say in "notes", in one entry, what changed and why. Its rotations are among your candidates, under their own names, adapted only where an ability changed, next to at least two new or different ones: the simulator then shows whether a new idea really beats what won before.` : ''}
 
 ${MODEL_SPEC}
 
@@ -175,7 +176,8 @@ function topicQuestion(kind, context, profile) {
 
 // kind: "talents" | "gear" | "rotation" | "discover".
 // profile: the request's input (spec, goal, role, notes); hasModel: a combat
-// model of this character is in the data (discover).
+// model of this character is in the data (discover, and rotation when it is
+// the last analysis of the same build).
 export function buildArmorySystem(kind, {
   canSearch = false, guide = null, topics = null, knowledge = '', context = null, client = null, lang = null, profile = null,
   hasModel = false, now,

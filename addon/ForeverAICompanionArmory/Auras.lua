@@ -8,7 +8,9 @@
 -- Read when the player's buffs change (at most about once a second), when a
 -- fight ends and when a rotation request is put together, with whichever of
 -- the game's ways to read buffs this client has. Kept per character as
--- c.auras = { { name, id, at }, ... }, the most recently seen first.
+-- c.auras = { { name, id, at, first }, ... }, the most recently seen first:
+-- "at" when it was last seen, "first" when it was first seen (an entry saved
+-- without it counts as first seen when it was last seen).
 local _, ns = ...
 local Util = ns.Util
 
@@ -158,9 +160,16 @@ function Auras.Learn()
   if not now then return nil end
   if #now == 0 then return 0 end
   local at = time()
+  local before = {}
+  for _, e in ipairs(list) do
+    if before[e.id] == nil then before[e.id] = e end
+  end
   local out, placed = {}, {}
   for _, a in ipairs(now) do
-    out[#out + 1] = { name = a.name, id = a.id, at = at }
+    -- A buff seen again keeps when it was first seen.
+    local old = before[a.id]
+    local first = old and (tonumber(old.first) or tonumber(old.at)) or at
+    out[#out + 1] = { name = a.name, id = a.id, at = at, first = first }
     placed[a.id] = true
   end
   for _, e in ipairs(list) do
@@ -211,14 +220,63 @@ function Auras.Section()
   return out
 end
 
+-- When an entry was first seen: saved before that was kept, when it was last seen.
+local function firstSeen(e)
+  return tonumber(e.first) or tonumber(e.at) or 0
+end
+
+-- What is kept, the buffs added to the list most recently first: the
+-- question is usually whether a new one (a proc) was learned, and the buffs
+-- that are always on stay at the front of the list itself.
+function Auras.Newest()
+  local list = kept() or {}
+  local order = {}
+  for i, e in ipairs(list) do order[#order + 1] = { e = e, i = i } end
+  table.sort(order, function(a, b)
+    local fa, fb = firstSeen(a.e), firstSeen(b.e)
+    if fa ~= fb then return fa > fb end
+    return a.i < b.i
+  end)
+  local out = {}
+  for i, o in ipairs(order) do out[i] = o.e end
+  return out
+end
+
+-- Entries per chat line of /armory buffs.
+local PER_LINE = 5
+
+-- The chat lines of /armory buffs: every buff remembered, newest first, with
+-- its spell id, the ones on the character now marked.
+function Auras.Lines()
+  pcall(Auras.Learn)
+  local list = Auras.Newest()
+  local L = ns.L
+  if #list == 0 then return { L.AURAS_NONE } end
+  local ok, current = pcall(Auras.Read)
+  local on = {}
+  for _, a in ipairs(ok and type(current) == "table" and current or {}) do on[a.id] = true end
+  local lines, parts = { string.format(L.AURAS_HEADING, #list) }, {}
+  for _, e in ipairs(list) do
+    local entry = string.format("%s (%d)", e.name, e.id)
+    if on[e.id] then entry = entry .. " " .. L.AURAS_ON end
+    parts[#parts + 1] = entry
+    if #parts >= PER_LINE then
+      lines[#lines + 1] = table.concat(parts, ", ")
+      parts = {}
+    end
+  end
+  if #parts > 0 then lines[#lines + 1] = table.concat(parts, ", ") end
+  return lines
+end
+
 -- One line for /armory debug.
 function Auras.Diagnose()
   pcall(Auras.Learn)
-  local list = kept() or {}
+  local list = Auras.Newest()
   local names = {}
   for i = 1, math.min(3, #list) do names[i] = list[i].name end
   local line = string.format("buffs seen: %d remembered", #list)
-  if #names > 0 then line = line .. " (latest " .. table.concat(names, ", ") .. ")" end
+  if #names > 0 then line = line .. " (newest: " .. table.concat(names, ", ") .. ")" end
   if Auras.how then return line .. "; read with " .. Auras.how end
   return line .. "; none could be read now: " .. tostring(Auras.why or "not tried")
 end

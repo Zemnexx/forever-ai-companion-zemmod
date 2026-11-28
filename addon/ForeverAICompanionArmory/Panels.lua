@@ -572,10 +572,26 @@ local function calibration(blocks, data)
   if data then scalingUsed(blocks, data.scaling) end
 end
 
+-- A candidate's name, and that it comes from the last analysis when it does:
+-- the app runs last time's winners again, so the player can compare.
+local function rotationName(r)
+  if r.kept == true then return string.format(L.FROM_LAST, tostring(r.name)) end
+  return r.name
+end
+
+-- What the app said became of the last analysis's best rotations: plain
+-- sentences, drawn only when they are what a newer app sends.
+local function continuity(blocks, list)
+  if type(list) ~= "table" then return end
+  for _, line in ipairs(list) do
+    if type(line) == "string" and line ~= "" then add(blocks, { t = "p", text = line, color = "muted" }) end
+  end
+end
+
 -- The best rotation of one kind of fight: its name and number, its steps,
 -- and the facts about it.
 local function bestRotation(blocks, best, unit)
-  add(blocks, { t = "h", text = string.format("%s: %s %s", best.name, Util.fmt(best.value, 1), unit) })
+  add(blocks, { t = "h", text = string.format("%s: %s %s", rotationName(best), Util.fmt(best.value, 1), unit) })
   for i, step in ipairs(best.steps or {}) do
     local icon = step.spellId and ns.Panels.SpellIcon(step.spellId) or nil
     add(blocks, { t = "row", icon = icon, spell = step.spellId, title = string.format("%d. %s", i, step.spell), sub = step.when })
@@ -668,6 +684,7 @@ function Panels.Rotation()
   local other = otherKind and data.otherFight or nil
   local otherBest = other and type(other.rotations) == "table" and other.rotations[1] or nil
   if data.summary and data.summary ~= "" then add(blocks, { t = "p", text = data.summary }) end
+  continuity(blocks, data.continuity)
   if other then
     fightHeading(blocks, primaryKind, data.fight or {})
     add(blocks, { t = "p", text = L.FIGHT_PRIMARY, color = "muted" })
@@ -719,7 +736,7 @@ function Panels.Rotation()
     for _, r in ipairs(data.rotations) do
       local right = Util.fmt(r.value, 1)
       if there[r.name] then right = string.format(L.COMPARED_TWO, right, Util.fmt(there[r.name], 1)) end
-      add(blocks, { t = "bar", label = r.name, value = r.value / top * 100, right = other and right or string.format("%s %s", right, unit) })
+      add(blocks, { t = "bar", label = rotationName(r), value = r.value / top * 100, right = other and right or string.format("%s %s", right, unit) })
     end
   end
 
